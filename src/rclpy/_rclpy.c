@@ -1644,12 +1644,18 @@ rclpy_wait(PyObject * Py_UNUSED(self), PyObject * args)
   PyObject * pywait_set;
   PY_LONG_LONG timeout = -1;
 
-  signal(SIGINT, catch_function);
   if (!PyArg_ParseTuple(args, "O|K", &pywait_set, &timeout)) {
     return NULL;
   }
+#ifdef _WIN32
+  _crt_signal_t
+#else
+  sig_t
+#endif  // _WIN32
+  previous_handler = signal(SIGINT, catch_function);
   rcl_wait_set_t * wait_set = (rcl_wait_set_t *)PyCapsule_GetPointer(pywait_set, NULL);
   rcl_ret_t ret = rcl_wait(wait_set, timeout);
+  signal(SIGINT, previous_handler);
   if (ret != RCL_RET_OK && ret != RCL_RET_TIMEOUT) {
     PyErr_Format(PyExc_RuntimeError,
       "Failed to wait on wait set: %s", rcl_get_error_string_safe());
@@ -1861,14 +1867,6 @@ rclpy_take_response(PyObject * Py_UNUSED(self), PyObject * args)
   header->sequence_number = sequence_number;
   rcl_ret_t ret = rcl_take_response(client, header, taken_response);
 
-  if (ret != RCL_RET_OK && ret != RCL_RET_SERVICE_TAKE_FAILED) {
-    PyErr_Format(PyExc_RuntimeError,
-      "Client failed to take response: %s", rcl_get_error_string_safe());
-    rcl_reset_error();
-    destroy_ros_message(taken_response);
-    return NULL;
-  }
-
   if (ret != RCL_RET_SERVICE_TAKE_FAILED) {
     PyObject * pyconvert_to_py = PyObject_GetAttrString(pyresponse_type, "_CONVERT_TO_PY");
 
@@ -1933,14 +1931,15 @@ rclpy_get_node_names(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
+  rcl_allocator_t allocator = rcl_get_default_allocator();
   rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, NULL);
   rcutils_string_array_t node_names =
     rcutils_get_zero_initialized_string_array();
-  rcutils_ret_t ret = rcl_get_node_names(node, rcl_get_default_allocator(), &node_names);
-  if (ret != RCUTILS_RET_OK) {
-    // TODO(karsten1987): Add error message from rcutils
+  rcl_ret_t ret = rcl_get_node_names(node, allocator, &node_names);
+  if (ret != RCL_RET_OK) {
     PyErr_Format(PyExc_RuntimeError,
-      "Failed to get_node_names:");
+      "Failed to get_node_names: %s", rcl_get_error_string_safe());
+    rcl_reset_error();
     return NULL;
   }
 
@@ -1965,10 +1964,75 @@ rclpy_get_node_names(PyObject * Py_UNUSED(self), PyObject * args)
 /// Get the list of topics discovered by the provided node
 /**
  * \param[in] pynode Capsule pointing to the node
- * \return TopicNamesAndTypes object
+ * \param[in] no_demangle if true topic names and types returned will not be demangled
+ * \return Python list of tuples where each tuple contains the two strings:
+ *   the topic name and topic type
  */
 static PyObject *
 rclpy_get_topic_names_and_types(PyObject * Py_UNUSED(self), PyObject * args)
+{
+  PyObject * pynode;
+  PyObject * pyno_demangle;
+
+  if (!PyArg_ParseTuple(args, "OO", &pynode, &pyno_demangle)) {
+    return NULL;
+  }
+
+  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, NULL);
+  bool no_demangle = PyObject_IsTrue(pyno_demangle);
+
+  rcl_names_and_types_t topic_names_and_types = rcl_get_zero_initialized_names_and_types();
+  rcl_allocator_t allocator = rcl_get_default_allocator();
+  rcl_ret_t ret =
+    rcl_get_topic_names_and_types(node, &allocator, no_demangle, &topic_names_and_types);
+  if (ret != RCL_RET_OK) {
+    PyErr_Format(PyExc_RuntimeError,
+      "Failed to get_topic_names_and_types: %s", rcl_get_error_string_safe());
+    rcl_reset_error();
+    return NULL;
+  }
+
+  PyObject * pytopic_names_and_types = PyList_New(topic_names_and_types.names.size);
+  size_t i;
+  for (i = 0; i < topic_names_and_types.names.size; ++i) {
+    PyObject * pytuple = PyTuple_New(2);
+    PyTuple_SetItem(
+      pytuple, 0,
+      PyUnicode_FromString(topic_names_and_types.names.data[i]));
+    PyObject * types_list = PyList_New(topic_names_and_types.types[i].size);
+    size_t j;
+    for (j = 0; j < topic_names_and_types.types[i].size; ++j) {
+      PyList_SetItem(
+        types_list, j,
+        PyUnicode_FromString(topic_names_and_types.types[i].data[j]));
+    }
+    PyTuple_SetItem(
+      pytuple, 1,
+      types_list);
+    PyList_SetItem(
+      pytopic_names_and_types, i,
+      pytuple);
+  }
+
+  ret = rcl_names_and_types_fini(&topic_names_and_types);
+  if (ret != RCL_RET_OK) {
+    PyErr_Format(PyExc_RuntimeError,
+      "Failed to destroy topic_names_and_types: %s", rcl_get_error_string_safe());
+    rcl_reset_error();
+    return NULL;
+  }
+
+  return pytopic_names_and_types;
+}
+
+/// Get the list of services discovered by the provided node
+/**
+ * \param[in] pynode Capsule pointing to the node
+ * \return Python list of tuples where each tuple contains the two strings:
+ *   the topic name and topic type
+ */
+static PyObject *
+rclpy_get_service_names_and_types(PyObject * Py_UNUSED(self), PyObject * args)
 {
   PyObject * pynode;
 
@@ -1977,53 +2041,49 @@ rclpy_get_topic_names_and_types(PyObject * Py_UNUSED(self), PyObject * args)
   }
 
   rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, NULL);
-  rcl_topic_names_and_types_t topic_names_and_types =
-    rcl_get_zero_initialized_topic_names_and_types();
+
+  rcl_names_and_types_t service_names_and_types = rcl_get_zero_initialized_names_and_types();
+  rcl_allocator_t allocator = rcl_get_default_allocator();
   rcl_ret_t ret =
-    rcl_get_topic_names_and_types(node, rcl_get_default_allocator(), &topic_names_and_types);
+    rcl_get_service_names_and_types(node, &allocator, &service_names_and_types);
   if (ret != RCL_RET_OK) {
     PyErr_Format(PyExc_RuntimeError,
-      "Failed to get_topic_names_and_types: %s", rcl_get_error_string_safe());
-    rcl_reset_error();
-    return NULL;
-  }
-  PyObject * pynames_types_module = PyImport_ImportModule("rclpy.names_and_types");
-  PyObject * pytopic_names_types_class = PyObject_GetAttrString(
-    pynames_types_module, "TopicNamesAndTypes");
-  PyObject * pytopic_names_types = PyObject_CallObject(pytopic_names_types_class, NULL);
-  if (!pytopic_names_types) {
-    PyErr_Format(PyExc_RuntimeError,
-      "Couldn't create instance of TopicNamesAndTypes");
-    return NULL;
-  }
-
-  PyObject * pytopic_names = PyList_New(topic_names_and_types.topic_count);
-  PyObject * pytype_names = PyList_New(topic_names_and_types.topic_count);
-  size_t idx;
-  for (idx = 0; idx < topic_names_and_types.topic_count; ++idx) {
-    PyList_SetItem(
-      pytopic_names, idx, PyUnicode_FromString(topic_names_and_types.topic_names[idx]));
-    PyList_SetItem(
-      pytype_names, idx, PyUnicode_FromString(topic_names_and_types.type_names[idx]));
-  }
-  PyObject_SetAttrString(pytopic_names_types, "topic_names", pytopic_names);
-  PyObject_SetAttrString(pytopic_names_types, "type_names", pytype_names);
-  PyObject * pytopic_count = NULL;
-  pytopic_count = PyLong_FromSize_t(topic_names_and_types.topic_count);
-  PyObject_SetAttrString(
-    pytopic_names_types,
-    "topic_count",
-    pytopic_count);
-
-  ret = rcl_destroy_topic_names_and_types(&topic_names_and_types);
-  if (ret != RCL_RET_OK) {
-    PyErr_Format(PyExc_RuntimeError,
-      "Failed to destroy topic_names_and_types: %s", rcl_get_error_string_safe());
+      "Failed to get_service_names_and_types: %s", rcl_get_error_string_safe());
     rcl_reset_error();
     return NULL;
   }
 
-  return pytopic_names_types;
+  PyObject * pyservice_names_and_types = PyList_New(service_names_and_types.names.size);
+  size_t i;
+  for (i = 0; i < service_names_and_types.names.size; ++i) {
+    PyObject * pytuple = PyTuple_New(2);
+    PyTuple_SetItem(
+      pytuple, 0,
+      PyUnicode_FromString(service_names_and_types.names.data[i]));
+    PyObject * types_list = PyList_New(service_names_and_types.types[i].size);
+    size_t j;
+    for (j = 0; j < service_names_and_types.types[i].size; ++j) {
+      PyList_SetItem(
+        types_list, j,
+        PyUnicode_FromString(service_names_and_types.types[i].data[j]));
+    }
+    PyTuple_SetItem(
+      pytuple, 1,
+      types_list);
+    PyList_SetItem(
+      pyservice_names_and_types, i,
+      pytuple);
+  }
+
+  ret = rcl_names_and_types_fini(&service_names_and_types);
+  if (ret != RCL_RET_OK) {
+    PyErr_Format(PyExc_RuntimeError,
+      "Failed to destroy service_names_and_types: %s", rcl_get_error_string_safe());
+    rcl_reset_error();
+    return NULL;
+  }
+
+  return pyservice_names_and_types;
 }
 
 /// Return a Python QoSProfile object
@@ -2043,9 +2103,15 @@ rclpy_convert_from_py_qos_policy(PyObject * Py_UNUSED(self), PyObject * args)
   unsigned PY_LONG_LONG pyqos_depth;
   unsigned PY_LONG_LONG pyqos_reliability;
   unsigned PY_LONG_LONG pyqos_durability;
+  bool avoid_ros_namespace_conventions;
 
   if (!PyArg_ParseTuple(
-      args, "KKKK", &pyqos_history, &pyqos_depth, &pyqos_reliability, &pyqos_durability))
+      args, "KKKKp",
+      &pyqos_history,
+      &pyqos_depth,
+      &pyqos_reliability,
+      &pyqos_durability,
+      &avoid_ros_namespace_conventions))
   {
     return NULL;
   }
@@ -2055,6 +2121,7 @@ rclpy_convert_from_py_qos_policy(PyObject * Py_UNUSED(self), PyObject * args)
   qos_profile->depth = pyqos_depth;
   qos_profile->reliability = pyqos_reliability;
   qos_profile->durability = pyqos_durability;
+  qos_profile->avoid_ros_namespace_conventions = avoid_ros_namespace_conventions;
   PyObject * pyqos_profile = PyCapsule_New(qos_profile, NULL, NULL);
   return pyqos_profile;
 }
@@ -2080,6 +2147,8 @@ rclpy_convert_to_py_qos_policy(void * profile)
     PyLong_FromUnsignedLong(qos_profile->reliability));
   PyObject_SetAttrString(pyqos_profile, "durability",
     PyLong_FromUnsignedLong(qos_profile->durability));
+  PyObject_SetAttrString(pyqos_profile, "avoid_ros_namespace_conventions",
+    PyBool_FromLong(qos_profile->avoid_ros_namespace_conventions));
 
   assert(pyqos_profile != NULL);
   return pyqos_profile;
@@ -2238,6 +2307,8 @@ static PyMethodDef rclpy_methods[] = {
    "Get node names list from graph API."},
   {"rclpy_get_topic_names_and_types", rclpy_get_topic_names_and_types, METH_VARARGS,
    "Get topic list from graph API."},
+  {"rclpy_get_service_names_and_types", rclpy_get_service_names_and_types, METH_VARARGS,
+   "Get service list from graph API."},
 
   {"rclpy_get_rmw_implementation_identifier", rclpy_get_rmw_implementation_identifier,
    METH_NOARGS, "Retrieve the identifier for the active RMW implementation."},
