@@ -17,7 +17,7 @@ from enum import IntEnum
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 
 
-class QoSProfile(object):
+class QoSProfile:
     """Define Quality of Service policies."""
 
     __slots__ = [
@@ -29,8 +29,8 @@ class QoSProfile(object):
     ]
 
     def __init__(self, **kwargs):
-        assert all(['_' + key in self.__slots__ for key in kwargs.keys()]), \
-            "Invalid arguments passed to constructor: %r" % kwargs.keys()
+        assert all('_' + key in self.__slots__ for key in kwargs.keys()), \
+            'Invalid arguments passed to constructor: %r' % kwargs.keys()
         self.history = kwargs.get(
             'history',
             QoSHistoryPolicy.RMW_QOS_POLICY_HISTORY_SYSTEM_DEFAULT)

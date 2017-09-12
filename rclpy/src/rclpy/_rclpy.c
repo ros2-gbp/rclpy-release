@@ -70,11 +70,71 @@ rclpy_get_sigint_guard_condition(PyObject * Py_UNUSED(self), PyObject * Py_UNUSE
     return NULL;
   }
   g_sigint_gc_handle = sigint_gc;
-  PyObject * pylist = PyList_New(0);
-  PyList_Append(pylist, PyCapsule_New(sigint_gc, NULL, NULL));
-  PyList_Append(pylist, PyLong_FromUnsignedLongLong((uint64_t)&sigint_gc->impl));
+  PyObject * pylist = PyList_New(2);
+  PyList_SET_ITEM(pylist, 0, PyCapsule_New(sigint_gc, NULL, NULL));
+  PyList_SET_ITEM(pylist, 1, PyLong_FromUnsignedLongLong((uint64_t)&sigint_gc->impl));
 
   return pylist;
+}
+
+/// Create a general purpose guard condition
+/**
+ * A successful call will return a list with two elements:
+ *
+ * - a Capsule with the pointer of the created rcl_guard_condition_t * structure
+ * - an integer representing the memory address of the rcl_guard_condition_t
+ *
+ * \return a list with the capsule and memory location, or
+ * \return NULL on failure
+ */
+static PyObject *
+rclpy_create_guard_condition(PyObject * Py_UNUSED(self), PyObject * Py_UNUSED(args))
+{
+  rcl_guard_condition_t * gc =
+    (rcl_guard_condition_t *)PyMem_Malloc(sizeof(rcl_guard_condition_t));
+  *gc = rcl_get_zero_initialized_guard_condition();
+  rcl_guard_condition_options_t gc_options = rcl_guard_condition_get_default_options();
+
+  rcl_ret_t ret = rcl_guard_condition_init(gc, gc_options);
+  if (ret != RCL_RET_OK) {
+    PyErr_Format(PyExc_RuntimeError,
+      "Failed to create guard_condition: %s", rcl_get_error_string_safe());
+    rcl_reset_error();
+    return NULL;
+  }
+  PyObject * pylist = PyList_New(2);
+
+  PyList_SET_ITEM(pylist, 0, PyCapsule_New(gc, NULL, NULL));
+  PyList_SET_ITEM(pylist, 1, PyLong_FromUnsignedLongLong((uint64_t)&gc->impl));
+
+  return pylist;
+}
+
+/// Trigger a general purpose guard condition
+/**
+ *
+ * \param[in] guard_condition Capsule pointing to guard condtition
+ * \return True on success, False on failure
+ */
+static PyObject *
+rclpy_trigger_guard_condition(PyObject * Py_UNUSED(self), PyObject * args)
+{
+  PyObject * pygc;
+
+  if (!PyArg_ParseTuple(args, "O", &pygc)) {
+    Py_RETURN_FALSE;
+  }
+
+  rcl_guard_condition_t * gc = (rcl_guard_condition_t *)PyCapsule_GetPointer(pygc, NULL);
+  rcl_ret_t ret = rcl_trigger_guard_condition(gc);
+
+  if (ret != RCL_RET_OK) {
+    PyErr_Format(PyExc_RuntimeError,
+      "Failed to trigger guard_condition: %s", rcl_get_error_string_safe());
+    rcl_reset_error();
+    return NULL;
+  }
+  Py_RETURN_TRUE;
 }
 
 /// Initialize rcl with default options, ignoring parameters
@@ -563,8 +623,6 @@ rclpy_create_publisher(PyObject * Py_UNUSED(self), PyObject * args)
 
   rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, NULL);
 
-  rmw_qos_profile_t * qos_profile = (rmw_qos_profile_t *)PyCapsule_GetPointer(pyqos_profile, NULL);
-
   PyObject * pymetaclass = PyObject_GetAttrString(pymsg_type, "__class__");
 
   PyObject * pyts = PyObject_GetAttrString(pymetaclass, "_TYPE_SUPPORT");
@@ -576,8 +634,15 @@ rclpy_create_publisher(PyObject * Py_UNUSED(self), PyObject * args)
   *publisher = rcl_get_zero_initialized_publisher();
   rcl_publisher_options_t publisher_ops = rcl_publisher_get_default_options();
 
-  if (pyqos_profile) {
+  void * p = PyCapsule_GetPointer(pyqos_profile, NULL);
+  if (Py_None != p) {
+    rmw_qos_profile_t * qos_profile = (rmw_qos_profile_t *)p;
     publisher_ops.qos = *qos_profile;
+    PyMem_Free(p);
+    if (PyCapsule_SetPointer(pyqos_profile, Py_None)) {
+      // exception set by PyCapsule_SetPointer
+      return NULL;
+    }
   }
 
   rcl_ret_t ret = rcl_publisher_init(publisher, node, ts, topic, &publisher_ops);
@@ -694,9 +759,9 @@ rclpy_create_timer(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
   PyObject * pytimer = PyCapsule_New(timer, NULL, NULL);
-  PyObject * pylist = PyList_New(0);
-  PyList_Append(pylist, pytimer);
-  PyList_Append(pylist, PyLong_FromUnsignedLongLong((uint64_t)&timer->impl));
+  PyObject * pylist = PyList_New(2);
+  PyList_SET_ITEM(pylist, 0, pytimer);
+  PyList_SET_ITEM(pylist, 1, PyLong_FromUnsignedLongLong((uint64_t)&timer->impl));
 
   return pylist;
 }
@@ -1000,8 +1065,6 @@ rclpy_create_subscription(PyObject * Py_UNUSED(self), PyObject * args)
 
   rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, NULL);
 
-  rmw_qos_profile_t * qos_profile = (rmw_qos_profile_t *)PyCapsule_GetPointer(pyqos_profile, NULL);
-
   PyObject * pymetaclass = PyObject_GetAttrString(pymsg_type, "__class__");
 
   PyObject * pyts = PyObject_GetAttrString(pymetaclass, "_TYPE_SUPPORT");
@@ -1014,8 +1077,15 @@ rclpy_create_subscription(PyObject * Py_UNUSED(self), PyObject * args)
   *subscription = rcl_get_zero_initialized_subscription();
   rcl_subscription_options_t subscription_ops = rcl_subscription_get_default_options();
 
-  if (pyqos_profile) {
+  void * p = PyCapsule_GetPointer(pyqos_profile, NULL);
+  if (Py_None != p) {
+    rmw_qos_profile_t * qos_profile = (rmw_qos_profile_t *)p;
     subscription_ops.qos = *qos_profile;
+    PyMem_Free(p);
+    if (PyCapsule_SetPointer(pyqos_profile, Py_None)) {
+      // exception set by PyCapsule_SetPointer
+      return NULL;
+    }
   }
 
   rcl_ret_t ret = rcl_subscription_init(subscription, node, ts, topic, &subscription_ops);
@@ -1033,9 +1103,9 @@ rclpy_create_subscription(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
   PyObject * pysubscription = PyCapsule_New(subscription, NULL, NULL);
-  PyObject * pylist = PyList_New(0);
-  PyList_Append(pylist, pysubscription);
-  PyList_Append(pylist, PyLong_FromUnsignedLongLong((uint64_t)&subscription->impl));
+  PyObject * pylist = PyList_New(2);
+  PyList_SET_ITEM(pylist, 0, pysubscription);
+  PyList_SET_ITEM(pylist, 1, PyLong_FromUnsignedLongLong((uint64_t)&subscription->impl));
 
   return pylist;
 }
@@ -1079,8 +1149,6 @@ rclpy_create_client(PyObject * Py_UNUSED(self), PyObject * args)
 
   rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, NULL);
 
-  rmw_qos_profile_t * qos_profile = (rmw_qos_profile_t *)PyCapsule_GetPointer(pyqos_profile, NULL);
-
   PyObject * pymetaclass = PyObject_GetAttrString(pysrv_type, "__class__");
 
   PyObject * pyts = PyObject_GetAttrString(pymetaclass, "_TYPE_SUPPORT");
@@ -1093,8 +1161,15 @@ rclpy_create_client(PyObject * Py_UNUSED(self), PyObject * args)
   *client = rcl_get_zero_initialized_client();
   rcl_client_options_t client_ops = rcl_client_get_default_options();
 
-  if (qos_profile) {
+  void * p = PyCapsule_GetPointer(pyqos_profile, NULL);
+  if (Py_None != p) {
+    rmw_qos_profile_t * qos_profile = (rmw_qos_profile_t *)p;
     client_ops.qos = *qos_profile;
+    PyMem_Free(p);
+    if (PyCapsule_SetPointer(pyqos_profile, Py_None)) {
+      // exception set by PyCapsule_SetPointer
+      return NULL;
+    }
   }
 
   rcl_ret_t ret = rcl_client_init(client, node, ts, service_name, &client_ops);
@@ -1112,9 +1187,9 @@ rclpy_create_client(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
   PyObject * pyclient = PyCapsule_New(client, NULL, NULL);
-  PyObject * pylist = PyList_New(0);
-  PyList_Append(pylist, pyclient);
-  PyList_Append(pylist, PyLong_FromUnsignedLongLong((uint64_t)&client->impl));
+  PyObject * pylist = PyList_New(2);
+  PyList_SET_ITEM(pylist, 0, pyclient);
+  PyList_SET_ITEM(pylist, 1, PyLong_FromUnsignedLongLong((uint64_t)&client->impl));
 
   return pylist;
 }
@@ -1224,8 +1299,6 @@ rclpy_create_service(PyObject * Py_UNUSED(self), PyObject * args)
 
   rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, NULL);
 
-  rmw_qos_profile_t * qos_profile = (rmw_qos_profile_t *)PyCapsule_GetPointer(pyqos_profile, NULL);
-
   PyObject * pymetaclass = PyObject_GetAttrString(pysrv_type, "__class__");
 
   PyObject * pyts = PyObject_GetAttrString(pymetaclass, "_TYPE_SUPPORT");
@@ -1238,8 +1311,15 @@ rclpy_create_service(PyObject * Py_UNUSED(self), PyObject * args)
   *service = rcl_get_zero_initialized_service();
   rcl_service_options_t service_ops = rcl_service_get_default_options();
 
-  if (qos_profile) {
+  void * p = PyCapsule_GetPointer(pyqos_profile, NULL);
+  if (Py_None != p) {
+    rmw_qos_profile_t * qos_profile = (rmw_qos_profile_t *)p;
     service_ops.qos = *qos_profile;
+    PyMem_Free(p);
+    if (PyCapsule_SetPointer(pyqos_profile, Py_None)) {
+      // exception set by PyCapsule_SetPointer
+      return NULL;
+    }
   }
 
   rcl_ret_t ret = rcl_service_init(service, node, ts, service_name, &service_ops);
@@ -1257,9 +1337,9 @@ rclpy_create_service(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
   PyObject * pyservice = PyCapsule_New(service, NULL, NULL);
-  PyObject * pylist = PyList_New(0);
-  PyList_Append(pylist, pyservice);
-  PyList_Append(pylist, PyLong_FromUnsignedLongLong((uint64_t)&service->impl));
+  PyObject * pylist = PyList_New(2);
+  PyList_SET_ITEM(pylist, 0, pyservice);
+  PyList_SET_ITEM(pylist, 1, PyLong_FromUnsignedLongLong((uint64_t)&service->impl));
 
   return pylist;
 }
@@ -1356,19 +1436,31 @@ rclpy_destroy_node_entity(PyObject * Py_UNUSED(self), PyObject * args)
     Py_RETURN_FALSE;
   }
 
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, NULL);
+  void * p = PyCapsule_GetPointer(pynode, NULL);
+  if (Py_None == p) {
+    PyErr_Format(PyExc_RuntimeError, "node is None");
+    return NULL;
+  }
+  rcl_node_t * node = (rcl_node_t *)p;
+
+  p = PyCapsule_GetPointer(pyentity, NULL);
+  if (Py_None == p) {
+    PyErr_Format(PyExc_RuntimeError, "entity is None");
+    return NULL;
+  }
+
   rcl_ret_t ret;
   if (0 == strcmp(entity_type, "subscription")) {
-    rcl_subscription_t * subscription = (rcl_subscription_t *)PyCapsule_GetPointer(pyentity, NULL);
+    rcl_subscription_t * subscription = (rcl_subscription_t *)p;
     ret = rcl_subscription_fini(subscription, node);
   } else if (0 == strcmp(entity_type, "publisher")) {
-    rcl_publisher_t * publisher = (rcl_publisher_t *)PyCapsule_GetPointer(pyentity, NULL);
+    rcl_publisher_t * publisher = (rcl_publisher_t *)p;
     ret = rcl_publisher_fini(publisher, node);
   } else if (0 == strcmp(entity_type, "client")) {
-    rcl_client_t * client = (rcl_client_t *)PyCapsule_GetPointer(pyentity, NULL);
+    rcl_client_t * client = (rcl_client_t *)p;
     ret = rcl_client_fini(client, node);
   } else if (0 == strcmp(entity_type, "service")) {
-    rcl_service_t * service = (rcl_service_t *)PyCapsule_GetPointer(pyentity, NULL);
+    rcl_service_t * service = (rcl_service_t *)p;
     ret = rcl_service_fini(service, node);
   } else {
     ret = RCL_RET_ERROR;  // to avoid a linter warning
@@ -1382,6 +1474,14 @@ rclpy_destroy_node_entity(PyObject * Py_UNUSED(self), PyObject * args)
     rcl_reset_error();
     return NULL;
   }
+
+  PyMem_Free(p);
+
+  if (PyCapsule_SetPointer(pyentity, Py_None)) {
+    // exception set by PyCapsule_SetPointer
+    return NULL;
+  }
+
   Py_RETURN_TRUE;
 }
 
@@ -1401,13 +1501,22 @@ rclpy_destroy_entity(PyObject * Py_UNUSED(self), PyObject * args)
     Py_RETURN_FALSE;
   }
 
+  void * p = PyCapsule_GetPointer(pyentity, NULL);
+  if (Py_None == p) {
+    PyErr_Format(PyExc_RuntimeError, "entity is None");
+    return NULL;
+  }
+
   rcl_ret_t ret;
   if (0 == strcmp(entity_type, "node")) {
-    rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pyentity, NULL);
+    rcl_node_t * node = (rcl_node_t *)p;
     ret = rcl_node_fini(node);
   } else if (0 == strcmp(entity_type, "timer")) {
-    rcl_timer_t * timer = (rcl_timer_t *)PyCapsule_GetPointer(pyentity, NULL);
+    rcl_timer_t * timer = (rcl_timer_t *)p;
     ret = rcl_timer_fini(timer);
+  } else if (0 == strcmp(entity_type, "guard_condition")) {
+    rcl_guard_condition_t * guard_condition = (rcl_guard_condition_t *)p;
+    ret = rcl_guard_condition_fini(guard_condition);
   } else {
     ret = RCL_RET_ERROR;  // to avoid a linter warning
     PyErr_Format(PyExc_RuntimeError,
@@ -1420,6 +1529,14 @@ rclpy_destroy_entity(PyObject * Py_UNUSED(self), PyObject * args)
     rcl_reset_error();
     Py_RETURN_FALSE;
   }
+
+  PyMem_Free(p);
+
+  if (PyCapsule_SetPointer(pyentity, Py_None)) {
+    // exception set by PyCapsule_SetPointer
+    return NULL;
+  }
+
   Py_RETURN_TRUE;
 }
 
@@ -1588,6 +1705,44 @@ rclpy_wait_set_add_entity(PyObject * Py_UNUSED(self), PyObject * args)
   Py_RETURN_NONE;
 }
 
+/// Destroy the waitset structure
+/**
+ * \param[in] pywait_set Capsule pointing to the waitset structure
+ * \return NULL
+ */
+static PyObject *
+rclpy_destroy_wait_set(PyObject * Py_UNUSED(self), PyObject * args)
+{
+  PyObject * pywait_set;
+
+  if (!PyArg_ParseTuple(args, "O", &pywait_set)) {
+    return NULL;
+  }
+  void * p = PyCapsule_GetPointer(pywait_set, NULL);
+  if (Py_None == p) {
+    PyErr_Format(PyExc_RuntimeError, "wait set is None");
+    return NULL;
+  }
+  rcl_wait_set_t * wait_set = (rcl_wait_set_t *)p;
+
+  rcl_ret_t ret = rcl_wait_set_fini(wait_set);
+  if (ret != RCL_RET_OK) {
+    PyErr_Format(PyExc_RuntimeError,
+      "Failed to fini wait set: %s", rcl_get_error_string_safe());
+    rcl_reset_error();
+    return NULL;
+  }
+
+  PyMem_Free(wait_set);
+
+  if (PyCapsule_SetPointer(pywait_set, Py_None)) {
+    // exception set by PyCapsule_SetPointer
+    return NULL;
+  }
+
+  Py_RETURN_NONE;
+}
+
 #define GET_LIST_READY_ENTITIES(ENTITY_TYPE) \
   size_t idx; \
   size_t idx_max; \
@@ -1666,7 +1821,13 @@ rclpy_wait(PyObject * Py_UNUSED(self), PyObject * args)
 #endif  // _WIN32
   previous_handler = signal(SIGINT, catch_function);
   rcl_wait_set_t * wait_set = (rcl_wait_set_t *)PyCapsule_GetPointer(pywait_set, NULL);
-  rcl_ret_t ret = rcl_wait(wait_set, timeout);
+  rcl_ret_t ret;
+
+  // Could be a long wait, release the GIL
+  Py_BEGIN_ALLOW_THREADS;
+  ret = rcl_wait(wait_set, timeout);
+  Py_END_ALLOW_THREADS;
+
   signal(SIGINT, previous_handler);
   if (ret != RCL_RET_OK && ret != RCL_RET_TIMEOUT) {
     PyErr_Format(PyExc_RuntimeError,
@@ -1748,8 +1909,6 @@ rclpy_take(PyObject * Py_UNUSED(self), PyObject * args)
       // the function has set the Python error
       return NULL;
     }
-
-    Py_INCREF(pytaken_msg);
 
     return pytaken_msg;
   }
@@ -1833,11 +1992,9 @@ rclpy_take_request(PyObject * Py_UNUSED(self), PyObject * args)
       return NULL;
     }
 
-    Py_INCREF(pytaken_request);
-
-    PyObject * pylist = PyList_New(0);
-    PyList_Append(pylist, pytaken_request);
-    PyList_Append(pylist, PyCapsule_New(header, NULL, NULL));
+    PyObject * pylist = PyList_New(2);
+    PyList_SET_ITEM(pylist, 0, pytaken_request);
+    PyList_SET_ITEM(pylist, 1, PyCapsule_New(header, NULL, NULL));
 
     return pylist;
   }
@@ -1912,8 +2069,6 @@ rclpy_take_response(PyObject * Py_UNUSED(self), PyObject * args)
       // the function has set the Python error
       return NULL;
     }
-
-    Py_INCREF(pytaken_response);
 
     return pytaken_response;
   }
@@ -2139,7 +2294,7 @@ rclpy_convert_from_py_qos_policy(PyObject * Py_UNUSED(self), PyObject * args)
   unsigned PY_LONG_LONG pyqos_depth;
   unsigned PY_LONG_LONG pyqos_reliability;
   unsigned PY_LONG_LONG pyqos_durability;
-  bool avoid_ros_namespace_conventions;
+  int avoid_ros_namespace_conventions;
 
   if (!PyArg_ParseTuple(
       args, "KKKKp",
@@ -2266,11 +2421,15 @@ static PyMethodDef rclpy_methods[] = {
 
   {"rclpy_get_sigint_guard_condition", rclpy_get_sigint_guard_condition, METH_NOARGS,
    "Create a guard_condition triggered when sigint is received."},
+  {"rclpy_create_guard_condition", rclpy_create_guard_condition, METH_VARARGS,
+   "Create a general purpose guard_condition."},
+  {"rclpy_trigger_guard_condition", rclpy_trigger_guard_condition, METH_VARARGS,
+   "Trigger a general purpose guard_condition."},
 
   {"rclpy_destroy_node_entity", rclpy_destroy_node_entity, METH_VARARGS,
    "Destroy a Node entity."},
   {"rclpy_destroy_entity", rclpy_destroy_entity, METH_VARARGS,
-   "Destroy a Node."},
+   "Destroy an rclpy entity."},
 
   {"rclpy_publish", rclpy_publish, METH_VARARGS,
    "Publish a message."},
@@ -2290,6 +2449,9 @@ static PyMethodDef rclpy_methods[] = {
 
   {"rclpy_wait_set_add_entity", rclpy_wait_set_add_entity, METH_VARARGS,
    "rclpy_wait_set_add_entity."},
+
+  {"rclpy_destroy_wait_set", rclpy_destroy_wait_set, METH_VARARGS,
+   "rclpy_destroy_wait_set."},
 
   {"rclpy_get_ready_entities", rclpy_get_ready_entities, METH_VARARGS,
    "List non null subscriptions in waitset."},

@@ -19,6 +19,7 @@ import rclpy.utilities
 
 
 class ResponseThread(threading.Thread):
+
     def __init__(self, client):
         threading.Thread.__init__(self)
         self.client = client
@@ -36,6 +37,9 @@ class ResponseThread(threading.Thread):
 
         guard_condition_ready_list = \
             _rclpy.rclpy_get_ready_entities('guard_condition', self.wait_set)
+
+        # destroying here to make sure we dont call shutdown before cleaning up
+        _rclpy.rclpy_destroy_entity('guard_condition', sigint_gc)
         if sigint_gc_handle in guard_condition_ready_list:
             rclpy.utilities.shutdown()
             return
@@ -50,7 +54,7 @@ class ResponseThread(threading.Thread):
 class Client:
     def __init__(
             self, node_handle, client_handle, client_pointer,
-            srv_type, srv_name, qos_profile):
+            srv_type, srv_name, qos_profile, callback_group):
         self.node_handle = node_handle
         self.client_handle = client_handle
         self.client_pointer = client_pointer
@@ -59,6 +63,9 @@ class Client:
         self.qos_profile = qos_profile
         self.sequence_number = 0
         self.response = None
+        self.callback_group = callback_group
+        # True when the callback is ready to fire but has not been "taken" by an executor
+        self._executor_event = False
 
     def call(self, req):
         self.response = None
