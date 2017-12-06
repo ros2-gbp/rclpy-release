@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import threading
+import time
 
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 import rclpy.utilities
@@ -39,7 +40,7 @@ class ResponseThread(threading.Thread):
             _rclpy.rclpy_get_ready_entities('guard_condition', self.wait_set)
 
         # destroying here to make sure we dont call shutdown before cleaning up
-        _rclpy.rclpy_destroy_entity('guard_condition', sigint_gc)
+        _rclpy.rclpy_destroy_entity(sigint_gc)
         if sigint_gc_handle in guard_condition_ready_list:
             rclpy.utilities.shutdown()
             return
@@ -70,6 +71,21 @@ class Client:
     def call(self, req):
         self.response = None
         self.sequence_number = _rclpy.rclpy_send_request(self.client_handle, req)
+
+    def service_is_ready(self):
+        return _rclpy.rclpy_service_server_is_available(self.node_handle, self.client_handle)
+
+    def wait_for_service(self, timeout_sec=None):
+        # TODO(sloretz) Return as soon as the service is available
+        # This is a temporary implementation. The sleep time is arbitrary.
+        sleep_time = 0.25
+        if timeout_sec is None:
+            timeout_sec = float('inf')
+        while rclpy.utilities.ok() and not self.service_is_ready() and timeout_sec > 0.0:
+            time.sleep(sleep_time)
+            timeout_sec -= sleep_time
+
+        return self.service_is_ready()
 
     # TODO(mikaelarguedas) this function can only be used if nobody is spinning
     # need to be updated once guard_conditions are supported

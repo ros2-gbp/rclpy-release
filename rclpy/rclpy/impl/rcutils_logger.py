@@ -15,12 +15,11 @@
 
 from collections import namedtuple
 from collections import OrderedDict
-import importlib
 import inspect
 import os
 import time
 
-_rclpy_logging = importlib.import_module('._rclpy_logging', package='rclpy')
+from rclpy.impl.implementation_singleton import rclpy_logging_implementation as _rclpy_logging
 
 # Known filenames from which logging methods can be called (will be ignored in `_find_caller`).
 _internal_callers = []
@@ -221,23 +220,42 @@ class RcutilsLogger:
         self.name = name
         self.contexts = {}
 
-    def get_severity_threshold(self):
-        from rclpy.logging import LoggingSeverity
-        severity = LoggingSeverity(_rclpy_logging.rclpy_logging_get_severity_threshold())
-        return severity
+    def get_child(self, name):
+        if not name:
+            raise ValueError('Child logger name must not be empty.')
+        if self.name:
+            # Prepend the name of this logger
+            name = self.name + '.' + name
+        return RcutilsLogger(name=name)
 
-    def set_severity_threshold(self, severity):
+    def set_level(self, level):
+        from rclpy.logging import LoggingSeverity
+        level = LoggingSeverity(level)
+        return _rclpy_logging.rclpy_logging_set_logger_level(self.name, level)
+
+    def get_effective_level(self):
+        from rclpy.logging import LoggingSeverity
+        level = LoggingSeverity(
+            _rclpy_logging.rclpy_logging_get_logger_effective_level(self.name))
+        return level
+
+    def is_enabled_for(self, severity):
         from rclpy.logging import LoggingSeverity
         severity = LoggingSeverity(severity)
-        return _rclpy_logging.rclpy_logging_set_severity_threshold(severity)
+        return _rclpy_logging.rclpy_logging_logger_is_enabled_for(self.name, severity)
 
     def log(self, message, severity, **kwargs):
         r"""
         Log a message with the specified severity.
 
-        The message will only be logged if its severity is not less than the severity threshold
-        of the logger, and no logging filter causes the message to be skipped.
+        The message will not be logged if:
+          * the logger is not enabled for the message's severity (the message severity is less than
+            the level of the logger), or
+          * a logging filter causes the message to be skipped.
 
+        .. note::
+           Logging filters will only be evaluated if the logger is enabled for the message's
+           severity.
 
         :param message str: message to log.
         :param severity: severity of the message.
@@ -292,16 +310,16 @@ class RcutilsLogger:
                     raise ValueError(
                         'Logging filter parameters cannot be changed between calls.')
 
-        # Determine if it's appropriate to process the message (any filter can vote no)
+        # Only check filters if the severity is appropriate.
+        if not self.is_enabled_for(severity):
+            return False
+
+        # Check if any filter determines the message shouldn't be processed.
         # Note(dhood): even if a message doesn't get logged, a filter might still update its state
         # as if it had been. This matches the behavior of the C logging macros provided by rcutils.
         for logging_filter in context['filters']:
             if not supported_filters[logging_filter].should_log(context):
                 return False
-
-        # Only log the message if the severity is appropriate.
-        if severity < self.get_severity_threshold():
-            return False
 
         # Call the relevant function from the C extension.
         _rclpy_logging.rclpy_logging_rcutils_log(

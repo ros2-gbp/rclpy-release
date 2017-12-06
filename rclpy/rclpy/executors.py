@@ -17,10 +17,10 @@ import multiprocessing
 from threading import Condition as _Condition
 from threading import Lock as _Lock
 
-from rclpy.constants import S_TO_NS
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.timer import WallTimer as _WallTimer
 from rclpy.utilities import ok
+from rclpy.utilities import timeout_sec_to_nsec
 
 
 class _WaitSet:
@@ -57,17 +57,24 @@ class _WorkTracker:
         """
         Wait until all work completes.
 
-        :param timeout_sec: Seconds to wait. Block forever if None. Don't wait if <= 0
+        :param timeout_sec: Seconds to wait. Block forever if None or negative. Don't wait if 0
         :type timeout_sec: float or None
         :rtype: bool True if all work completed
         """
+        if timeout_sec is not None and timeout_sec < 0:
+            timeout_sec = None
         # Wait for all work to complete
-        if timeout_sec is None or timeout_sec >= 0:
-            with self._work_condition:
-                if not self._work_condition.wait_for(
-                        lambda: self._num_work_executing == 0, timeout_sec):
-                    return False
+        with self._work_condition:
+            if not self._work_condition.wait_for(
+                    lambda: self._num_work_executing == 0, timeout_sec):
+                return False
         return True
+
+
+class TimeoutException(Exception):
+    """Signal that a timeout occurred."""
+
+    pass
 
 
 class Executor:
@@ -93,6 +100,10 @@ class Executor:
         # True if shutdown has been called
         self._is_shutdown = False
         self._work_tracker = _WorkTracker()
+        # State for wait_for_ready_callbacks to reuse generator
+        self._cb_iter = None
+        self._last_args = None
+        self._last_kwargs = None
 
     def shutdown(self, timeout_sec=None):
         """
@@ -100,7 +111,7 @@ class Executor:
 
         Return true if all outstanding callbacks finished executing.
 
-        :param timeout_sec: Seconds to wait. Block forever if None. Don't wait if <= 0
+        :param timeout_sec: Seconds to wait. Block forever if None or negative. Don't wait if 0
         :type timeout_sec: float or None
         :rtype: bool
         """
@@ -110,14 +121,17 @@ class Executor:
         # Clean up stuff that won't be used anymore
         with self._nodes_lock:
             self._nodes = set()
-        _rclpy.rclpy_destroy_entity('guard_condition', self._guard_condition)
+        _rclpy.rclpy_destroy_entity(self._guard_condition)
 
         self._guard_condition = None
+        self._cb_iter = None
+        self._last_args = None
+        self._last_kwargs = None
         return True
 
     def __del__(self):
         if self._guard_condition is not None:
-            _rclpy.rclpy_destroy_entity('guard_condition', self._guard_condition)
+            _rclpy.rclpy_destroy_entity(self._guard_condition)
 
     def add_node(self, node):
         """
@@ -139,7 +153,7 @@ class Executor:
         :rtype: list
         """
         with self._nodes_lock:
-            return [node for node in self._nodes]
+            return list(self._nodes)
 
     def spin(self):
         """Execute callbacks until shutdown."""
@@ -152,7 +166,7 @@ class Executor:
 
         A custom executor should use :func:`Executor.wait_for_ready_callbacks` to get work.
 
-        :param timeout_sec: Seconds to wait. Block forever if None. Don't wait if <= 0
+        :param timeout_sec: Seconds to wait. Block forever if None or negative. Don't wait if 0
         :type timeout_sec: float or None
         :rtype: None
         """
@@ -197,6 +211,12 @@ class Executor:
             response = srv.callback(request, srv.srv_type.Response())
             srv.send_response(response, header)
 
+    def _take_guard_condition(self, gc):
+        gc._executor_triggered = False
+
+    def _execute_guard_condition(self, gc, _):
+        gc.callback()
+
     def _make_handler(self, entity, take_from_wait_list, call_callback):
         """
         Make a handler that performs work on an entity.
@@ -240,35 +260,31 @@ class Executor:
                     _rclpy.rclpy_trigger_guard_condition(gc)
         return handler
 
-    def _filter_eligible_entities(self, entities):
+    def can_execute(self, entity):
         """
-        Filter entities that should not be put onto the wait list.
+        Determine if a callback for an entity can be executed.
 
-        :param entity_list: Entities to be checked for eligibility
-        :type entity_list: list
-        :rtype: list
+        :param entity: Subscription, Timer, Guard condition, etc
+        :returns: True if the entity callback can be executed
+        :rtype: bool
         """
-        return [e for e in entities if e.callback_group.can_execute(e) and not e._executor_event]
+        return not entity._executor_event and entity.callback_group.can_execute(entity)
 
-    def wait_for_ready_callbacks(self, timeout_sec=None, nodes=None):
+    def _wait_for_ready_callbacks(self, timeout_sec=None, nodes=None):
         """
         Yield callbacks that are ready to be performed.
 
-        :param timeout_sec: Seconds to wait. Block forever if None. Don't wait if <= 0
+        Raises :class:`TimeoutException` on timeout.
+
+        :param timeout_sec: Seconds to wait. Block forever if None or negative. Don't wait if 0
         :type timeout_sec: float or None
         :param nodes: A list of nodes to wait on. Wait on all nodes if None.
         :type nodes: list or None
         :rtype: Generator[(callable, entity, :class:`rclpy.node.Node`)]
         """
         timeout_timer = None
-        # Get timeout in nanoseconds. 0 = don't wait. < 0 means block forever
-        timeout_nsec = None
-        if timeout_sec is None:
-            timeout_nsec = -1
-        elif timeout_sec <= 0:
-            timeout_nsec = 0
-        else:
-            timeout_nsec = int(float(timeout_sec) * S_TO_NS)
+        timeout_nsec = timeout_sec_to_nsec(timeout_sec)
+        if timeout_nsec > 0:
             timeout_timer = _WallTimer(None, None, timeout_nsec)
 
         if nodes is None:
@@ -278,15 +294,21 @@ class Executor:
         while not yielded_work and not self._is_shutdown:
             # Gather entities that can be waited on
             subscriptions = []
-            num_guard_conditions = 2
+            guards = []
             timers = []
             clients = []
             services = []
             for node in nodes:
-                subscriptions.extend(self._filter_eligible_entities(node.subscriptions))
-                timers.extend(self._filter_eligible_entities(node.timers))
-                clients.extend(self._filter_eligible_entities(node.clients))
-                services.extend(self._filter_eligible_entities(node.services))
+                subscriptions.extend(filter(self.can_execute, node.subscriptions))
+                timers.extend(filter(self.can_execute, node.timers))
+                clients.extend(filter(self.can_execute, node.clients))
+                services.extend(filter(self.can_execute, node.services))
+                node_guards = filter(self.can_execute, node.guards)
+                # retrigger a guard condition that was triggered but not handled
+                for gc in node_guards:
+                    if gc._executor_triggered:
+                        gc.trigger()
+                    guards.append(gc)
             (sigint_gc, sigint_gc_handle) = _rclpy.rclpy_get_sigint_guard_condition()
             if timeout_timer is not None:
                 timers.append(timeout_timer)
@@ -296,13 +318,14 @@ class Executor:
                 _rclpy.rclpy_wait_set_init(
                     wait_set,
                     len(subscriptions),
-                    num_guard_conditions,
+                    len(guards) + 2,
                     len(timers),
                     len(clients),
                     len(services))
 
                 entities = {
                     'subscription': (subscriptions, 'subscription_handle'),
+                    'guard_condition': (guards, 'guard_handle'),
                     'client': (clients, 'client_handle'),
                     'service': (services, 'service_handle'),
                     'timer': (timers, 'timer_handle'),
@@ -313,7 +336,6 @@ class Executor:
                         _rclpy.rclpy_wait_set_add_entity(
                             entity, wait_set, h.__getattribute__(handle_name)
                         )
-                _rclpy.rclpy_wait_set_clear_entities('guard_condition', wait_set)
                 _rclpy.rclpy_wait_set_add_entity('guard_condition', wait_set, sigint_gc)
                 _rclpy.rclpy_wait_set_add_entity(
                     'guard_condition', wait_set, self._guard_condition)
@@ -331,58 +353,97 @@ class Executor:
             # Check sigint guard condition
             if sigint_gc_handle in guards_ready:
                 raise KeyboardInterrupt
-            _rclpy.rclpy_destroy_entity('guard_condition', sigint_gc)
+            _rclpy.rclpy_destroy_entity(sigint_gc)
+
+            # Mark all guards as triggered before yielding any handlers since they're auto-taken
+            for gc in guards:
+                if gc.guard_pointer in guards_ready:
+                    gc._executor_triggered = True
 
             # Process ready entities one node at a time
             for node in nodes:
-                for tmr in [t for t in node.timers if t.timer_pointer in timers_ready]:
-                    # Check that a timer is ready to workaround rcl issue with cancelled timers
-                    if _rclpy.rclpy_is_timer_ready(tmr.timer_handle):
-                        if tmr.callback_group.can_execute(tmr):
+                for tmr in node.timers:
+                    if tmr.timer_pointer in timers_ready:
+                        # Check that a timer is ready to workaround rcl issue with cancelled timers
+                        if _rclpy.rclpy_is_timer_ready(tmr.timer_handle):
+                            if tmr.callback_group.can_execute(tmr):
+                                handler = self._make_handler(
+                                    tmr, self._take_timer, self._execute_timer)
+                                yielded_work = True
+                                yield handler, tmr, node
+
+                for sub in node.subscriptions:
+                    if sub.subscription_pointer in subs_ready:
+                        if sub.callback_group.can_execute(sub):
                             handler = self._make_handler(
-                                tmr, self._take_timer, self._execute_timer)
+                                sub, self._take_subscription, self._execute_subscription)
                             yielded_work = True
-                            yield handler, tmr, node
+                            yield handler, sub, node
 
-                for sub in [s for s in node.subscriptions if s.subscription_pointer in subs_ready]:
-                    if sub.callback_group.can_execute(sub):
-                        handler = self._make_handler(
-                            sub, self._take_subscription, self._execute_subscription)
-                        yielded_work = True
-                        yield handler, sub, node
+                for gc in node.guards:
+                    if gc._executor_triggered:
+                        if gc.callback_group.can_execute(gc):
+                            handler = self._make_handler(
+                                gc, self._take_guard_condition, self._execute_guard_condition)
+                            yielded_work = True
+                            yield handler, gc, node
 
-                for client in [c for c in node.clients if c.client_pointer in clients_ready]:
-                    if client.callback_group.can_execute(client):
-                        handler = self._make_handler(
-                            client, self._take_client, self._execute_client)
-                        yielded_work = True
-                        yield handler, client, node
+                for client in node.clients:
+                    if client.client_pointer in clients_ready:
+                        if client.callback_group.can_execute(client):
+                            handler = self._make_handler(
+                                client, self._take_client, self._execute_client)
+                            yielded_work = True
+                            yield handler, client, node
 
-                for srv in [s for s in node.services if s.service_pointer in services_ready]:
-                    if srv.callback_group.can_execute(srv):
-                        handler = self._make_handler(
-                            srv, self._take_service, self._execute_service)
-                        yielded_work = True
-                        yield handler, srv, node
+                for srv in node.services:
+                    if srv.service_pointer in services_ready:
+                        if srv.callback_group.can_execute(srv):
+                            handler = self._make_handler(
+                                srv, self._take_service, self._execute_service)
+                            yielded_work = True
+                            yield handler, srv, node
 
             # Check timeout timer
-            if (timeout_nsec == 0 or
-                    (timeout_timer is not None and timeout_timer.timer_pointer in timers_ready)):
-                break
+            if (
+                timeout_nsec == 0 or
+                (timeout_timer is not None and timeout_timer.timer_pointer in timers_ready)
+            ):
+                raise TimeoutException()
+
+    def wait_for_ready_callbacks(self, *args, **kwargs):
+        """
+        Reuse generator and return callbacks that are ready to be performed.
+
+        See :func:`Executor._wait_for_ready_callbacks` for documentation
+        """
+        # if an old generator is done, this variable makes the loop get a new one before returning
+        got_generator = False
+        while not got_generator:
+            if self._cb_iter is None or self._last_args != args or self._last_kwargs != kwargs:
+                # Create a new generator
+                self._last_args = args
+                self._last_kwargs = kwargs
+                self._cb_iter = self._wait_for_ready_callbacks(*args, **kwargs)
+                got_generator = True
+
+            try:
+                return next(self._cb_iter)
+            except StopIteration:
+                # Generator ran out of work
+                self._cb_iter = None
 
 
 class SingleThreadedExecutor(Executor):
     """Runs callbacks in the thread which calls :func:`SingleThreadedExecutor.spin`."""
 
-    def __init__(self):
-        super().__init__()
-
     def spin_once(self, timeout_sec=None):
         try:
-            handler, entity, node = next(self.wait_for_ready_callbacks(timeout_sec=timeout_sec))
-            handler()
-        except StopIteration:
+            handler, entity, node = self.wait_for_ready_callbacks(timeout_sec=timeout_sec)
+        except TimeoutException:
             pass
+        else:
+            handler()
 
 
 class MultiThreadedExecutor(Executor):
@@ -407,7 +468,8 @@ class MultiThreadedExecutor(Executor):
 
     def spin_once(self, timeout_sec=None):
         try:
-            handler, entity, node = next(self.wait_for_ready_callbacks(timeout_sec=timeout_sec))
-            self._executor.submit(handler)
-        except StopIteration:
+            handler, entity, node = self.wait_for_ready_callbacks(timeout_sec=timeout_sec)
+        except TimeoutException:
             pass
+        else:
+            self._executor.submit(handler)

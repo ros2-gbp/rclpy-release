@@ -14,27 +14,56 @@
 
 import threading
 
-from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
+from rclpy.constants import S_TO_NS
+
 
 g_shutdown_lock = threading.Lock()
 
 
 def ok():
+    # imported locally to avoid loading extensions on module import
+    from rclpy.impl.implementation_singleton import rclpy_implementation
     with g_shutdown_lock:
-        return _rclpy.rclpy_ok()
+        return rclpy_implementation.rclpy_ok()
 
 
 def shutdown():
+    # imported locally to avoid loading extensions on module import
+    from rclpy.impl.implementation_singleton import rclpy_implementation
     with g_shutdown_lock:
-        return _rclpy.rclpy_shutdown()
+        return rclpy_implementation.rclpy_shutdown()
 
 
 def try_shutdown():
     """Shutdown rclpy if not already shutdown."""
+    # imported locally to avoid loading extensions on module import
+    from rclpy.impl.implementation_singleton import rclpy_implementation
     with g_shutdown_lock:
-        if _rclpy.rclpy_ok():
-            return _rclpy.rclpy_shutdown()
+        if rclpy_implementation.rclpy_ok():
+            return rclpy_implementation.rclpy_shutdown()
 
 
 def get_rmw_implementation_identifier():
-    return _rclpy.rclpy_get_rmw_implementation_identifier()
+    # imported locally to avoid loading extensions on module import
+    from rclpy.impl.implementation_singleton import rclpy_implementation
+    return rclpy_implementation.rclpy_get_rmw_implementation_identifier()
+
+
+def timeout_sec_to_nsec(timeout_sec):
+    """
+    Convert timeout in seconds to rcl compatible timeout in nanoseconds.
+
+    Python tends to use floating point numbers in seconds for timeouts. This utility converts a
+    python-style timeout to an integer in nanoseconds that can be used by rcl_wait.
+
+    :param timeout_sec: Seconds to wait. Block forever if None or negative. Don't wait if < 1ns
+    :type timeout_sec: float or None
+    :rtype: int
+    :returns: rcl_wait compatible timeout in nanoseconds
+    """
+    if timeout_sec is None or timeout_sec < 0:
+        # Block forever
+        return -1
+    else:
+        # wait for given time
+        return int(float(timeout_sec) * S_TO_NS)

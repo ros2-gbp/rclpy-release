@@ -18,7 +18,9 @@ from rclpy.constants import S_TO_NS
 from rclpy.exceptions import NotInitializedException
 from rclpy.exceptions import NoTypeSupportImportedException
 from rclpy.expand_topic_name import expand_topic_name
+from rclpy.guard_condition import GuardCondition
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
+from rclpy.logging import get_logger
 from rclpy.publisher import Publisher
 from rclpy.qos import qos_profile_default, qos_profile_services_default
 from rclpy.service import Service
@@ -50,20 +52,22 @@ def check_for_type_support(msg_type):
 class Node:
 
     def __init__(self, node_name, *, namespace=None):
-        self.clients = []
         self._handle = None
+        # TODO(dhood): get logger name from rcl, use namespace (with slashes converted)
+        self._logger = get_logger(node_name)
         self.publishers = []
-        self.services = []
         self.subscriptions = []
+        self.clients = []
+        self.services = []
         self.timers = []
+        self.guards = []
         self._default_callback_group = MutuallyExclusiveCallbackGroup()
 
         namespace = namespace or ''
         if not ok():
             raise NotInitializedException('cannot create node')
         try:
-            node_handle = _rclpy.rclpy_create_node(node_name, namespace)
-            self._handle = node_handle
+            self._handle = _rclpy.rclpy_create_node(node_name, namespace)
         except ValueError:
             # these will raise more specific errors if the name or namespace is bad
             validate_node_name(node_name)
@@ -89,6 +93,9 @@ class Node:
 
     def get_namespace(self):
         return _rclpy.rclpy_get_node_namespace(self.handle)
+
+    def get_logger(self):
+        return self._logger
 
     def _validate_topic_or_service_name(self, topic_or_service_name, *, is_service=False):
         name = self.get_name()
@@ -195,11 +202,19 @@ class Node:
         callback_group.add_entity(timer)
         return timer
 
+    def create_guard_condition(self, callback, callback_group=None):
+        if callback_group is None:
+            callback_group = self._default_callback_group
+        guard = GuardCondition(callback, callback_group)
+
+        self.guards.append(guard)
+        callback_group.add_entity(guard)
+        return guard
+
     def destroy_publisher(self, publisher):
         for pub in self.publishers:
             if pub.publisher_handle == publisher.publisher_handle:
-                _rclpy.rclpy_destroy_node_entity(
-                    'publisher', pub.publisher_handle, self.handle)
+                _rclpy.rclpy_destroy_node_entity(pub.publisher_handle, self.handle)
                 self.publishers.remove(pub)
                 return True
         return False
@@ -207,36 +222,40 @@ class Node:
     def destroy_subscription(self, subscription):
         for sub in self.subscriptions:
             if sub.subscription_handle == subscription.subscription_handle:
-                _rclpy.rclpy_destroy_node_entity(
-                    'subscription', sub.subscription_handle, self.handle)
+                _rclpy.rclpy_destroy_node_entity(sub.subscription_handle, self.handle)
                 self.subscriptions.remove(sub)
-                return True
-        return False
-
-    def destroy_service(self, service):
-        for srv in self.services:
-            if srv.service_handle == service.service_handle:
-                _rclpy.rclpy_destroy_node_entity(
-                    'service', srv.service_handle, self.handle)
-                self.services.remove(srv)
                 return True
         return False
 
     def destroy_client(self, client):
         for cli in self.clients:
             if cli.client_handle == client.client_handle:
-                _rclpy.rclpy_destroy_node_entity(
-                    'client', cli.client_handle, self.handle)
+                _rclpy.rclpy_destroy_node_entity(cli.client_handle, self.handle)
                 self.clients.remove(cli)
+                return True
+        return False
+
+    def destroy_service(self, service):
+        for srv in self.services:
+            if srv.service_handle == service.service_handle:
+                _rclpy.rclpy_destroy_node_entity(srv.service_handle, self.handle)
+                self.services.remove(srv)
                 return True
         return False
 
     def destroy_timer(self, timer):
         for tmr in self.timers:
             if tmr.timer_handle == timer.timer_handle:
-                _rclpy.rclpy_destroy_entity(
-                    'timer', tmr.timer_handle)
+                _rclpy.rclpy_destroy_entity(tmr.timer_handle)
                 self.timers.remove(tmr)
+                return True
+        return False
+
+    def destroy_guard_condition(self, guard):
+        for gc in self.guards:
+            if gc.guard_handle == guard.guard_handle:
+                _rclpy.rclpy_destroy_entity(gc.guard_handle)
+                self.guards.remove(gc)
                 return True
         return False
 
@@ -245,44 +264,27 @@ class Node:
         if self.handle is None:
             return ret
 
-        # ensure that the passed node contains a valid capsule
-        class_ = self.handle.__class__
-        if not class_ or class_.__name__ != 'PyCapsule':
-            raise ValueError('The node handle must be a PyCapsule')
+        while self.publishers:
+            pub = self.publishers.pop()
+            _rclpy.rclpy_destroy_node_entity(pub.publisher_handle, self.handle)
+        while self.subscriptions:
+            sub = self.subscriptions.pop()
+            _rclpy.rclpy_destroy_node_entity(sub.subscription_handle, self.handle)
+        while self.clients:
+            cli = self.clients.pop()
+            _rclpy.rclpy_destroy_node_entity(cli.client_handle, self.handle)
+        while self.services:
+            srv = self.services.pop()
+            _rclpy.rclpy_destroy_node_entity(srv.service_handle, self.handle)
+        while self.timers:
+            tmr = self.timers.pop()
+            _rclpy.rclpy_destroy_entity(tmr.timer_handle)
+        while self.guards:
+            gc = self.guards.pop()
+            _rclpy.rclpy_destroy_entity(gc.guard_handle)
 
-        for sub in list(self.subscriptions):
-            destroyed = _rclpy.rclpy_destroy_node_entity(
-                'subscription', sub.subscription_handle, self.handle)
-            if destroyed:
-                self.subscriptions.remove(sub)
-            ret &= destroyed
-        for pub in list(self.publishers):
-            destroyed = _rclpy.rclpy_destroy_node_entity(
-                'publisher', pub.publisher_handle, self.handle)
-            if destroyed:
-                self.publishers.remove(pub)
-            ret &= destroyed
-        for cli in list(self.clients):
-            destroyed = _rclpy.rclpy_destroy_node_entity(
-                'client', cli.client_handle, self.handle)
-            if destroyed:
-                self.clients.remove(cli)
-            ret &= destroyed
-        for srv in list(self.services):
-            destroyed = _rclpy.rclpy_destroy_node_entity(
-                'service', srv.service_handle, self.handle)
-            if destroyed:
-                self.services.remove(srv)
-            ret &= destroyed
-        for tmr in list(self.timers):
-            destroyed = _rclpy.rclpy_destroy_entity('timer', tmr.timer_handle)
-            if destroyed:
-                self.timers.remove(tmr)
-            ret &= destroyed
-        destroyed = _rclpy.rclpy_destroy_entity('node', self.handle)
-        if destroyed:
-            self._handle = None
-        ret &= destroyed
+        _rclpy.rclpy_destroy_entity(self.handle)
+        self._handle = None
         return ret
 
     def get_topic_names_and_types(self, no_demangle=False):

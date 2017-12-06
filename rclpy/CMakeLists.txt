@@ -2,6 +2,14 @@ cmake_minimum_required(VERSION 3.5)
 
 project(rclpy C)
 
+# Default to C11
+if(NOT CMAKE_C_STANDARD)
+  set(CMAKE_C_STANDARD 11)
+endif()
+if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra)
+endif()
+
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 find_package(rcl REQUIRED)
@@ -10,28 +18,24 @@ find_package(rmw REQUIRED)
 find_package(rmw_implementation_cmake REQUIRED)
 
 find_package(python_cmake_module REQUIRED)
-find_package(PythonExtra MODULE)
+find_package(PythonExtra MODULE REQUIRED)
 
 set(_PYTHON_EXECUTABLE "${PYTHON_EXECUTABLE}")
-if(NOT WIN32)
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra")
-elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
+
+if(WIN32 AND CMAKE_BUILD_TYPE STREQUAL "Debug")
   set(PYTHON_EXECUTABLE "${PYTHON_EXECUTABLE_DEBUG}")
 endif()
 
-# enables using the Python package from the source space
-# This creates a folder in ${CMAKE_CURRENT_BINARY_DIR}/rclpy which has all the
-# as well as the compiled modules from the build space
-# necessary Python code and C Python extensions for running tests.
-configure_file("__init__.py.in" "rclpy/__init__.py" @ONLY)
+# enables using the Python extensions from the build space for testing
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/test_rclpy/__init__.py" "")
 
 ament_python_install_package(${PROJECT_NAME})
 
 function(set_properties _targetname _build_type)
   set_target_properties(${_targetname} PROPERTIES
     PREFIX ""
-    LIBRARY_OUTPUT_DIRECTORY${_build_type} "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}"
-    RUNTIME_OUTPUT_DIRECTORY${_build_type} "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}"
+    LIBRARY_OUTPUT_DIRECTORY${_build_type} "${CMAKE_CURRENT_BINARY_DIR}/test_${PROJECT_NAME}"
+    RUNTIME_OUTPUT_DIRECTORY${_build_type} "${CMAKE_CURRENT_BINARY_DIR}/test_${PROJECT_NAME}"
     OUTPUT_NAME "_${_targetname}${PythonExtra_EXTENSION_SUFFIX}"
     SUFFIX "${PythonExtra_EXTENSION_EXTENSION}")
 endfunction()
@@ -90,6 +94,8 @@ if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
 
+  find_package(ament_cmake_pytest REQUIRED)
+
   rosidl_generator_py_get_typesupports(_typesupport_impls)
   ament_index_get_prefix_path(ament_index_build_path SKIP_AMENT_PREFIX_PATH)
   # Get the first item (it will be the build space version of the build path).
@@ -99,10 +105,10 @@ if(BUILD_TESTING)
     string(REPLACE "\\" "/" ament_index_build_path "${ament_index_build_path}")
   endif()
   if(NOT _typesupport_impls STREQUAL "")
-    ament_add_nose_test(rclpytests test
-      WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    ament_add_pytest_test(rclpytests test
       PYTHON_EXECUTABLE "${PYTHON_EXECUTABLE}"
       APPEND_ENV AMENT_PREFIX_PATH=${ament_index_build_path}
+        PYTHONPATH=${CMAKE_CURRENT_BINARY_DIR}
       TIMEOUT 90
     )
   endif()

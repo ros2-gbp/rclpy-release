@@ -15,6 +15,7 @@
 
 from enum import IntEnum
 
+from rclpy.impl.implementation_singleton import rclpy_logging_implementation as _rclpy_logging
 import rclpy.impl.rcutils_logger
 
 
@@ -25,55 +26,42 @@ class LoggingSeverity(IntEnum):
     This enum must match the one defined in rcutils/logging.h
     """
 
-    DEBUG = 0
-    INFO = 1
-    WARN = 2
-    ERROR = 3
-    FATAL = 4
+    UNSET = 0
+    DEBUG = 10
+    INFO = 20
+    WARN = 30
+    ERROR = 40
+    FATAL = 50
 
 
-def get_named_logger(name):
-    return rclpy.impl.rcutils_logger.RcutilsLogger(name)
+_root_logger = rclpy.impl.rcutils_logger.RcutilsLogger()
 
 
-root_logger = get_named_logger('')
+def get_logger(name):
+    if not name:
+        raise ValueError('Logger name must not be empty.')
+    return _root_logger.get_child(name)
 
 
-def get_severity_threshold():
-    return LoggingSeverity(root_logger.get_severity_threshold())
+def initialize():
+    return _rclpy_logging.rclpy_logging_initialize()
 
 
-def set_severity_threshold(severity):
-    severity = LoggingSeverity(severity)
-    return root_logger.set_severity_threshold(severity)
+def shutdown():
+    return _rclpy_logging.rclpy_logging_shutdown()
 
 
-def logdebug(message, **kwargs):
-    """Log a message with `DEBUG` severity via :py:classmethod:RcutilsLogger.log:."""
-    return root_logger.log(message, severity=LoggingSeverity.DEBUG, **kwargs)
+def clear_config():
+    """Clear the configuration of the logging system, e.g. logger levels."""
+    shutdown()
+    initialize()
 
 
-def loginfo(message, **kwargs):
-    """Log a message with `INFO` severity via :py:classmethod:RcutilsLogger.log:."""
-    return root_logger.log(message, severity=LoggingSeverity.INFO, **kwargs)
+def set_logger_level(name, level):
+    level = LoggingSeverity(level)
+    return _rclpy_logging.rclpy_logging_set_logger_level(name, level)
 
 
-def logwarn(message, **kwargs):
-    """Log a message with `WARN` severity via :py:classmethod:RcutilsLogger.log:."""
-    return root_logger.log(message, severity=LoggingSeverity.WARN, **kwargs)
-
-
-def logerr(message, **kwargs):
-    """Log a message with `ERROR` severity via :py:classmethod:RcutilsLogger.log:."""
-    return root_logger.log(message, severity=LoggingSeverity.ERROR, **kwargs)
-
-
-def logfatal(message, **kwargs):
-    """Log a message with `FATAL` severity via :py:classmethod:RcutilsLogger.log:."""
-    return root_logger.log(message, severity=LoggingSeverity.FATAL, **kwargs)
-
-
-def log(message, severity, **kwargs):
-    """Log a message with the specified severity via :py:classmethod:RcutilsLogger.log:."""
-    severity = LoggingSeverity(severity)
-    return root_logger.log(message, severity, **kwargs)
+def get_logger_effective_level(name):
+    logger_level = _rclpy_logging.rclpy_logging_get_logger_effective_level(name)
+    return LoggingSeverity(logger_level)
