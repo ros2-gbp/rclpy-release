@@ -1,0 +1,12 @@
+Source: ros-ardent-rclpy
+Section: misc
+Priority: extra
+Maintainer: Esteve Fernandez <esteve@osrfoundation.org>
+Build-Depends: debhelper (>= 9.0.0), ros-ardent-ament-cmake, ros-ardent-ament-cmake-pytest, ros-ardent-ament-lint-auto, ros-ardent-ament-lint-common, ros-ardent-python-cmake-module, ros-ardent-rcl, ros-ardent-rcl-interfaces, ros-ardent-rcutils, ros-ardent-rmw-implementation, ros-ardent-rmw-implementation-cmake, ros-ardent-rosidl-generator-py, ros-ardent-std-msgs, ros-ardent-ros-workspace
+Homepage: 
+Standards-Version: 3.9.2
+
+Package: ros-ardent-rclpy
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, ros-ardent-ament-index-python, ros-ardent-rcl, ros-ardent-rmw-implementation, ros-ardent-ros-workspace
+Description: Package containing the Python client.
