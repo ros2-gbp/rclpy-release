@@ -51,10 +51,8 @@ def check_for_type_support(msg_type):
 
 class Node:
 
-    def __init__(self, node_name, *, namespace=None):
+    def __init__(self, node_name, *, cli_args=None, namespace=None, use_global_arguments=True):
         self._handle = None
-        # TODO(dhood): get logger name from rcl, use namespace (with slashes converted)
-        self._logger = get_logger(node_name)
         self.publishers = []
         self.subscriptions = []
         self.clients = []
@@ -67,7 +65,8 @@ class Node:
         if not ok():
             raise NotInitializedException('cannot create node')
         try:
-            self._handle = _rclpy.rclpy_create_node(node_name, namespace)
+            self._handle = _rclpy.rclpy_create_node(
+                node_name, namespace, cli_args, use_global_arguments)
         except ValueError:
             # these will raise more specific errors if the name or namespace is bad
             validate_node_name(node_name)
@@ -79,6 +78,7 @@ class Node:
             validate_namespace(namespace)
             # Should not get to this point
             raise RuntimeError('rclpy_create_node failed for unknown reason')
+        self._logger = get_logger(_rclpy.rclpy_get_node_logger_name(self.handle))
 
     @property
     def handle(self):
@@ -295,6 +295,39 @@ class Node:
 
     def get_node_names(self):
         return _rclpy.rclpy_get_node_names(self.handle)
+
+    def _count_publishers_or_subscribers(self, topic_name, func):
+        fq_topic_name = expand_topic_name(topic_name, self.get_name(), self.get_namespace())
+        validate_topic_name(fq_topic_name)
+        return func(self.handle, fq_topic_name)
+
+    def count_publishers(self, topic_name):
+        """
+        Return the number of publishers on a given topic.
+
+        `topic_name` may be a relative, private, or fully qualifed topic name.
+        A relative or private topic is expanded using this node's namespace and name.
+        The queried topic name is not remapped.
+
+        :param topic_name: the topic_name on which to count the number of publishers.
+        :type topic_name: str
+        :return: the number of publishers on the topic.
+        """
+        return self._count_publishers_or_subscribers(topic_name, _rclpy.rclpy_count_publishers)
+
+    def count_subscribers(self, topic_name):
+        """
+        Return the number of subscribers on a given topic.
+
+        `topic_name` may be a relative, private, or fully qualifed topic name.
+        A relative or private topic is expanded using this node's namespace and name.
+        The queried topic name is not remapped.
+
+        :param topic_name: the topic_name on which to count the number of subscribers.
+        :type topic_name: str
+        :return: the number of subscribers on the topic.
+        """
+        return self._count_publishers_or_subscribers(topic_name, _rclpy.rclpy_count_subscribers)
 
     def __del__(self):
         self.destroy_node()

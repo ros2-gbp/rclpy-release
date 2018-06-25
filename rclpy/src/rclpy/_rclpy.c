@@ -20,6 +20,7 @@
 #include <rcl/node.h>
 #include <rcl/rcl.h>
 #include <rcl/validate_topic_name.h>
+#include <rcutils/strdup.h>
 #include <rcutils/types.h>
 #include <rmw/error_handling.h>
 #include <rmw/rmw.h>
@@ -32,15 +33,26 @@
 
 static rcl_guard_condition_t * g_sigint_gc_handle;
 
+#ifdef _WIN32
+_crt_signal_t g_original_signal_handler = NULL;
+#else
+sig_t g_original_signal_handler = NULL;
+#endif  // _WIN32
+
 /// Catch signals
 static void catch_function(int signo)
 {
   (void) signo;
-  rcl_ret_t ret = rcl_trigger_guard_condition(g_sigint_gc_handle);
-  if (ret != RCL_RET_OK) {
-    PyErr_Format(PyExc_RuntimeError,
-      "Failed to trigger guard_condition: %s", rcl_get_error_string_safe());
-    rcl_reset_error();
+  if (NULL != g_sigint_gc_handle) {
+    rcl_ret_t ret = rcl_trigger_guard_condition(g_sigint_gc_handle);
+    if (ret != RCL_RET_OK) {
+      PyErr_Format(PyExc_RuntimeError,
+        "Failed to trigger guard_condition: %s", rcl_get_error_string_safe());
+      rcl_reset_error();
+    }
+  }
+  if (NULL != g_original_signal_handler) {
+    g_original_signal_handler(signo);
   }
 }
 
@@ -150,19 +162,275 @@ rclpy_trigger_guard_condition(PyObject * Py_UNUSED(self), PyObject * args)
   Py_RETURN_NONE;
 }
 
+/// Deallocate a list of allocated strings.
+void
+_rclpy_arg_list_fini(int num_args, char ** argv)
+{
+  if (NULL == argv) {
+    return;
+  }
+  rcl_allocator_t allocator = rcl_get_default_allocator();
+  // Free each arg individually
+  for (int i = 0; i < num_args; ++i) {
+    char * arg = argv[i];
+    if (NULL == arg) {
+      // NULL in list means array was partially inititialized when an error occurred
+      break;
+    }
+    allocator.deallocate(arg, allocator.state);
+  }
+  // Then free the whole array
+  allocator.deallocate(argv, allocator.state);
+}
+
+/// Copy a sequence of strings into a c-style array
+/* Raises OverflowError if there are too many arguments in pyargs
+ * Raises MemoryError if an allocation fails
+ * \param[in] pyargs a sequence of strings to be converted
+ * \param[out] num_args the number of args in the output, equal to len(pyargs)
+ * \param[out] arg_values a c-array of c-style strings
+ */
+rcl_ret_t
+_rclpy_pyargs_to_list(PyObject * pyargs, int * num_args, char *** arg_values)
+{
+  // Convert to list() in case pyargs is a generator
+  pyargs = PySequence_List(pyargs);
+  if (NULL == pyargs) {
+    // Exception raised
+    return RCL_RET_ERROR;
+  }
+  Py_ssize_t pysize_num_args = PyList_Size(pyargs);
+  if (pysize_num_args > INT_MAX) {
+    PyErr_Format(PyExc_OverflowError, "Too many arguments");
+    Py_DECREF(pyargs);
+    return RCL_RET_ERROR;
+  }
+  *num_args = (int)pysize_num_args;
+  *arg_values = NULL;
+
+  rcl_allocator_t allocator = rcl_get_default_allocator();
+  if (*num_args > 0) {
+    *arg_values = allocator.allocate(sizeof(char *) * (*num_args), allocator.state);
+    if (NULL == *arg_values) {
+      PyErr_Format(PyExc_MemoryError, "Failed to allocate space for arguments");
+      Py_DECREF(pyargs);
+      return RCL_RET_BAD_ALLOC;
+    }
+
+    for (int i = 0; i < *num_args; ++i) {
+      // Returns borrowed reference, do not decref
+      PyObject * pyarg = PyList_GetItem(pyargs, i);
+      if (NULL == pyarg) {
+        _rclpy_arg_list_fini(i, *arg_values);
+        Py_DECREF(pyargs);
+        // Exception raised
+        return RCL_RET_ERROR;
+      }
+      const char * arg_str = PyUnicode_AsUTF8(pyarg);
+      (*arg_values)[i] = rcutils_strdup(arg_str, allocator);
+      if (NULL == (*arg_values)[i]) {
+        _rclpy_arg_list_fini(i, *arg_values);
+        PyErr_Format(PyExc_MemoryError, "Failed to duplicate string");
+        Py_DECREF(pyargs);
+        return RCL_RET_BAD_ALLOC;
+      }
+    }
+  }
+  Py_DECREF(pyargs);
+  return RCL_RET_OK;
+}
+
+/// Parse a sequence of strings into rcl_arguments_t struct
+/* Raises TypeError of pyargs is not a sequence
+ * Raises OverflowError if len(pyargs) > INT_MAX
+ * \param[in] pyargs a python sequence of strings
+ * \param[out] parsed_args a zero initialized pointer to rcl_arguments_t
+ */
+rcl_ret_t
+_rclpy_parse_args(PyObject * pyargs, rcl_arguments_t * parsed_args)
+{
+  rcl_ret_t ret;
+
+  rcl_allocator_t allocator = rcl_get_default_allocator();
+  int num_args = 0;
+  char ** arg_values = NULL;
+  // Py_None is a singleton so comparing pointer value works
+  if (Py_None != pyargs) {
+    ret = _rclpy_pyargs_to_list(pyargs, &num_args, &arg_values);
+    if (RCL_RET_OK != ret) {
+      // Exception set
+      return ret;
+    }
+  }
+  // call rcl_parse_arguments() even if pyargs is None so rcl_arguments_t structure is always valid.
+  // Otherwise the remapping functions will error if the user passes no arguments to a node and sets
+  // use_global_arguments to False.
+
+  // Adding const via cast to eliminate warning about incompatible pointer type
+  const char ** const_arg_values = (const char **)arg_values;
+  ret = rcl_parse_arguments(num_args, const_arg_values, allocator, parsed_args);
+
+  if (ret != RCL_RET_OK) {
+    PyErr_Format(PyExc_RuntimeError, "Failed to init: %s", rcl_get_error_string_safe());
+    rcl_reset_error();
+  }
+  _rclpy_arg_list_fini(num_args, arg_values);
+  return ret;
+}
+
+static PyObject *
+rclpy_remove_ros_args(PyObject * Py_UNUSED(self), PyObject * args)
+{
+  // Expect one argument which is a list of strings
+  PyObject * pyargs;
+  if (!PyArg_ParseTuple(args, "O", &pyargs)) {
+    // Exception raised
+    return NULL;
+  }
+
+  rcl_ret_t ret;
+  PyObject * result_list = NULL;
+
+  rcl_allocator_t allocator = rcl_get_default_allocator();
+  int num_args;
+  char ** arg_values;
+  ret = _rclpy_pyargs_to_list(pyargs, &num_args, &arg_values);
+  if (RCL_RET_OK != ret) {
+    // Exception set
+    return NULL;
+  }
+
+  // Adding const via cast to eliminate warning about incompatible pointer type
+  const char ** const_arg_values = (const char **)arg_values;
+  rcl_arguments_t parsed_args = rcl_get_zero_initialized_arguments();
+
+  ret = rcl_parse_arguments(num_args, const_arg_values, allocator, &parsed_args);
+  if (ret != RCL_RET_OK) {
+    PyErr_Format(PyExc_RuntimeError, "Failed to init: %s", rcl_get_error_string_safe());
+    rcl_reset_error();
+  } else {
+    int nonros_argc = 0;
+    const char ** nonros_argv = NULL;
+
+    ret = rcl_remove_ros_arguments(
+      const_arg_values,
+      &parsed_args,
+      allocator,
+      &nonros_argc,
+      &nonros_argv);
+
+    if (RCL_RET_OK != ret) {
+      PyErr_Format(PyExc_RuntimeError, "Failed to init: %s", rcl_get_error_string_safe());
+      rcl_reset_error();
+    } else {
+      result_list = PyList_New(nonros_argc);
+      for (int ii = 0; ii < nonros_argc; ++ii) {
+        PyList_SET_ITEM(result_list, ii, PyUnicode_FromString(nonros_argv[ii]));
+      }
+/* it was determined that the following warning is likely a front-end parsing issue in MSVC.
+ * See: https://github.com/ros2/rclpy/pull/180#issuecomment-375452757
+ */
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4090)
+#endif
+      allocator.deallocate(nonros_argv, allocator.state);
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+    }
+
+    ret = rcl_arguments_fini(&parsed_args);
+    if (RCL_RET_OK != ret) {
+      PyErr_Format(PyExc_RuntimeError, "Failed to init: %s", rcl_get_error_string_safe());
+      rcl_reset_error();
+    }
+  }
+
+  _rclpy_arg_list_fini(num_args, arg_values);
+
+  if (PyErr_Occurred()) {
+    return NULL;
+  }
+  return result_list;
+}
+
+
 /// Initialize rcl with default options, ignoring parameters
 /**
  * Raises RuntimeError if rcl could not be initialized
  */
 static PyObject *
-rclpy_init(PyObject * Py_UNUSED(self), PyObject * Py_UNUSED(args))
+rclpy_init(PyObject * Py_UNUSED(self), PyObject * args)
 {
-  // TODO(esteve): parse args
-  rcl_ret_t ret = rcl_init(0, NULL, rcl_get_default_allocator());
-  if (ret != RCL_RET_OK) {
-    PyErr_Format(PyExc_RuntimeError,
-      "Failed to init: %s", rcl_get_error_string_safe());
-    rcl_reset_error();
+  // Expect one argument which is a list of strings
+  PyObject * pyargs;
+  if (!PyArg_ParseTuple(args, "O", &pyargs)) {
+    // Exception raised
+    return NULL;
+  }
+
+  pyargs = PySequence_List(pyargs);
+  if (NULL == pyargs) {
+    // Exception raised
+    return NULL;
+  }
+  Py_ssize_t pysize_num_args = PyList_Size(pyargs);
+  if (pysize_num_args > INT_MAX) {
+    PyErr_Format(PyExc_OverflowError, "Too many arguments");
+    return NULL;
+  }
+  int num_args = (int)pysize_num_args;
+
+  rcl_allocator_t allocator = rcl_get_default_allocator();
+  const char ** arg_values = NULL;
+  bool have_args = true;
+  if (num_args > 0) {
+    arg_values = allocator.allocate(sizeof(char *) * num_args, allocator.state);
+    if (NULL == arg_values) {
+      PyErr_Format(PyExc_MemoryError, "Failed to allocate space for arguments");
+      Py_DECREF(pyargs);
+      return NULL;
+    }
+
+    for (int i = 0; i < num_args; ++i) {
+      // Returns borrowed reference, do not decref
+      PyObject * pyarg = PyList_GetItem(pyargs, i);
+      if (NULL == pyarg) {
+        have_args = false;
+        break;
+      }
+      // Borrows a pointer, do not free arg_values[i]
+      arg_values[i] = PyUnicode_AsUTF8(pyarg);
+    }
+  }
+
+  if (have_args) {
+    rcl_ret_t ret = rcl_init(num_args, arg_values, allocator);
+    if (ret != RCL_RET_OK) {
+      PyErr_Format(PyExc_RuntimeError, "Failed to init: %s", rcl_get_error_string_safe());
+      rcl_reset_error();
+    }
+  }
+  if (NULL != arg_values) {
+/* it was determined that the following warning is likely a front-end parsing issue in MSVC.
+ * See: https://github.com/ros2/rclpy/pull/180#issuecomment-375452757
+ */
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4090)
+#endif
+    allocator.deallocate(arg_values, allocator.state);
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+  }
+  Py_DECREF(pyargs);
+
+  // Register our signal handler that will forward to the original one.
+  g_original_signal_handler = signal(SIGINT, catch_function);
+
+  if (PyErr_Occurred()) {
     return NULL;
   }
   Py_RETURN_NONE;
@@ -182,17 +450,32 @@ rclpy_init(PyObject * Py_UNUSED(self), PyObject * Py_UNUSED(args))
 static PyObject *
 rclpy_create_node(PyObject * Py_UNUSED(self), PyObject * args)
 {
+  rcl_ret_t ret;
   const char * node_name;
   const char * namespace_;
+  PyObject * py_cli_args;
+  int use_global_arguments;
 
-  if (!PyArg_ParseTuple(args, "ss", &node_name, &namespace_)) {
+  if (
+    !PyArg_ParseTuple(args, "ssOp", &node_name, &namespace_, &py_cli_args, &use_global_arguments))
+  {
+    return NULL;
+  }
+
+  rcl_arguments_t arguments = rcl_get_zero_initialized_arguments();
+
+  ret = _rclpy_parse_args(py_cli_args, &arguments);
+  if (RCL_RET_OK != ret) {
+    // exception set
     return NULL;
   }
 
   rcl_node_t * node = (rcl_node_t *)PyMem_Malloc(sizeof(rcl_node_t));
   *node = rcl_get_zero_initialized_node();
-  rcl_node_options_t default_options = rcl_node_get_default_options();
-  rcl_ret_t ret = rcl_node_init(node, node_name, namespace_, &default_options);
+  rcl_node_options_t options = rcl_node_get_default_options();
+  options.use_global_arguments = use_global_arguments;
+  options.arguments = arguments;
+  ret = rcl_node_init(node, node_name, namespace_, &options);
   if (ret != RCL_RET_OK) {
     if (ret == RCL_RET_BAD_ALLOC) {
       PyErr_Format(PyExc_MemoryError,
@@ -209,7 +492,26 @@ rclpy_create_node(PyObject * Py_UNUSED(self), PyObject * args)
     }
     rcl_reset_error();
     PyMem_Free(node);
+
+    if (RCL_RET_OK != rcl_arguments_fini(&arguments)) {
+      rcl_reset_error();
+      // Warn because an exception is already raised
+      // Warning should use line number of the current stack frame
+      int stack_level = 1;
+      PyErr_WarnFormat(
+        PyExc_RuntimeWarning, stack_level, "Failed to fini arguments during error handling: %s",
+        rcl_get_error_string_safe());
+    }
     return NULL;
+  }
+  if (RCL_RET_OK != rcl_arguments_fini(&arguments)) {
+    rcl_reset_error();
+    // Warn because the node was successfully created
+    // Warning should use line number of the current stack frame
+    int stack_level = 1;
+    PyErr_WarnFormat(
+      PyExc_RuntimeWarning, stack_level, "Failed to fini arguments: %s",
+      rcl_get_error_string_safe());
   }
   return PyCapsule_New(node, "rcl_node_t", NULL);
 }
@@ -274,6 +576,91 @@ rclpy_get_node_namespace(PyObject * Py_UNUSED(self), PyObject * args)
   return PyUnicode_FromString(node_namespace);
 }
 
+/// Get the name of the logger associated with a node.
+/**
+ * Raises ValueError if pynode is not a node capsule
+ *
+ * \param[in] pynode Capsule pointing to the node to get the logger name of
+ * \return logger_name, or
+ * \return None on failure
+ */
+static PyObject *
+rclpy_get_node_logger_name(PyObject * Py_UNUSED(self), PyObject * args)
+{
+  PyObject * pynode;
+  if (!PyArg_ParseTuple(args, "O", &pynode)) {
+    return NULL;
+  }
+
+  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
+  if (!node) {
+    return NULL;
+  }
+
+  const char * node_logger_name = rcl_node_get_logger_name(node);
+  if (!node_logger_name) {
+    Py_RETURN_NONE;
+  }
+
+  return PyUnicode_FromString(node_logger_name);
+}
+
+typedef rcl_ret_t (* count_func)(const rcl_node_t * node, const char * topic_name, size_t * count);
+
+static PyObject *
+_count_subscribers_publishers(PyObject * args, const char * type, count_func count_function)
+{
+  PyObject * pynode;
+  const char * topic_name;
+
+  if (!PyArg_ParseTuple(args, "Os", &pynode, &topic_name)) {
+    return NULL;
+  }
+
+  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
+  if (!node) {
+    return NULL;
+  }
+
+  size_t count = 0;
+  rcl_ret_t ret = count_function(node, topic_name, &count);
+  if (ret != RCL_RET_OK) {
+    PyErr_Format(PyExc_RuntimeError, "Failed to count %s: %s",
+      type, rcl_get_error_string_safe());
+    rcl_reset_error();
+    return NULL;
+  }
+
+  return PyLong_FromSize_t(count);
+}
+
+/// Count publishers for a topic.
+/**
+ *
+ * \param[in] pynode Capsule pointing to the node to get the namespace from
+ * \param[in] topic_name string fully qualified topic name
+ * \return count of publishers
+ */
+static PyObject *
+rclpy_count_publishers(PyObject * Py_UNUSED(self), PyObject * args)
+{
+  return _count_subscribers_publishers(args, "publishers", rcl_count_publishers);
+}
+
+/// Count subscribers for a topic.
+/**
+ *
+ * \param[in] pynode Capsule pointing to the node to get the namespace from
+ * \param[in] topic_name string fully qualified topic name
+ * \return count of subscribers
+ */
+static PyObject *
+rclpy_count_subscribers(PyObject * Py_UNUSED(self), PyObject * args)
+{
+  return _count_subscribers_publishers(args, "subscribers", rcl_count_subscribers);
+}
+
+
 /// Validate a topic name and return error message and index of invalidation.
 /**
  * Does not have to be a fully qualified topic name.
@@ -317,12 +704,8 @@ rclpy_get_validation_error_for_topic_name(PyObject * Py_UNUSED(self), PyObject *
   if (validation_result == RCL_TOPIC_NAME_VALID) {
     Py_RETURN_NONE;
   }
+
   const char * validation_message = rcl_topic_name_validation_result_string(validation_result);
-  if (!validation_message) {
-    PyErr_Format(PyExc_RuntimeError,
-      "Unable to get validation error message for result '%d'", validation_result);
-    return NULL;
-  }
 
   PyObject * result_list = PyList_New(2);
   PyList_SET_ITEM(result_list, 0, PyUnicode_FromString(validation_message));
@@ -373,12 +756,8 @@ rclpy_get_validation_error_for_full_topic_name(PyObject * Py_UNUSED(self), PyObj
   if (validation_result == RMW_NAMESPACE_VALID) {
     Py_RETURN_NONE;
   }
+
   const char * validation_message = rmw_full_topic_name_validation_result_string(validation_result);
-  if (!validation_message) {
-    PyErr_Format(PyExc_RuntimeError,
-      "Unable to get validation error message for result '%d'", validation_result);
-    return NULL;
-  }
 
   PyObject * result_list = PyList_New(2);
   PyList_SET_ITEM(result_list, 0, PyUnicode_FromString(validation_message));
@@ -427,12 +806,8 @@ rclpy_get_validation_error_for_namespace(PyObject * Py_UNUSED(self), PyObject * 
   if (validation_result == RMW_NAMESPACE_VALID) {
     Py_RETURN_NONE;
   }
+
   const char * validation_message = rmw_namespace_validation_result_string(validation_result);
-  if (!validation_message) {
-    PyErr_Format(PyExc_RuntimeError,
-      "Unable to get validation error message for result '%d'", validation_result);
-    return NULL;
-  }
 
   PyObject * result_list = PyList_New(2);
   PyList_SET_ITEM(result_list, 0, PyUnicode_FromString(validation_message));
@@ -481,12 +856,8 @@ rclpy_get_validation_error_for_node_name(PyObject * Py_UNUSED(self), PyObject * 
   if (validation_result == RMW_NODE_NAME_VALID) {
     Py_RETURN_NONE;
   }
+
   const char * validation_message = rmw_node_name_validation_result_string(validation_result);
-  if (!validation_message) {
-    PyErr_Format(PyExc_RuntimeError,
-      "Unable to get validation error message for result '%d'", validation_result);
-    return NULL;
-  }
 
   PyObject * result_list = PyList_New(2);
   PyList_SET_ITEM(result_list, 0, PyUnicode_FromString(validation_message));
@@ -840,7 +1211,7 @@ rclpy_get_timer_period(PyObject * Py_UNUSED(self), PyObject * args)
   if (!timer) {
     return NULL;
   }
-  uint64_t timer_period;
+  int64_t timer_period;
   rcl_ret_t ret = rcl_timer_get_period(timer, &timer_period);
   if (ret != RCL_RET_OK) {
     PyErr_Format(PyExc_RuntimeError,
@@ -1041,7 +1412,7 @@ rclpy_change_timer_period(PyObject * Py_UNUSED(self), PyObject * args)
   if (!timer) {
     return NULL;
   }
-  uint64_t old_period;
+  int64_t old_period;
   rcl_ret_t ret = rcl_timer_exchange_period(timer, period_nsec, &old_period);
   if (ret != RCL_RET_OK) {
     PyErr_Format(PyExc_RuntimeError,
@@ -1103,7 +1474,7 @@ rclpy_time_since_last_call(PyObject * Py_UNUSED(self), PyObject * args)
   }
 
   rcl_timer_t * timer = (rcl_timer_t *)PyCapsule_GetPointer(pytimer, "rcl_timer_t");
-  uint64_t elapsed_time;
+  int64_t elapsed_time;
   rcl_ret_t ret = rcl_timer_get_time_since_last_call(timer, &elapsed_time);
   if (ret != RCL_RET_OK) {
     PyErr_Format(PyExc_RuntimeError,
@@ -1979,12 +2350,6 @@ rclpy_wait(PyObject * Py_UNUSED(self), PyObject * args)
   if (!PyArg_ParseTuple(args, "O|K", &pywait_set, &timeout)) {
     return NULL;
   }
-#ifdef _WIN32
-  _crt_signal_t
-#else
-  sig_t
-#endif  // _WIN32
-  previous_handler = signal(SIGINT, catch_function);
   rcl_wait_set_t * wait_set = (rcl_wait_set_t *)PyCapsule_GetPointer(pywait_set, "rcl_wait_set_t");
   if (!wait_set) {
     return NULL;
@@ -1996,7 +2361,6 @@ rclpy_wait(PyObject * Py_UNUSED(self), PyObject * args)
   ret = rcl_wait(wait_set, timeout);
   Py_END_ALLOW_THREADS;
 
-  signal(SIGINT, previous_handler);
   if (ret != RCL_RET_OK && ret != RCL_RET_TIMEOUT) {
     PyErr_Format(PyExc_RuntimeError,
       "Failed to wait on wait set: %s", rcl_get_error_string_safe());
@@ -2180,16 +2544,15 @@ rclpy_take_request(PyObject * Py_UNUSED(self), PyObject * args)
  *
  * \param[in] pyclient Capsule pointing to the client to process the response
  * \param[in] pyresponse_type Instance of the message type to take
- * \return Python response message with all fields populated with received response
+ * \return 2-tuple sequence number and received response or None, None if there is no response
  */
 static PyObject *
 rclpy_take_response(PyObject * Py_UNUSED(self), PyObject * args)
 {
   PyObject * pyclient;
   PyObject * pyresponse_type;
-  PY_LONG_LONG sequence_number;
 
-  if (!PyArg_ParseTuple(args, "OOK", &pyclient, &pyresponse_type, &sequence_number)) {
+  if (!PyArg_ParseTuple(args, "OO", &pyclient, &pyresponse_type)) {
     return NULL;
   }
   rcl_client_t * client =
@@ -2225,9 +2588,15 @@ rclpy_take_response(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
   rmw_request_id_t * header = (rmw_request_id_t *)PyMem_Malloc(sizeof(rmw_request_id_t));
-  header->sequence_number = sequence_number;
   rcl_ret_t ret = rcl_take_response(client, header, taken_response);
+  int64_t sequence = header->sequence_number;
   PyMem_Free(header);
+
+  // Create the tuple to return
+  PyObject * pytuple = PyTuple_New(2);
+  if (!pytuple) {
+    return NULL;
+  }
 
   if (ret != RCL_RET_CLIENT_TAKE_FAILED) {
     PyObject * pyconvert_to_py = PyObject_GetAttrString(pyresponse_type, "_CONVERT_TO_PY");
@@ -2240,13 +2609,25 @@ rclpy_take_response(PyObject * Py_UNUSED(self), PyObject * args)
     destroy_ros_message(taken_response);
     if (!pytaken_response) {
       // the function has set the Python error
+      Py_DECREF(pytuple);
       return NULL;
     }
 
-    return pytaken_response;
+    PyObject * pysequence = PyLong_FromLongLong(sequence);
+    if (!pysequence) {
+      Py_DECREF(pytaken_response);
+      Py_DECREF(pytuple);
+      return NULL;
+    }
+    PyTuple_SET_ITEM(pytuple, 0, pysequence);
+    PyTuple_SET_ITEM(pytuple, 1, pytaken_response);
+    return pytuple;
   }
-  // if take_response failed, just do nothing
-  Py_RETURN_NONE;
+  Py_INCREF(Py_None);
+  PyTuple_SET_ITEM(pytuple, 0, Py_None);
+  Py_INCREF(Py_None);
+  PyTuple_SET_ITEM(pytuple, 1, Py_None);
+  return pytuple;
 }
 
 /// Status of the the client library
@@ -2280,6 +2661,11 @@ rclpy_shutdown(PyObject * Py_UNUSED(self), PyObject * Py_UNUSED(args))
     rcl_reset_error();
     return NULL;
   }
+
+  // Restore the original signal handler.
+  signal(SIGINT, g_original_signal_handler);
+  g_original_signal_handler = NULL;
+
   Py_RETURN_NONE;
 }
 
@@ -2318,8 +2704,13 @@ rclpy_get_node_names(PyObject * Py_UNUSED(self), PyObject * args)
   PyObject * pynode_names = PyList_New(node_names.size);
   size_t idx;
   for (idx = 0; idx < node_names.size; ++idx) {
-    PyList_SetItem(
-      pynode_names, idx, PyUnicode_FromString(node_names.data[idx]));
+    if (node_names.data[idx]) {
+      PyList_SetItem(
+        pynode_names, idx, PyUnicode_FromString(node_names.data[idx]));
+    } else {
+      Py_INCREF(Py_None);
+      PyList_SetItem(pynode_names, idx, Py_None);
+    }
   }
 
   ret = rcutils_string_array_fini(&node_names);
@@ -2589,6 +2980,10 @@ static PyMethodDef rclpy_methods[] = {
     "Initialize RCL."
   },
   {
+    "rclpy_remove_ros_args", rclpy_remove_ros_args, METH_VARARGS,
+    "Remove ROS-specific arguments from argument vector"
+  },
+  {
     "rclpy_create_node", rclpy_create_node, METH_VARARGS,
     "Create a Node."
   },
@@ -2598,7 +2993,19 @@ static PyMethodDef rclpy_methods[] = {
   },
   {
     "rclpy_get_node_namespace", rclpy_get_node_namespace, METH_VARARGS,
-    "Get the name of a node."
+    "Get the namespace of a node."
+  },
+  {
+    "rclpy_get_node_logger_name", rclpy_get_node_logger_name, METH_VARARGS,
+    "Get the logger name associated with a node."
+  },
+  {
+    "rclpy_count_publishers", rclpy_count_publishers, METH_VARARGS,
+    "Count publishers for a topic."
+  },
+  {
+    "rclpy_count_subscribers", rclpy_count_subscribers, METH_VARARGS,
+    "Count subscribers for a topic."
   },
   {
     "rclpy_expand_topic_name", rclpy_expand_topic_name, METH_VARARGS,
