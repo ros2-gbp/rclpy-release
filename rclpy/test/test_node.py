@@ -13,11 +13,15 @@
 # limitations under the License.
 
 import unittest
+from unittest.mock import Mock
 
+from rcl_interfaces.msg import SetParametersResult
 from rcl_interfaces.srv import GetParameters
 import rclpy
+from rclpy.clock import ClockType
 from rclpy.exceptions import InvalidServiceNameException
 from rclpy.exceptions import InvalidTopicNameException
+from rclpy.parameter import Parameter
 from test_msgs.msg import Primitives
 
 TEST_NODE = 'my_node'
@@ -42,6 +46,7 @@ class TestNode(unittest.TestCase):
             self.node.handle = 'garbage'
         self.assertEqual(self.node.get_name(), TEST_NODE)
         self.assertEqual(self.node.get_namespace(), TEST_NAMESPACE)
+        self.assertEqual(self.node.get_clock().clock_type, ClockType.ROS_TIME)
 
     def test_create_publisher(self):
         self.node.create_publisher(Primitives, 'chatter')
@@ -92,6 +97,10 @@ class TestNode(unittest.TestCase):
         # test that it doesn't raise
         self.node.get_node_names()
 
+    def test_node_names_and_namespaces(self):
+        # test that it doesn't raise
+        self.node.get_node_names_and_namespaces()
+
     def test_count_publishers_subscribers(self):
         short_topic_name = 'chatter'
         fq_topic_name = '%s/%s' % (TEST_NAMESPACE, short_topic_name)
@@ -125,6 +134,116 @@ class TestNode(unittest.TestCase):
         self.assertEqual(node_logger.name, expected_name)
         node_logger.set_level(rclpy.logging.LoggingSeverity.INFO)
         node_logger.debug('test')
+
+    def test_initially_no_executor(self):
+        node = rclpy.create_node('my_node')
+        try:
+            assert node.executor is None
+        finally:
+            node.destroy_node()
+
+    def test_set_executor_adds_node_to_it(self):
+        node = rclpy.create_node('my_node')
+        executor = Mock()
+        executor.add_node.return_value = True
+        try:
+            node.executor = executor
+            assert id(executor) == id(node.executor)
+        finally:
+            node.destroy_node()
+        executor.add_node.assert_called_once_with(node)
+
+    def test_set_executor_removes_node_from_old_executor(self):
+        node = rclpy.create_node('my_node')
+        old_executor = Mock()
+        old_executor.add_node.return_value = True
+        new_executor = Mock()
+        new_executor.add_node.return_value = True
+        try:
+            node.executor = old_executor
+            assert id(old_executor) == id(node.executor)
+            node.executor = new_executor
+            assert id(new_executor) == id(node.executor)
+        finally:
+            node.destroy_node()
+        old_executor.remove_node.assert_called_once_with(node)
+        new_executor.remove_node.assert_not_called()
+
+    def test_set_executor_clear_executor(self):
+        node = rclpy.create_node('my_node')
+        executor = Mock()
+        executor.add_node.return_value = True
+        try:
+            node.executor = executor
+            assert id(executor) == id(node.executor)
+            node.executor = None
+            assert node.executor is None
+        finally:
+            node.destroy_node()
+
+    def test_node_set_parameters(self):
+        results = self.node.set_parameters([
+            Parameter('foo', Parameter.Type.INTEGER, 42),
+            Parameter('bar', Parameter.Type.STRING, 'hello'),
+            Parameter('baz', Parameter.Type.DOUBLE, 2.41)
+        ])
+        self.assertTrue(all(isinstance(result, SetParametersResult) for result in results))
+        self.assertTrue(all(result.successful for result in results))
+        self.assertEqual(self.node.get_parameter('foo').value, 42)
+        self.assertEqual(self.node.get_parameter('bar').value, 'hello')
+        self.assertEqual(self.node.get_parameter('baz').value, 2.41)
+
+    def test_node_cannot_set_invalid_parameters(self):
+        with self.assertRaises(TypeError):
+            self.node.set_parameters([42])
+
+    def test_node_set_parameters_atomically(self):
+        result = self.node.set_parameters_atomically([
+            Parameter('foo', Parameter.Type.INTEGER, 42),
+            Parameter('bar', Parameter.Type.STRING, 'hello'),
+            Parameter('baz', Parameter.Type.DOUBLE, 2.41)
+        ])
+        self.assertEqual(self.node.get_parameter('foo').value, 42)
+        self.assertIsInstance(result, SetParametersResult)
+        self.assertTrue(result.successful)
+
+    def test_node_get_parameter(self):
+        self.node.set_parameters([Parameter('foo', Parameter.Type.INTEGER, 42)])
+        self.assertIsInstance(self.node.get_parameter('foo'), Parameter)
+        self.assertEqual(self.node.get_parameter('foo').value, 42)
+
+    def test_node_get_parameter_returns_parameter_not_set(self):
+        self.assertIsInstance(self.node.get_parameter('unset'), Parameter)
+        self.assertEqual(self.node.get_parameter('unset').type_, Parameter.Type.NOT_SET)
+
+    def test_node_has_parameter_services(self):
+        service_names_and_types = self.node.get_service_names_and_types()
+        self.assertIn(
+            ('/my_ns/my_node/describe_parameters', ['rcl_interfaces/DescribeParameters']),
+            service_names_and_types
+        )
+        self.assertIn(
+            ('/my_ns/my_node/get_parameter_types', ['rcl_interfaces/GetParameterTypes']),
+            service_names_and_types
+        )
+        self.assertIn(
+            ('/my_ns/my_node/get_parameters', ['rcl_interfaces/GetParameters']),
+            service_names_and_types
+        )
+        self.assertIn(
+            ('/my_ns/my_node/list_parameters', ['rcl_interfaces/ListParameters']),
+            service_names_and_types
+        )
+        self.assertIn(
+            ('/my_ns/my_node/set_parameters', ['rcl_interfaces/SetParameters']),
+            service_names_and_types
+        )
+        self.assertIn(
+            (
+                '/my_ns/my_node/set_parameters_atomically',
+                ['rcl_interfaces/SetParametersAtomically']
+            ), service_names_and_types
+        )
 
 
 class TestCreateNode(unittest.TestCase):

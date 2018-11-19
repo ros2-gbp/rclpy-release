@@ -12,8 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import weakref
+
+from rcl_interfaces.msg import ParameterEvent, SetParametersResult
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.client import Client
+from rclpy.clock import ROSClock
 from rclpy.constants import S_TO_NS
 from rclpy.exceptions import NotInitializedException
 from rclpy.exceptions import NoTypeSupportImportedException
@@ -21,10 +25,14 @@ from rclpy.expand_topic_name import expand_topic_name
 from rclpy.guard_condition import GuardCondition
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.logging import get_logger
+from rclpy.parameter import Parameter
+from rclpy.parameter_service import ParameterService
 from rclpy.publisher import Publisher
-from rclpy.qos import qos_profile_default, qos_profile_services_default
+from rclpy.qos import qos_profile_default, qos_profile_parameter_events
+from rclpy.qos import qos_profile_services_default
 from rclpy.service import Service
 from rclpy.subscription import Subscription
+from rclpy.time_source import TimeSource
 from rclpy.timer import WallTimer
 from rclpy.utilities import ok
 from rclpy.validate_full_topic_name import validate_full_topic_name
@@ -51,8 +59,12 @@ def check_for_type_support(msg_type):
 
 class Node:
 
-    def __init__(self, node_name, *, cli_args=None, namespace=None, use_global_arguments=True):
+    def __init__(
+        self, node_name, *, cli_args=None, namespace=None, use_global_arguments=True,
+        start_parameter_services=True, initial_parameters=None
+    ):
         self._handle = None
+        self._parameters = {}
         self.publishers = []
         self.subscriptions = []
         self.clients = []
@@ -60,6 +72,7 @@ class Node:
         self.timers = []
         self.guards = []
         self._default_callback_group = MutuallyExclusiveCallbackGroup()
+        self._parameters_callback = None
 
         namespace = namespace or ''
         if not ok():
@@ -80,6 +93,44 @@ class Node:
             raise RuntimeError('rclpy_create_node failed for unknown reason')
         self._logger = get_logger(_rclpy.rclpy_get_node_logger_name(self.handle))
 
+        # Clock that has support for ROS time.
+        # TODO(dhood): use sim time if parameter has been set on the node.
+        self._clock = ROSClock()
+        self._time_source = TimeSource(node=self)
+        self._time_source.attach_clock(self._clock)
+
+        self.__executor_weakref = None
+
+        self._parameter_event_publisher = self.create_publisher(
+            ParameterEvent, 'parameter_events', qos_profile=qos_profile_parameter_events)
+
+        node_parameters = _rclpy.rclpy_get_node_parameters(Parameter, self.handle)
+        # Combine parameters from params files with those from the node constructor and
+        # use the set_parameters_atomically API so a parameter event is published.
+        if initial_parameters is not None:
+            node_parameters.update({p.name: p for p in initial_parameters})
+        self.set_parameters_atomically(node_parameters.values())
+
+        if start_parameter_services:
+            self._parameter_service = ParameterService(self)
+
+    @property
+    def executor(self):
+        """Get the executor if the node has been added to one, else return None."""
+        if self.__executor_weakref:
+            return self.__executor_weakref()
+
+    @executor.setter
+    def executor(self, new_executor):
+        """Set or change the executor the node belongs to."""
+        current_executor = self.executor
+        if current_executor is not None:
+            current_executor.remove_node(self)
+        if new_executor is None:
+            self.__executor_weakref = None
+        elif new_executor.add_node(self):
+            self.__executor_weakref = weakref.ref(new_executor)
+
     @property
     def handle(self):
         return self._handle
@@ -94,8 +145,64 @@ class Node:
     def get_namespace(self):
         return _rclpy.rclpy_get_node_namespace(self.handle)
 
+    def get_clock(self):
+        return self._clock
+
     def get_logger(self):
         return self._logger
+
+    def get_parameters(self, names):
+        if not all(isinstance(name, str) for name in names):
+            raise TypeError('All names must be instances of type str')
+        return [self.get_parameter(name) for name in names]
+
+    def get_parameter(self, name):
+        if name not in self._parameters:
+            return Parameter(name, Parameter.Type.NOT_SET, None)
+        return self._parameters[name]
+
+    def set_parameters(self, parameter_list):
+        results = []
+        for param in parameter_list:
+            if not isinstance(param, Parameter):
+                raise TypeError("parameter must be instance of type '{}'".format(repr(Parameter)))
+            results.append(self.set_parameters_atomically([param]))
+        return results
+
+    def set_parameters_atomically(self, parameter_list):
+        result = None
+        if self._parameters_callback:
+            result = self._parameters_callback(parameter_list)
+        else:
+            result = SetParametersResult(successful=True)
+
+        if result.successful:
+            parameter_event = ParameterEvent()
+            for param in parameter_list:
+                if Parameter.Type.NOT_SET == param.type_:
+                    if Parameter.Type.NOT_SET != self.get_parameter(param.name).type_:
+                        # Parameter deleted. (Parameter had value and new value is not set)
+                        parameter_event.deleted_parameters.append(
+                            param.to_parameter_msg())
+                    # Delete any unset parameters regardless of their previous value.
+                    # We don't currently store NOT_SET parameters so this is an extra precaution.
+                    if param.name in self._parameters:
+                        del self._parameters[param.name]
+                else:
+                    if Parameter.Type.NOT_SET == self.get_parameter(param.name).type_:
+                        #  Parameter is new. (Parameter had no value and new value is set)
+                        parameter_event.new_parameters.append(param.to_parameter_msg())
+                    else:
+                        # Parameter changed. (Parameter had a value and new value is set)
+                        parameter_event.changed_parameters.append(
+                            param.to_parameter_msg())
+                    self._parameters[param.name] = param
+            self._parameter_event_publisher.publish(parameter_event)
+
+        return result
+
+    def set_parameters_callback(self, callback):
+        self._parameters_callback = callback
 
     def _validate_topic_or_service_name(self, topic_or_service_name, *, is_service=False):
         name = self.get_name()
@@ -247,6 +354,8 @@ class Node:
         for tmr in self.timers:
             if tmr.timer_handle == timer.timer_handle:
                 _rclpy.rclpy_destroy_entity(tmr.timer_handle)
+                # TODO(sloretz) Store clocks on node and destroy them separately
+                _rclpy.rclpy_destroy_entity(tmr.clock._clock_handle)
                 self.timers.remove(tmr)
                 return True
         return False
@@ -264,6 +373,10 @@ class Node:
         if self.handle is None:
             return ret
 
+        # Drop extra reference to parameter event publisher.
+        # It will be destroyed with other publishers below.
+        self._parameter_event_publisher = None
+
         while self.publishers:
             pub = self.publishers.pop()
             _rclpy.rclpy_destroy_node_entity(pub.publisher_handle, self.handle)
@@ -279,6 +392,8 @@ class Node:
         while self.timers:
             tmr = self.timers.pop()
             _rclpy.rclpy_destroy_entity(tmr.timer_handle)
+            # TODO(sloretz) Store clocks on node and destroy them separately
+            _rclpy.rclpy_destroy_entity(tmr.clock._clock_handle)
         while self.guards:
             gc = self.guards.pop()
             _rclpy.rclpy_destroy_entity(gc.guard_handle)
@@ -294,7 +409,11 @@ class Node:
         return _rclpy.rclpy_get_service_names_and_types(self.handle)
 
     def get_node_names(self):
-        return _rclpy.rclpy_get_node_names(self.handle)
+        names_ns = _rclpy.rclpy_get_node_names_and_namespaces(self.handle)
+        return [n[0] for n in names_ns]
+
+    def get_node_names_and_namespaces(self):
+        return _rclpy.rclpy_get_node_names_and_namespaces(self.handle)
 
     def _count_publishers_or_subscribers(self, topic_name, func):
         fq_topic_name = expand_topic_name(topic_name, self.get_name(), self.get_namespace())

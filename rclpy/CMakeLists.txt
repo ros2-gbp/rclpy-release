@@ -13,6 +13,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 find_package(rcl REQUIRED)
+find_package(rcl_yaml_param_parser REQUIRED)
 find_package(rcutils REQUIRED)
 find_package(rmw REQUIRED)
 find_package(rmw_implementation_cmake REQUIRED)
@@ -77,6 +78,7 @@ add_library(
 configure_python_c_extension_library(rclpy)
 ament_target_dependencies(rclpy
   "rcl"
+  "rcl_yaml_param_parser"
   "rcutils"
 )
 
@@ -89,6 +91,12 @@ configure_python_c_extension_library(rclpy_logging)
 ament_target_dependencies(rclpy_logging
   "rcutils"
 )
+
+if(NOT WIN32)
+  ament_environment_hooks(
+    "${ament_cmake_package_templates_ENVIRONMENT_HOOK_LIBRARY_PATH}"
+  )
+endif()
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

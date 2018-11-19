@@ -49,7 +49,10 @@ def shutdown():
     _shutdown()
 
 
-def create_node(node_name, *, cli_args=None, namespace=None, use_global_arguments=True):
+def create_node(
+    node_name, *, cli_args=None, namespace=None, use_global_arguments=True,
+    start_parameter_services=True, initial_parameters=None
+):
     """
     Create an instance of :class:`rclpy.node.Node`.
 
@@ -57,6 +60,8 @@ def create_node(node_name, *, cli_args=None, namespace=None, use_global_argument
     :param cli_args: A list of strings of command line args to be used only by this node.
     :param namespace: The namespace to which relative topic and service names will be prefixed.
     :param use_global_arguments: False if the node should ignore process-wide command line args.
+    :param start_parameter_services: False if the node should not create parameter services.
+    :param initial_parameters: A list of rclpy.parameter.Parameters to be set during node creation.
     :return: An instance of a node
     :rtype: :class:`rclpy.node.Node`
     """
@@ -64,7 +69,9 @@ def create_node(node_name, *, cli_args=None, namespace=None, use_global_argument
     from rclpy.node import Node
     return Node(
         node_name, cli_args=cli_args, namespace=namespace,
-        use_global_arguments=use_global_arguments)
+        use_global_arguments=use_global_arguments,
+        start_parameter_services=start_parameter_services,
+        initial_parameters=initial_parameters)
 
 
 def spin_once(node, *, timeout_sec=None):

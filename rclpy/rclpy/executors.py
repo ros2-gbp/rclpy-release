@@ -17,6 +17,7 @@ import inspect
 import multiprocessing
 from threading import Condition
 from threading import Lock
+from threading import RLock
 
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.task import Task
@@ -111,7 +112,7 @@ class Executor:
     def __init__(self):
         super().__init__()
         self._nodes = set()
-        self._nodes_lock = Lock()
+        self._nodes_lock = RLock()
         # Tasks to be executed (oldest first) 3-tuple Task, Entity, Node
         self._tasks = []
         self._tasks_lock = Lock()
@@ -182,6 +183,7 @@ class Executor:
         with self._nodes_lock:
             if node not in self._nodes:
                 self._nodes.add(node)
+                node.executor = self
                 # Rebuild the wait set so it includes this new node
                 _rclpy.rclpy_trigger_guard_condition(self._guard_condition)
                 return True
@@ -379,7 +381,6 @@ class Executor:
                     if gc._executor_triggered:
                         gc.trigger()
                     guards.append(gc)
-            (sigint_gc, sigint_gc_handle) = _rclpy.rclpy_get_sigint_guard_condition()
             if timeout_timer is not None:
                 timers.append(timeout_timer)
 
@@ -400,27 +401,29 @@ class Executor:
                     'service': (services, 'service_handle'),
                     'timer': (timers, 'timer_handle'),
                 }
+                _rclpy.rclpy_wait_set_clear_entities(wait_set)
                 for entity, (handles, handle_name) in entities.items():
-                    _rclpy.rclpy_wait_set_clear_entities(entity, wait_set)
                     for h in handles:
                         _rclpy.rclpy_wait_set_add_entity(
                             entity, wait_set, h.__getattribute__(handle_name)
                         )
-                _rclpy.rclpy_wait_set_add_entity('guard_condition', wait_set, sigint_gc)
-                _rclpy.rclpy_wait_set_add_entity(
-                    'guard_condition', wait_set, self._guard_condition)
+                (sigint_gc, sigint_gc_handle) = _rclpy.rclpy_get_sigint_guard_condition()
+                try:
+                    _rclpy.rclpy_wait_set_add_entity('guard_condition', wait_set, sigint_gc)
+                    _rclpy.rclpy_wait_set_add_entity(
+                        'guard_condition', wait_set, self._guard_condition)
 
-                # Wait for something to become ready
-                _rclpy.rclpy_wait(wait_set, timeout_nsec)
+                    # Wait for something to become ready
+                    _rclpy.rclpy_wait(wait_set, timeout_nsec)
 
-                # get ready entities
-                subs_ready = _rclpy.rclpy_get_ready_entities('subscription', wait_set)
-                guards_ready = _rclpy.rclpy_get_ready_entities('guard_condition', wait_set)
-                timers_ready = _rclpy.rclpy_get_ready_entities('timer', wait_set)
-                clients_ready = _rclpy.rclpy_get_ready_entities('client', wait_set)
-                services_ready = _rclpy.rclpy_get_ready_entities('service', wait_set)
-
-            _rclpy.rclpy_destroy_entity(sigint_gc)
+                    # get ready entities
+                    subs_ready = _rclpy.rclpy_get_ready_entities('subscription', wait_set)
+                    guards_ready = _rclpy.rclpy_get_ready_entities('guard_condition', wait_set)
+                    timers_ready = _rclpy.rclpy_get_ready_entities('timer', wait_set)
+                    clients_ready = _rclpy.rclpy_get_ready_entities('client', wait_set)
+                    services_ready = _rclpy.rclpy_get_ready_entities('service', wait_set)
+                finally:
+                    _rclpy.rclpy_destroy_entity(sigint_gc)
 
             # Mark all guards as triggered before yielding any handlers since they're auto-taken
             for gc in guards:
