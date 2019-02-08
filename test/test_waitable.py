@@ -17,7 +17,7 @@ import time
 import unittest
 
 import rclpy
-from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.clock import Clock
 from rclpy.clock import ClockType
 from rclpy.executors import SingleThreadedExecutor
@@ -153,7 +153,7 @@ class TimerWaitable(Waitable):
     async def execute(self, taken_data):
         """Execute work after data has been taken from a ready wait set."""
         test_data = {}
-        if taken_data is 'timer':
+        if 'timer' == taken_data:
             test_data['timer'] = taken_data
         self.future.set_result(test_data)
 
@@ -193,7 +193,7 @@ class SubscriptionWaitable(Waitable):
         """Take stuff from lower level so the wait set doesn't immediately wake again."""
         if self.subscription_is_ready:
             self.subscription_is_ready = False
-            return _rclpy.rclpy_take(self.subscription, EmptyMsg)
+            return _rclpy.rclpy_take(self.subscription, EmptyMsg, False)
         return None
 
     async def execute(self, taken_data):
@@ -241,7 +241,7 @@ class GuardConditionWaitable(Waitable):
     async def execute(self, taken_data):
         """Execute work after data has been taken from a ready wait set."""
         test_data = {}
-        if taken_data is 'guard_condition':
+        if 'guard_condition' == taken_data:
             test_data['guard_condition'] = True
         self.future.set_result(test_data)
 
@@ -253,6 +253,27 @@ class GuardConditionWaitable(Waitable):
         """Add entities to wait set."""
         self.guard_condition_index = _rclpy.rclpy_wait_set_add_entity(
             'guard_condition', wait_set, self.guard_condition)
+
+
+class MutuallyExclusiveWaitable(Waitable):
+
+    def __init__(self):
+        super().__init__(MutuallyExclusiveCallbackGroup())
+
+    def is_ready(self, wait_set):
+        return False
+
+    def take_data(self):
+        return None
+
+    async def execute(self, taken_data):
+        pass
+
+    def get_num_entities(self):
+        return NumberOfEntities(0, 0, 0, 0, 0)
+
+    def add_to_wait_set(self, wait_set):
+        pass
 
 
 class TestWaitable(unittest.TestCase):
@@ -347,6 +368,13 @@ class TestWaitable(unittest.TestCase):
 
         assert self.waitable.future.done()
         assert self.waitable.future.result()['guard_condition']
+
+    # Test that waitable doesn't crash with MutuallyExclusiveCallbackGroup
+    # https://github.com/ros2/rclpy/issues/264
+    def test_waitable_with_mutually_exclusive_callback_group(self):
+        self.waitable = MutuallyExclusiveWaitable()
+        self.node.add_waitable(self.waitable)
+        self.executor.spin_once(timeout_sec=0.1)
 
 
 class TestNumberOfEntities(unittest.TestCase):

@@ -40,6 +40,8 @@ from rclpy.validate_namespace import validate_namespace
 from rclpy.validate_node_name import validate_node_name
 from rclpy.validate_topic_name import validate_topic_name
 
+HIDDEN_NODE_PREFIX = '_'
+
 
 def check_for_type_support(msg_type):
     try:
@@ -250,7 +252,7 @@ class Node:
 
     def create_subscription(
             self, msg_type, topic, callback, *, qos_profile=qos_profile_default,
-            callback_group=None):
+            callback_group=None, raw=False):
         if callback_group is None:
             callback_group = self._default_callback_group
         # this line imports the typesupport for the message module if not already done
@@ -266,7 +268,7 @@ class Node:
 
         subscription = Subscription(
             subscription_handle, subscription_pointer, msg_type,
-            topic, callback, callback_group, qos_profile, self.handle)
+            topic, callback, callback_group, qos_profile, self.handle, raw)
         self.subscriptions.append(subscription)
         callback_group.add_entity(subscription)
         return subscription
