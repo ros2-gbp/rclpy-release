@@ -1,0 +1,182 @@
+ros-crystal-rclpy (0.6.3-1bionic) bionic; urgency=high
+
+  * Backport Python Actions (#282 <https://github.com/ros2/rclpy/issues/282>)
+    * Add Action Client (#262 <https://github.com/ros2/rclpy/issues/262>)
+    * Add rclpy_action module
+    * Implement action client
+    * Move common conversion function and typedefs to shared header file (impl/common.h)
+    * Add tests using mock action server
+    * Add action module for aggregating action related submodules
+    * Extend Waitable API so executors are aware of Futures
+    * Move check_for_type_support() to its own module
+    * Fix Executor not executing tasks if there are no ready entities in the wait set (#272 <https://github.com/ros2/rclpy/issues/272>)
+    * Fix Node's reference to executor (#275 <https://github.com/ros2/rclpy/issues/275>)
+    * Abstract type conversions into functions (#269 <https://github.com/ros2/rclpy/issues/269>)
+    * Abstract type conversions into functions
+    * Move common C functions to a shared library 'rclpy_common'
+    * Add ActionServer (#270 <https://github.com/ros2/rclpy/issues/270>)
+    * Add Action server functions to extension module
+    * Separated service related macros into separate request and response calls
+    * Add server goal handle functions to extension module
+    * Update Action extension module to use conversion functions
+    * Add implementation of Python ActionServer
+    * Handles goal and cancel requests, responds, and calls user-defined functions for executing goals.
+    * Handle result requests
+    * Handle expired goals
+    * Publish goal status array and feedback
+    * Add handle_accepted_callback to ActionServer
+    * Enable test using MultiThreadedExecutor (#280 <https://github.com/ros2/rclpy/issues/280>)
+    * Guard against failed take when taking action messages (#281 <https://github.com/ros2/rclpy/issues/281>)
+  * Contributors: Jacob Perron
+
+ -- William Woodall <william@osrfoundation.org>  Sat, 09 Mar 2019 08:00:00 -0000
+
+ros-crystal-rclpy (0.6.2-1bionic) bionic; urgency=high
+
+  * Added Waitable to callback group (#265 <https://github.com/ros2/rclpy/issues/265>)
+  * Fixed flake8 error (#263 <https://github.com/ros2/rclpy/issues/263>)
+  * Added HIDDEN_NODE_PREFIX definition to node.py (#259 <https://github.com/ros2/rclpy/issues/259>)
+  * Added rclpy raw subscriptions (#242 <https://github.com/ros2/rclpy/issues/242>)
+  * Added a test for invalid string checks on publishing (#256 <https://github.com/ros2/rclpy/issues/256>)
+  * Contributors: AAlon, Jacob Perron, Joseph Duchesne, Michel Hidalgo, Shane Loretz
+
+ -- William Woodall <william@osrfoundation.org>  Fri, 08 Feb 2019 08:00:00 -0000
+
+ros-crystal-rclpy (0.6.1-1bionic) bionic; urgency=high
+
+  * Added node graph functions (#247 <https://github.com/ros2/rclpy/issues/247>)
+  * Filled ParameterEvent.msg with timestamp and node path name (#252 <https://github.com/ros2/rclpy/issues/252>)
+  * Fixed spelling in documentation (#251 <https://github.com/ros2/rclpy/issues/251>)
+  * Added Waitaible and wait set APIs (#250 <https://github.com/ros2/rclpy/issues/250>)
+  * Updated rcl_wait_set_add_* calls (#248 <https://github.com/ros2/rclpy/issues/248>)
+  * Contributors: Brian, Dirk Thomas, Jacob Perron, Ross Desmond, Shane Loretz, Tully Foote, William Woodall
+
+ -- William Woodall <william@osrfoundation.org>  Fri, 07 Dec 2018 08:00:00 -0000
+
+ros-crystal-rclpy (0.6.0-1bionic) bionic; urgency=high
+
+  * Updated to use new error handling API from rcutils (#245 <https://github.com/ros2/rclpy/issues/245>)
+  * Added library path hook for platforms other than Windows. (#243 <https://github.com/ros2/rclpy/issues/243>)
+  * Avoided use of MethodType when monkey patching for tests (#239 <https://github.com/ros2/rclpy/issues/239>)
+  * Fixed repeated fini-ing on failure to parse yaml params (#238 <https://github.com/ros2/rclpy/issues/238>)
+  * Added methods on Mock class for Python 3.5 compatibility (#237 <https://github.com/ros2/rclpy/issues/237>)
+  * Added getter for tuple with seconds and nanoseconds (#235 <https://github.com/ros2/rclpy/issues/235>)
+  * Added new method to get node names and namespaces (#233 <https://github.com/ros2/rclpy/issues/233>)
+  * Fixed warning when parameter value is uninitialized. (#234 <https://github.com/ros2/rclpy/issues/234>)
+  * Added initial node parameters from a parameters yaml files and constructor arguments. (#225 <https://github.com/ros2/rclpy/issues/225>)
+  * Added callbacks when time jumps (#222 <https://github.com/ros2/rclpy/issues/222>)
+  * Updated to use consolidated rcl_wait_set_clear() (#230 <https://github.com/ros2/rclpy/issues/230>)
+  * Added parameter events publishing (#226 <https://github.com/ros2/rclpy/issues/226>)
+  * Added Node API method for setting the parameters_callback. (#228 <https://github.com/ros2/rclpy/issues/228>)
+  * Added test for when sim time is active but unset (#229 <https://github.com/ros2/rclpy/issues/229>)
+  * Added node parameters and parameter services (#214 <https://github.com/ros2/rclpy/issues/214>)
+  * Disabled 1kHz test on all platforms (#223 <https://github.com/ros2/rclpy/issues/223>)
+  * Updated to allow duration to be initialized with negative nanoseconds (#221 <https://github.com/ros2/rclpy/issues/221>)
+  * Updated to allow Duration to be negative (#220 <https://github.com/ros2/rclpy/issues/220>)
+  * Added a reference to its executor on Node (#218 <https://github.com/ros2/rclpy/issues/218>)
+  * Fixed executor.remove_node() (#217 <https://github.com/ros2/rclpy/issues/217>)
+  * Fixed bool return value for executor.add_node() (#216 <https://github.com/ros2/rclpy/issues/216>)
+  * Added TimeSource and support for ROS time (#210 <https://github.com/ros2/rclpy/issues/210>)
+  * Added Time, Duration, Clock wrapping rcl (#209 <https://github.com/ros2/rclpy/issues/209>)
+  * Contributors: Dirk Thomas, Michael Carroll, Mikael Arguedas, Shane Loretz, Steven! Ragnarök, William Woodall, dhood
+
+ -- William Woodall <william@osrfoundation.org>  Mon, 19 Nov 2018 08:00:00 -0000
+
+ros-crystal-rclpy (0.5.3-1bionic) bionic; urgency=high
+
+  * use test_msgs instead of std_msgs (#204 <https://github.com/ros2/rclpy/issues/204>)
+  * Fixes memory leaks for nested fields (#203 <https://github.com/ros2/rclpy/issues/203>)
+    This separates memory allocation out from convert_from_py function.
+    Now it uses separate create_message function to allocate message,
+    making it explicit gives better control where and how memory is
+    allocated and freed.
+  * Contributors: Martins Mozeiko, Mikael Arguedas
+
+ -- William Woodall <william@osrfoundation.org>  Tue, 17 Jul 2018 07:00:00 -0000
+
+ros-crystal-rclpy (0.5.1-1bionic) bionic; urgency=high
+
+  * Changed the maintainer to be William Woodall. (#196 <https://github.com/ros2/rclpy/issues/196>)
+  * Contributors: William Woodall
+
+ -- William Woodall <william@osrfoundation.org>  Wed, 27 Jun 2018 07:00:00 -0000
+
+ros-crystal-rclpy (0.5.0-1bionic) bionic; urgency=high
+
+  * Changed the rclpy signal handler so that it is registered in ``rclpy_init()`` rather than in each wait. (#194 <https://github.com/ros2/rclpy/issues/194>)
+  * Changed the signal handler in rclpy to call the original signal handler when receiving SIGINT during a wait on a wait set. (#191 <https://github.com/ros2/rclpy/issues/191>)
+  * Added API for counting the number of publishers and subscribers on a topic. (#183 <https://github.com/ros2/rclpy/issues/183>)
+  * Updated Node interface so it can use the command line arguments and can optionally ignore global arguments. (#185 <https://github.com/ros2/rclpy/issues/185>)
+  * Changed the ``rclpy.spin*()`` functions to use a persistent executor. (#176 <https://github.com/ros2/rclpy/issues/176>)
+  * Fixed a bug related to zero-initialization. (#182 <https://github.com/ros2/rclpy/issues/182>)
+  * Added code to handle node names which are ``nullptr``. (#177 <https://github.com/ros2/rclpy/issues/177>)
+  * Refactored client class so that it can handle multiple requests. (#170 <https://github.com/ros2/rclpy/issues/170>)
+  * Fixed ``rclpy_init()`` so that it actually passes command line arguments to ``rcl_init()`` (#179 <https://github.com/ros2/rclpy/issues/179>)
+  * Changed logging to get the node's logger name from rcl. (#174 <https://github.com/ros2/rclpy/issues/174>)
+  * Fixed a bug where ``rclpy_take_response()`` was ignoring the sequence number. (#171 <https://github.com/ros2/rclpy/issues/171>)
+  * Added support for Futures and coroutines in the executor. (#166 <https://github.com/ros2/rclpy/issues/166>)
+  * Updated code to match API change needed to avoid accidental nullptr dereference. (#157 <https://github.com/ros2/rclpy/issues/157>)
+    * Signed-off-by: Ethan Gao <mailto:ethan.gao@linux.intel.com>
+  * Added a sleep to workaround race condition in MultiThreadedExecutor test. (#168 <https://github.com/ros2/rclpy/issues/168>)
+  * Disable 1kHz timer tests on the ARM architectures. (#169 <https://github.com/ros2/rclpy/issues/169>)
+    * Publish parameter events.
+    Adds a parameter event publisher to rclpy nodes.
+    * Increase base number of publishers for testing.
+    Because every node has a parameter events publisher bump the number of
+    expected publishers in a couple of cases.
+    * Remove comment now that parameter services are implemented.
+    * Delete NOT_SET parameters if present regardless of prior type.
+    * Use ParameterMsg rather than RCLParameter for msg type name.
+    * Publish parameter events.
+    Adds a parameter event publisher to rclpy nodes.
+    * Increase base number of publishers for testing.
+    Because every node has a parameter events publisher bump the number of
+    expected publishers in a couple of cases.
+    * Remove comment now that parameter services are implemented.
+    * Delete NOT_SET parameters if present regardless of prior type.
+    * Use ParameterMsg rather than RCLParameter for msg type name.
+    * Publish parameter events.
+    Adds a parameter event publisher to rclpy nodes.
+    * Increase base number of publishers for testing.
+    Because every node has a parameter events publisher bump the number of
+    expected publishers in a couple of cases.
+    * Remove comment now that parameter services are implemented.
+    * Delete NOT_SET parameters if present regardless of prior type.
+    * Use ParameterMsg rather than RCLParameter for msg type name.
+    * Publish parameter events.
+    Adds a parameter event publisher to rclpy nodes.
+    * Increase base number of publishers for testing.
+    Because every node has a parameter events publisher bump the number of
+    expected publishers in a couple of cases.
+    * Remove comment now that parameter services are implemented.
+    * Delete NOT_SET parameters if present regardless of prior type.
+    * Use ParameterMsg rather than RCLParameter for msg type name.
+    * Publish parameter events.
+    Adds a parameter event publisher to rclpy nodes.
+    * Increase base number of publishers for testing.
+    Because every node has a parameter events publisher bump the number of
+    expected publishers in a couple of cases.
+    * Remove comment now that parameter services are implemented.
+    * Delete NOT_SET parameters if present regardless of prior type.
+    * Use ParameterMsg rather than RCLParameter for msg type name.
+    * Publish parameter events.
+    Adds a parameter event publisher to rclpy nodes.
+    * Increase base number of publishers for testing.
+    Because every node has a parameter events publisher bump the number of
+    expected publishers in a couple of cases.
+    * Remove comment now that parameter services are implemented.
+    * Delete NOT_SET parameters if present regardless of prior type.
+    * Use ParameterMsg rather than RCLParameter for msg type name.
+    * Publish parameter events.
+    Adds a parameter event publisher to rclpy nodes.
+    * Increase base number of publishers for testing.
+    Because every node has a parameter events publisher bump the number of
+    expected publishers in a couple of cases.
+    * Remove comment now that parameter services are implemented.
+    * Delete NOT_SET parameters if present regardless of prior type.
+    * Use ParameterMsg rather than RCLParameter for msg type name.
+  * Contributors: Dirk Thomas, Ethan Gao, Michael Carroll, Mikael Arguedas, Nick Medveditskov, Shane Loretz, Tully Foote, William Woodall, dhood
+
+ -- William Woodall <william@osrfoundation.org>  Mon, 25 Jun 2018 07:00:00 -0000
+
+
