@@ -1,3 +1,26 @@
+## rclpy (crystal) - 0.6.3-1
+
+The packages in the `rclpy` repository were released into the `crystal` distro by running `/usr/bin/bloom-release -r crystal rclpy --override-release-repository-push-url git@github.com:ros2-gbp/rclpy-release` on `Sun, 10 Mar 2019 03:23:43 -0000`
+
+The `rclpy` package was released.
+
+Version of package(s) in repository `rclpy`:
+
+- upstream repository: https://github.com/ros2/rclpy.git
+- release repository: https://github.com/ros2-gbp/rclpy-release.git
+- rosdistro version: `0.6.2-0`
+- old version: `0.6.3-0`
+- new version: `0.6.3-1`
+
+Versions of tools used:
+
+- bloom version: `0.7.2`
+- catkin_pkg version: `0.4.10`
+- rosdep version: `0.15.0`
+- rosdistro version: `0.7.2`
+- vcstools version: `0.1.40`
+
+
 ## rclpy (crystal) - 0.6.3-0
 
 The packages in the `rclpy` repository were released into the `crystal` distro by running `/usr/bin/bloom-release -r crystal rclpy --override-release-repository-push-url git@github.com:ros2-gbp/rclpy-release` on `Sun, 10 Mar 2019 03:15:43 -0000`
