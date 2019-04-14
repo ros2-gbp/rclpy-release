@@ -12,7 +12,102 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "rcl/error_handling.h"
+
 #include "rclpy_common/common.h"
+
+/**
+ * Mirrors the struct rmw_qos_profile_t from rmw/types.h
+ */
+typedef struct rclpy_qos_profile
+{
+  PyObject * depth;
+  PyObject * history;
+  PyObject * reliability;
+  PyObject * durability;
+  PyObject * avoid_ros_namespace_conventions;
+} rclpy_qos_profile_t;
+
+void
+init_rclpy_qos_profile(rclpy_qos_profile_t * rclpy_profile)
+{
+  memset(rclpy_profile, 0, sizeof(*rclpy_profile));
+}
+
+void
+cleanup_rclpy_qos_profile(rclpy_qos_profile_t * profile)
+{
+  Py_XDECREF(profile->depth);
+  Py_XDECREF(profile->history);
+  Py_XDECREF(profile->reliability);
+  Py_XDECREF(profile->durability);
+  Py_XDECREF(profile->avoid_ros_namespace_conventions);
+}
+
+bool
+rclpy_names_and_types_fini(rcl_names_and_types_t * names_and_types)
+{
+  if (!names_and_types) {
+    return true;
+  }
+  rcl_ret_t ret = rcl_names_and_types_fini(names_and_types);
+  if (ret != RCL_RET_OK) {
+    PyErr_Format(PyExc_RuntimeError,
+      "Failed to destroy rcl_names_and_types_t: %s", rcl_get_error_string().str);
+    rcl_reset_error();
+    return false;
+  }
+  return true;
+}
+
+PyObject *
+rclpy_convert_to_py_names_and_types(rcl_names_and_types_t * names_and_types)
+{
+  if (!names_and_types) {
+    return NULL;
+  }
+
+  PyObject * pynames_and_types = PyList_New(names_and_types->names.size);
+  if (!pynames_and_types) {
+    return NULL;
+  }
+
+  size_t i;
+  for (i = 0; i < names_and_types->names.size; ++i) {
+    PyObject * pytuple = PyTuple_New(2);
+    if (!pytuple) {
+      Py_DECREF(pynames_and_types);
+      return NULL;
+    }
+    PyObject * pyname = PyUnicode_FromString(names_and_types->names.data[i]);
+    if (!pyname) {
+      Py_DECREF(pynames_and_types);
+      Py_DECREF(pytuple);
+      return NULL;
+    }
+    PyTuple_SET_ITEM(pytuple, 0, pyname);
+    PyObject * pytypes_list = PyList_New(names_and_types->types[i].size);
+    if (!pytypes_list) {
+      Py_DECREF(pynames_and_types);
+      Py_DECREF(pytuple);
+      return NULL;
+    }
+    size_t j;
+    for (j = 0; j < names_and_types->types[i].size; ++j) {
+      PyObject * pytype = PyUnicode_FromString(names_and_types->types[i].data[j]);
+      if (!pytype) {
+        Py_DECREF(pynames_and_types);
+        Py_DECREF(pytuple);
+        Py_DECREF(pytypes_list);
+        return NULL;
+      }
+      PyList_SET_ITEM(pytypes_list, j, pytype);
+    }
+    PyTuple_SET_ITEM(pytuple, 1, pytypes_list);
+    PyList_SET_ITEM(pynames_and_types, i, pytuple);
+  }
+  return pynames_and_types;
+}
 
 PyObject *
 rclpy_convert_to_py_qos_policy(void * profile)
@@ -34,63 +129,59 @@ rclpy_convert_to_py_qos_policy(void * profile)
     return NULL;
   }
 
+  // start qos setting
   rmw_qos_profile_t * qos_profile = (rmw_qos_profile_t *)profile;
+  rclpy_qos_profile_t rclpy_qos;
+  init_rclpy_qos_profile(&rclpy_qos);
 
-  PyObject * pyqos_depth = PyLong_FromSize_t(qos_profile->depth);
-  if (!pyqos_depth) {
+  int set_result = -1;
+
+  rclpy_qos.depth = PyLong_FromSize_t(qos_profile->depth);
+  if (!rclpy_qos.depth) {
     Py_DECREF(pyqos_profile);
+    cleanup_rclpy_qos_profile(&rclpy_qos);
     return NULL;
   }
 
-  PyObject * pyqos_history = PyLong_FromUnsignedLong(qos_profile->history);
-  if (!pyqos_history) {
+  rclpy_qos.history = PyLong_FromUnsignedLong(qos_profile->history);
+  if (!rclpy_qos.history) {
     Py_DECREF(pyqos_profile);
-    Py_DECREF(pyqos_depth);
+    cleanup_rclpy_qos_profile(&rclpy_qos);
     return NULL;
   }
 
-  PyObject * pyqos_reliability = PyLong_FromUnsignedLong(qos_profile->reliability);
-  if (!pyqos_reliability) {
+  rclpy_qos.reliability = PyLong_FromUnsignedLong(qos_profile->reliability);
+  if (!rclpy_qos.reliability) {
     Py_DECREF(pyqos_profile);
-    Py_DECREF(pyqos_depth);
-    Py_DECREF(pyqos_history);
+    cleanup_rclpy_qos_profile(&rclpy_qos);
     return NULL;
   }
 
-  PyObject * pyqos_durability = PyLong_FromUnsignedLong(qos_profile->durability);
-  if (!pyqos_durability) {
+  rclpy_qos.durability = PyLong_FromUnsignedLong(qos_profile->durability);
+  if (!rclpy_qos.durability) {
     Py_DECREF(pyqos_profile);
-    Py_DECREF(pyqos_depth);
-    Py_DECREF(pyqos_history);
-    Py_DECREF(pyqos_reliability);
+    cleanup_rclpy_qos_profile(&rclpy_qos);
     return NULL;
   }
 
-  PyObject * pyqos_avoid_ros_namespace_conventions =
+  rclpy_qos.avoid_ros_namespace_conventions =
     PyBool_FromLong(qos_profile->avoid_ros_namespace_conventions);
-  if (!pyqos_avoid_ros_namespace_conventions) {
+  if (!rclpy_qos.avoid_ros_namespace_conventions) {
     Py_DECREF(pyqos_profile);
-    Py_DECREF(pyqos_depth);
-    Py_DECREF(pyqos_history);
-    Py_DECREF(pyqos_reliability);
-    Py_DECREF(pyqos_durability);
+    cleanup_rclpy_qos_profile(&rclpy_qos);
     return NULL;
   }
 
   // A success returns 0, and a failure returns -1
-  int set_result = 0;
-  set_result += PyObject_SetAttrString(pyqos_profile, "depth", pyqos_depth);
-  set_result += PyObject_SetAttrString(pyqos_profile, "history", pyqos_history);
-  set_result += PyObject_SetAttrString(pyqos_profile, "reliability", pyqos_reliability);
-  set_result += PyObject_SetAttrString(pyqos_profile, "durability", pyqos_durability);
+  set_result = 0;
+  set_result += PyObject_SetAttrString(pyqos_profile, "depth", rclpy_qos.depth);
+  set_result += PyObject_SetAttrString(pyqos_profile, "history", rclpy_qos.history);
+  set_result += PyObject_SetAttrString(pyqos_profile, "reliability", rclpy_qos.reliability);
+  set_result += PyObject_SetAttrString(pyqos_profile, "durability", rclpy_qos.durability);
   set_result += PyObject_SetAttrString(pyqos_profile,
-      "avoid_ros_namespace_conventions", pyqos_avoid_ros_namespace_conventions);
+      "avoid_ros_namespace_conventions", rclpy_qos.avoid_ros_namespace_conventions);
 
-  Py_DECREF(pyqos_depth);
-  Py_DECREF(pyqos_history);
-  Py_DECREF(pyqos_reliability);
-  Py_DECREF(pyqos_durability);
-  Py_DECREF(pyqos_avoid_ros_namespace_conventions);
+  cleanup_rclpy_qos_profile(&rclpy_qos);
 
   if (0 != set_result) {
     Py_DECREF(pyqos_profile);
