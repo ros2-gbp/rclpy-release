@@ -28,9 +28,7 @@ SrvTypeResponse = TypeVar('SrvTypeResponse')
 class Service:
     def __init__(
         self,
-        node_handle,
         service_handle,
-        service_pointer: int,
         srv_type: SrvType,
         srv_name: str,
         callback: Callable[[SrvTypeRequest, SrvTypeResponse], SrvTypeResponse],
@@ -43,20 +41,15 @@ class Service:
         .. warning:: Users should not create a service server with this constuctor, instead they
            should call :meth:`.Node.create_service`.
 
-        :param node_handle: Capsule pointing to the ``rcl_node_t`` object for the node associated
-            with the service server.
         :param context: The context associated with the service server.
         :param service_handle: Capsule pointing to the underlying ``rcl_service_t`` object.
-        :param service_pointer: Memory address of the ``rcl_service_t`` implementation.
         :param srv_type: The service type.
         :param srv_name: The name of the service.
         :param callback_group: The callback group for the service server. If ``None``, then the
             nodes default callback group is used.
         :param qos_profile: The quality of service profile to apply the service server.
         """
-        self.node_handle = node_handle
-        self.service_handle = service_handle
-        self.service_pointer = service_pointer
+        self.__handle = service_handle
         self.srv_type = srv_type
         self.srv_name = srv_name
         self.callback = callback
@@ -71,5 +64,18 @@ class Service:
 
         :param response: The service response.
         :param header: Capsule pointing to the service header from the original request.
+        :raises: TypeError if the type of the passed response isn't an instance
+          of the Response type of the provided service when the service was
+          constructed.
         """
-        _rclpy.rclpy_send_response(self.service_handle, response, header)
+        if not isinstance(response, self.srv_type.Response):
+            raise TypeError()
+        with self.handle as capsule:
+            _rclpy.rclpy_send_response(capsule, response, header)
+
+    @property
+    def handle(self):
+        return self.__handle
+
+    def destroy(self):
+        self.handle.destroy()

@@ -32,10 +32,8 @@ SrvTypeResponse = TypeVar('SrvTypeResponse')
 class Client:
     def __init__(
         self,
-        node_handle,
         context: Context,
         client_handle,
-        client_pointer: int,
         srv_type: SrvType,
         srv_name: str,
         qos_profile: QoSProfile,
@@ -47,21 +45,16 @@ class Client:
         .. warning:: Users should not create a service client with this constuctor, instead they
            should call :meth:`.Node.create_client`.
 
-        :param node_handle: Capsule pointing to the ``rcl_node_t`` object for the node associated
-            with the service client.
         :param context: The context associated with the service client.
-        :param client_handle: Capsule pointing to the underlying ``rcl_client_t`` object.
-        :param client_pointer: Memory address of the ``rcl_client_t`` implementation.
+        :param client_handle: :class:`Handle` wrapping the underlying ``rcl_client_t`` object.
         :param srv_type: The service type.
         :param srv_name: The name of the service.
         :param qos_profile: The quality of service profile to apply the service client.
         :param callback_group: The callback group for the service client. If ``None``, then the
             nodes default callback group is used.
         """
-        self.node_handle = node_handle
         self.context = context
-        self.client_handle = client_handle
-        self.client_pointer = client_pointer
+        self.__handle = client_handle
         self.srv_type = srv_type
         self.srv_name = srv_name
         self.qos_profile = qos_profile
@@ -79,7 +72,13 @@ class Client:
 
         :param request: The service request.
         :return: The service response.
+        :raises: TypeError if the type of the passed request isn't an instance
+          of the Request type of the provided service when the client was
+          constructed.
         """
+        if not isinstance(request, self.srv_type.Request):
+            raise TypeError()
+
         event = threading.Event()
 
         def unblock(future):
@@ -116,8 +115,15 @@ class Client:
 
         :param request: The service request.
         :return: A future that completes when the request does.
+        :raises: TypeError if the type of the passed request isn't an instance
+          of the Request type of the provided service when the client was
+          constructed.
         """
-        sequence_number = _rclpy.rclpy_send_request(self.client_handle, request)
+        if not isinstance(request, self.srv_type.Request):
+            raise TypeError()
+
+        with self.handle as capsule:
+            sequence_number = _rclpy.rclpy_send_request(capsule, request)
         if sequence_number in self._pending_requests:
             raise RuntimeError('Sequence (%r) conflicts with pending request' % sequence_number)
 
@@ -134,7 +140,8 @@ class Client:
 
         :return: ``True`` if a server is ready, ``False`` otherwise.
         """
-        return _rclpy.rclpy_service_server_is_available(self.node_handle, self.client_handle)
+        with self.handle as capsule:
+            return _rclpy.rclpy_service_server_is_available(capsule)
 
     def wait_for_service(self, timeout_sec: float = None) -> bool:
         """
@@ -155,3 +162,10 @@ class Client:
             timeout_sec -= sleep_time
 
         return self.service_is_ready()
+
+    @property
+    def handle(self):
+        return self.__handle
+
+    def destroy(self):
+        self.handle.destroy()

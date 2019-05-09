@@ -15,27 +15,35 @@
 import unittest
 from unittest.mock import Mock
 
+from rcl_interfaces.msg import ParameterDescriptor
+from rcl_interfaces.msg import ParameterValue
 from rcl_interfaces.msg import SetParametersResult
 from rcl_interfaces.srv import GetParameters
 import rclpy
 from rclpy.clock import ClockType
+from rclpy.exceptions import InvalidParameterException
+from rclpy.exceptions import InvalidParameterValueException
 from rclpy.exceptions import InvalidServiceNameException
 from rclpy.exceptions import InvalidTopicNameException
+from rclpy.exceptions import ParameterAlreadyDeclaredException
+from rclpy.exceptions import ParameterNotDeclaredException
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.parameter import Parameter
-from test_msgs.msg import Primitives
+from test_msgs.msg import BasicTypes
 
 TEST_NODE = 'my_node'
 TEST_NAMESPACE = '/my_ns'
 
 
-class TestNode(unittest.TestCase):
+class TestNodeAllowUndeclaredParameters(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
         cls.context = rclpy.context.Context()
         rclpy.init(context=cls.context)
-        cls.node = rclpy.create_node(TEST_NODE, namespace=TEST_NAMESPACE, context=cls.context)
+        cls.node = rclpy.create_node(
+            TEST_NODE, namespace=TEST_NAMESPACE, context=cls.context,
+            allow_undeclared_parameters=True)
 
     @classmethod
     def tearDownClass(cls):
@@ -51,22 +59,22 @@ class TestNode(unittest.TestCase):
         self.assertEqual(self.node.get_clock().clock_type, ClockType.ROS_TIME)
 
     def test_create_publisher(self):
-        self.node.create_publisher(Primitives, 'chatter')
+        self.node.create_publisher(BasicTypes, 'chatter')
         with self.assertRaisesRegex(InvalidTopicNameException, 'must not contain characters'):
-            self.node.create_publisher(Primitives, 'chatter?')
+            self.node.create_publisher(BasicTypes, 'chatter?')
         with self.assertRaisesRegex(InvalidTopicNameException, 'must not start with a number'):
-            self.node.create_publisher(Primitives, '/chatter/42_is_the_answer')
+            self.node.create_publisher(BasicTypes, '/chatter/42_is_the_answer')
         with self.assertRaisesRegex(ValueError, 'unknown substitution'):
-            self.node.create_publisher(Primitives, 'chatter/{bad_sub}')
+            self.node.create_publisher(BasicTypes, 'chatter/{bad_sub}')
 
     def test_create_subscription(self):
-        self.node.create_subscription(Primitives, 'chatter', lambda msg: print(msg))
+        self.node.create_subscription(BasicTypes, 'chatter', lambda msg: print(msg))
         with self.assertRaisesRegex(InvalidTopicNameException, 'must not contain characters'):
-            self.node.create_subscription(Primitives, 'chatter?', lambda msg: print(msg))
+            self.node.create_subscription(BasicTypes, 'chatter?', lambda msg: print(msg))
         with self.assertRaisesRegex(InvalidTopicNameException, 'must not start with a number'):
-            self.node.create_subscription(Primitives, '/chatter/42ish', lambda msg: print(msg))
+            self.node.create_subscription(BasicTypes, '/chatter/42ish', lambda msg: print(msg))
         with self.assertRaisesRegex(ValueError, 'unknown substitution'):
-            self.node.create_subscription(Primitives, 'foo/{bad_sub}', lambda msg: print(msg))
+            self.node.create_subscription(BasicTypes, 'foo/{bad_sub}', lambda msg: print(msg))
 
     def raw_subscription_callback(self, msg):
         print('Raw subscription callback: %s length %d' % (msg, len(msg)))
@@ -75,18 +83,18 @@ class TestNode(unittest.TestCase):
     def test_create_raw_subscription(self):
         executor = SingleThreadedExecutor(context=self.context)
         executor.add_node(self.node)
-        primitives_pub = self.node.create_publisher(Primitives, 'raw_subscription_test')
+        basic_types_pub = self.node.create_publisher(BasicTypes, 'raw_subscription_test')
         self.raw_subscription_msg = None  # None=No result yet
         self.node.create_subscription(
-            Primitives,
+            BasicTypes,
             'raw_subscription_test',
             self.raw_subscription_callback,
             raw=True
         )
-        primitives_msg = Primitives()
+        basic_types_msg = BasicTypes()
         cycle_count = 0
         while cycle_count < 5 and self.raw_subscription_msg is None:
-            primitives_pub.publish(primitives_msg)
+            basic_types_pub.publish(basic_types_msg)
             cycle_count += 1
             executor.spin_once(timeout_sec=1)
         self.assertIsNotNone(self.raw_subscription_msg, 'raw subscribe timed out')
@@ -139,15 +147,15 @@ class TestNode(unittest.TestCase):
         self.assertEqual(0, self.node.count_publishers(fq_topic_name))
         self.assertEqual(0, self.node.count_subscribers(fq_topic_name))
 
-        self.node.create_publisher(Primitives, short_topic_name)
+        self.node.create_publisher(BasicTypes, short_topic_name)
         self.assertEqual(1, self.node.count_publishers(short_topic_name))
         self.assertEqual(1, self.node.count_publishers(fq_topic_name))
 
-        self.node.create_subscription(Primitives, short_topic_name, lambda msg: print(msg))
+        self.node.create_subscription(BasicTypes, short_topic_name, lambda msg: print(msg))
         self.assertEqual(1, self.node.count_subscribers(short_topic_name))
         self.assertEqual(1, self.node.count_subscribers(fq_topic_name))
 
-        self.node.create_subscription(Primitives, short_topic_name, lambda msg: print(msg))
+        self.node.create_subscription(BasicTypes, short_topic_name, lambda msg: print(msg))
         self.assertEqual(2, self.node.count_subscribers(short_topic_name))
         self.assertEqual(2, self.node.count_subscribers(fq_topic_name))
 
@@ -250,31 +258,257 @@ class TestNode(unittest.TestCase):
     def test_node_has_parameter_services(self):
         service_names_and_types = self.node.get_service_names_and_types()
         self.assertIn(
-            ('/my_ns/my_node/describe_parameters', ['rcl_interfaces/DescribeParameters']),
+            ('/my_ns/my_node/describe_parameters', ['rcl_interfaces/srv/DescribeParameters']),
             service_names_and_types
         )
         self.assertIn(
-            ('/my_ns/my_node/get_parameter_types', ['rcl_interfaces/GetParameterTypes']),
+            ('/my_ns/my_node/get_parameter_types', ['rcl_interfaces/srv/GetParameterTypes']),
             service_names_and_types
         )
         self.assertIn(
-            ('/my_ns/my_node/get_parameters', ['rcl_interfaces/GetParameters']),
+            ('/my_ns/my_node/get_parameters', ['rcl_interfaces/srv/GetParameters']),
             service_names_and_types
         )
         self.assertIn(
-            ('/my_ns/my_node/list_parameters', ['rcl_interfaces/ListParameters']),
+            ('/my_ns/my_node/list_parameters', ['rcl_interfaces/srv/ListParameters']),
             service_names_and_types
         )
         self.assertIn(
-            ('/my_ns/my_node/set_parameters', ['rcl_interfaces/SetParameters']),
+            ('/my_ns/my_node/set_parameters', ['rcl_interfaces/srv/SetParameters']),
             service_names_and_types
         )
         self.assertIn(
             (
                 '/my_ns/my_node/set_parameters_atomically',
-                ['rcl_interfaces/SetParametersAtomically']
+                ['rcl_interfaces/srv/SetParametersAtomically']
             ), service_names_and_types
         )
+
+
+class TestNode(unittest.TestCase):
+
+    @classmethod
+    def setUp(self):
+        self.context = rclpy.context.Context()
+        rclpy.init(context=self.context)
+        self.node = rclpy.create_node(
+            TEST_NODE,
+            namespace=TEST_NAMESPACE,
+            context=self.context,
+            initial_parameters=[
+                Parameter('initial_foo', Parameter.Type.INTEGER, 4321),
+                Parameter('initial_bar', Parameter.Type.STRING, 'init_param'),
+                Parameter('initial_baz', Parameter.Type.DOUBLE, 3.14)
+            ],
+            automatically_declare_initial_parameters=False
+        )
+
+    @classmethod
+    def tearDown(self):
+        self.node.destroy_node()
+        rclpy.shutdown(context=self.context)
+
+    def test_declare_parameter(self):
+        result_initial_foo = self.node.declare_parameter(
+            'initial_foo', ParameterValue(), ParameterDescriptor())
+        result_foo = self.node.declare_parameter(
+            'foo', ParameterValue(
+                type=Parameter.Type.INTEGER.value, integer_value=42), ParameterDescriptor())
+        result_bar = self.node.declare_parameter(
+            'bar', ParameterValue(
+                type=Parameter.Type.STRING.value, string_value='hello'), ParameterDescriptor())
+        result_baz = self.node.declare_parameter(
+            'baz', ParameterValue(
+                type=Parameter.Type.DOUBLE.value, double_value=2.41), ParameterDescriptor())
+
+        # OK cases.
+        self.assertIsInstance(result_initial_foo, Parameter)
+        self.assertIsInstance(result_foo, Parameter)
+        self.assertIsInstance(result_bar, Parameter)
+        self.assertIsInstance(result_baz, Parameter)
+        self.assertEqual(result_initial_foo.value, 4321)
+        self.assertEqual(result_foo.value, 42)
+        self.assertEqual(result_bar.value, 'hello')
+        self.assertEqual(result_baz.value, 2.41)
+        self.assertEqual(self.node.get_parameter('initial_foo').value, 4321)
+        self.assertEqual(self.node.get_parameter('foo').value, 42)
+        self.assertEqual(self.node.get_parameter('bar').value, 'hello')
+        self.assertEqual(self.node.get_parameter('baz').value, 2.41)
+
+        # Error cases.
+        with self.assertRaises(ParameterAlreadyDeclaredException):
+            self.node.declare_parameter(
+                'foo', ParameterValue(
+                    type=Parameter.Type.STRING.value, string_value='raise'), ParameterDescriptor())
+        with self.assertRaises(InvalidParameterException):
+            self.node.declare_parameter(
+                '123foo', ParameterValue(
+                    type=Parameter.Type.STRING.value, string_value='raise'), ParameterDescriptor())
+        with self.assertRaises(InvalidParameterException):
+            self.node.declare_parameter(
+                'foo??', ParameterValue(
+                    type=Parameter.Type.STRING.value, string_value='raise'), ParameterDescriptor())
+
+        self.node.set_parameters_callback(self.reject_parameter_callback)
+        with self.assertRaises(InvalidParameterValueException):
+            self.node.declare_parameter(
+                'reject_me', ParameterValue(
+                    type=Parameter.Type.STRING.value, string_value='raise'), ParameterDescriptor())
+
+        with self.assertRaises(AssertionError):
+            self.node.declare_parameter(
+                1,
+                ParameterValue(type=Parameter.Type.STRING.value, string_value='wrong_name_type'),
+                ParameterDescriptor())
+
+        with self.assertRaises(AssertionError):
+            self.node.declare_parameter(
+                'wrong_parameter_value_type', 1234, ParameterDescriptor())
+
+        with self.assertRaises(AssertionError):
+            self.node.declare_parameter(
+                'wrong_parameter_descriptor_type', ParameterValue(), ParameterValue())
+
+    def test_declare_parameters(self):
+        parameters = [
+            ('foo', ParameterValue(
+                type=Parameter.Type.INTEGER.value, integer_value=42), ParameterDescriptor()),
+            ('bar', ParameterValue(
+                type=Parameter.Type.STRING.value, string_value='hello'), ParameterDescriptor()),
+            ('baz', ParameterValue(
+                type=Parameter.Type.DOUBLE.value, double_value=2.41), ParameterDescriptor()),
+        ]
+
+        result = self.node.declare_parameters('', parameters)
+
+        # OK cases.
+        self.assertIsInstance(result, list)
+        self.assertIsInstance(result[0], Parameter)
+        self.assertIsInstance(result[1], Parameter)
+        self.assertIsInstance(result[2], Parameter)
+        self.assertEqual(result[0].value, 42)
+        self.assertEqual(result[1].value, 'hello')
+        self.assertEqual(result[2].value, 2.41)
+        self.assertEqual(self.node.get_parameter('foo').value, 42)
+        self.assertEqual(self.node.get_parameter('bar').value, 'hello')
+        self.assertEqual(self.node.get_parameter('baz').value, 2.41)
+
+        result = self.node.declare_parameters('/namespace/', parameters)
+
+        # OK cases.
+        self.assertIsInstance(result, list)
+        self.assertIsInstance(result[0], Parameter)
+        self.assertIsInstance(result[1], Parameter)
+        self.assertIsInstance(result[2], Parameter)
+        self.assertEqual(result[0].value, 42)
+        self.assertEqual(result[1].value, 'hello')
+        self.assertEqual(result[2].value, 2.41)
+        self.assertEqual(self.node.get_parameter('/namespace/foo').value, 42)
+        self.assertEqual(self.node.get_parameter('/namespace/bar').value, 'hello')
+        self.assertEqual(self.node.get_parameter('/namespace/baz').value, 2.41)
+
+        # Error cases.
+        with self.assertRaises(ParameterAlreadyDeclaredException):
+            self.node.declare_parameters('', parameters)
+
+        # Declare a new set of parameters; the first one is not already declared,
+        # but 2nd and 3rd one are.
+        parameters = [
+            ('foobar', ParameterValue(
+                type=Parameter.Type.INTEGER.value, integer_value=43), ParameterDescriptor()),
+            ('bar', ParameterValue(
+                type=Parameter.Type.STRING.value, string_value='hello'), ParameterDescriptor()),
+            ('baz', ParameterValue(
+                type=Parameter.Type.DOUBLE.value, double_value=2.41), ParameterDescriptor()),
+        ]
+        with self.assertRaises(ParameterAlreadyDeclaredException):
+            self.node.declare_parameters('', parameters)
+
+        # Declare a new set; the third one shall fail because of its name.
+        parameters = [
+            ('foobarbar', ParameterValue(
+                type=Parameter.Type.INTEGER.value, integer_value=44), ParameterDescriptor()),
+            ('barbarbar', ParameterValue(
+                type=Parameter.Type.STRING.value, string_value='world'), ParameterDescriptor()),
+            ('baz??wrong_name', ParameterValue(
+                type=Parameter.Type.DOUBLE.value, double_value=2.41), ParameterDescriptor()),
+        ]
+        with self.assertRaises(InvalidParameterException):
+            self.node.declare_parameters('', parameters)
+
+        # Declare a new set; the third one shall be rejected by the callback.
+        parameters = [
+            ('im_ok', ParameterValue(
+                type=Parameter.Type.INTEGER.value, integer_value=44), ParameterDescriptor()),
+            ('im_also_ok', ParameterValue(
+                type=Parameter.Type.STRING.value, string_value='world'), ParameterDescriptor()),
+            ('reject_me', ParameterValue(
+                type=Parameter.Type.DOUBLE.value, double_value=2.41), ParameterDescriptor()),
+        ]
+        self.node.set_parameters_callback(self.reject_parameter_callback)
+        with self.assertRaises(InvalidParameterValueException):
+            self.node.declare_parameters('', parameters)
+
+        with self.assertRaises(AssertionError):
+            self.node.declare_parameters(
+                '',
+                [(
+                    1,
+                    ParameterValue(
+                        type=Parameter.Type.STRING.value, string_value='wrong_name_type'),
+                    ParameterDescriptor()
+                )]
+            )
+
+        with self.assertRaises(AssertionError):
+            self.node.declare_parameters(
+                '',
+                [(
+                    'wrong_parameter_value_type',
+                    1234,
+                    ParameterDescriptor()
+                )]
+            )
+
+        with self.assertRaises(AssertionError):
+            self.node.declare_parameters(
+                '',
+                [(
+                    'wrong_parameter_descriptor_tpye',
+                    ParameterValue(),
+                    ParameterValue()
+                )]
+            )
+
+    def reject_parameter_callback(self, parameter_list):
+        rejected_parameters = (param for param in parameter_list if 'reject' in param.name)
+        return SetParametersResult(successful=(not any(rejected_parameters)))
+
+    def test_node_set_undeclared_parameters(self):
+        with self.assertRaises(ParameterNotDeclaredException):
+            self.node.set_parameters([
+                Parameter('foo', Parameter.Type.INTEGER, 42),
+                Parameter('bar', Parameter.Type.STRING, 'hello'),
+                Parameter('baz', Parameter.Type.DOUBLE, 2.41)
+            ])
+
+    def test_node_set_undeclared_parameters_atomically(self):
+        with self.assertRaises(ParameterNotDeclaredException):
+            self.node.set_parameters_atomically([
+                Parameter('foo', Parameter.Type.INTEGER, 42),
+                Parameter('bar', Parameter.Type.STRING, 'hello'),
+                Parameter('baz', Parameter.Type.DOUBLE, 2.41)
+            ])
+
+    def test_node_get_undeclared_parameter(self):
+        with self.assertRaises(ParameterNotDeclaredException):
+            self.node.get_parameter('initial_foo')
+
+    def test_node_get_undeclared_parameter_or(self):
+        result = self.node.get_parameter_or(
+            'initial_foo', Parameter('foo', Parameter.Type.INTEGER, 152))
+        self.assertEqual(result.name, 'foo')
+        self.assertEqual(result.value, 152)
 
 
 class TestCreateNode(unittest.TestCase):

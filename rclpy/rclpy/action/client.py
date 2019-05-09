@@ -147,16 +147,17 @@ class ActionClient(Waitable):
         check_for_type_support(action_type)
         self._node = node
         self._action_type = action_type
-        self._client_handle = _rclpy_action.rclpy_action_create_client(
-            node.handle,
-            action_type,
-            action_name,
-            goal_service_qos_profile.get_c_qos_profile(),
-            result_service_qos_profile.get_c_qos_profile(),
-            cancel_service_qos_profile.get_c_qos_profile(),
-            feedback_sub_qos_profile.get_c_qos_profile(),
-            status_sub_qos_profile.get_c_qos_profile()
-        )
+        with node.handle as node_capsule:
+            self._client_handle = _rclpy_action.rclpy_action_create_client(
+                node_capsule,
+                action_type,
+                action_name,
+                goal_service_qos_profile.get_c_qos_profile(),
+                result_service_qos_profile.get_c_qos_profile(),
+                cancel_service_qos_profile.get_c_qos_profile(),
+                feedback_sub_qos_profile.get_c_qos_profile(),
+                status_sub_qos_profile.get_c_qos_profile()
+            )
 
         self._is_ready = False
 
@@ -349,7 +350,13 @@ class ActionClient(Waitable):
         :type goal: action_type.Goal
         :return: The result response.
         :rtype: action_type.Result
+        :raises: TypeError if the type of the passed goal isn't an instance of
+          the Goal type of the provided action when the service was
+          constructed.
         """
+        if not isinstance(goal, self._action_type.Goal):
+            raise TypeError()
+
         event = threading.Event()
 
         def unblock(future):
@@ -386,7 +393,13 @@ class ActionClient(Waitable):
         :return: a Future instance to a goal handle that completes when the goal request
             has been accepted or rejected.
         :rtype: :class:`rclpy.task.Future` instance
+        :raises: TypeError if the type of the passed goal isn't an instance of
+          the Goal type of the provided action when the service was
+          constructed.
         """
+        if not isinstance(goal, self._action_type.Goal):
+            raise TypeError()
+
         request = self._action_type.Impl.SendGoalService.Request()
         request.goal_id = self._generate_random_uuid() if goal_uuid is None else goal_uuid
         request.goal = goal
@@ -524,8 +537,9 @@ class ActionClient(Waitable):
 
         :return: True if an action server is ready, False otherwise.
         """
-        return _rclpy_action.rclpy_action_server_is_available(
-                self._node.handle,
+        with self._node.handle as node_capsule:
+            return _rclpy_action.rclpy_action_server_is_available(
+                node_capsule,
                 self._client_handle)
 
     def wait_for_server(self, timeout_sec=None):
@@ -550,10 +564,11 @@ class ActionClient(Waitable):
 
     def destroy(self):
         """Destroy the underlying action client handle."""
-        if self._client_handle is None or self._node.handle is None:
+        if self._client_handle is None:
             return
-        _rclpy_action.rclpy_action_destroy_entity(self._client_handle, self._node.handle)
-        self._node.remove_waitable(self)
+        with self._node.handle as node_capsule:
+            _rclpy_action.rclpy_action_destroy_entity(self._client_handle, node_capsule)
+            self._node.remove_waitable(self)
         self._client_handle = None
 
     def __del__(self):
