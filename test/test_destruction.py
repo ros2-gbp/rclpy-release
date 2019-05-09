@@ -12,186 +12,252 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import multiprocessing
-import sys
-import traceback
-
-
-def run_catch_report_raise(func, *args, **kwargs):
-    try:
-        return func(*args, **kwargs)
-    except Exception:
-        print('exception in {0}():'.format(func.__name__), file=sys.stderr)
-        traceback.print_exc()
-        raise
-
-
-def func_destroy_node():
-    import rclpy
-    context = rclpy.context.Context()
-    rclpy.init(context=context)
-    node = rclpy.create_node('test_node1', context=context)
-    ret = True
-    try:
-        node.destroy_node()
-    except RuntimeError:
-        ret = False
-    finally:
-        rclpy.shutdown(context=context)
-    return ret
-
-
-def func_destroy_node_twice():
-    import rclpy
-    context = rclpy.context.Context()
-    rclpy.init(context=context)
-    node = rclpy.create_node('test_node2', context=context)
-    assert node.destroy_node() is True
-    assert node.destroy_node() is True
-    return True
-
-
-def func_destroy_corrupted_node():
-    import rclpy
-    context = rclpy.context.Context()
-    rclpy.init(context=context)
-    node = rclpy.create_node('test_node2', context=context)
-    assert node.destroy_node() is True
-    org_handle = node._handle
-    node._handle = 'garbage'
-    ret = False
-    try:
-        node.destroy_node()
-    except ValueError:
-        ret = True
-        node._handle = org_handle
-        node.destroy_node()
-    finally:
-        rclpy.shutdown(context=context)
-    return ret
-
-
-def func_destroy_timers():
-    import rclpy
-    context = rclpy.context.Context()
-    rclpy.init(context=context)
-
-    node = rclpy.create_node('test_node3', context=context)
-
-    timer1 = node.create_timer(0.1, None)
-    timer2 = node.create_timer(1, None)
-    timer2  # noqa
-
-    assert 2 == len(node.timers)
-
-    assert node.destroy_timer(timer1) is True
-
-    assert 1 == len(node.timers)
-    try:
-        assert node.destroy_node() is True
-    except SystemError:
-        ret = False
-    else:
-        assert 0 == len(node.timers)
-        assert node.handle is None
-        ret = True
-    finally:
-        rclpy.shutdown(context=context)
-    return ret
-
-
-def func_destroy_entities():
-    import rclpy
-    from test_msgs.msg import Primitives
-    context = rclpy.context.Context()
-    rclpy.init(context=context)
-
-    node = rclpy.create_node('test_node4', context=context)
-
-    timer = node.create_timer(0.1, None)
-    timer  # noqa
-    assert 1 == len(node.timers)
-    pub1 = node.create_publisher(Primitives, 'pub1_topic')
-    assert 2 == len(node.publishers)
-    pub2 = node.create_publisher(Primitives, 'pub2_topic')
-    pub2  # noqa
-    assert 3 == len(node.publishers)
-    sub1 = node.create_subscription(
-        Primitives, 'sub1_topic', lambda msg: print('Received %r' % msg))
-    assert 1 == len(node.subscriptions)
-    sub2 = node.create_subscription(
-        Primitives, 'sub2_topic', lambda msg: print('Received %r' % msg))
-    sub2  # noqa
-    assert 2 == len(node.subscriptions)
-
-    assert node.destroy_publisher(pub1) is True
-    assert 2 == len(node.publishers)
-
-    assert node.destroy_subscription(sub1) is True
-    assert 1 == len(node.subscriptions)
-
-    try:
-        assert node.destroy_node() is True
-    except SystemError:
-        ret = False
-    else:
-        assert 0 == len(node.timers)
-        assert 0 == len(node.publishers)
-        assert 0 == len(node.subscriptions)
-        assert node.handle is None
-        ret = True
-    finally:
-        rclpy.shutdown(context=context)
-    return ret
-
-
-def func_corrupt_node_handle():
-    import rclpy
-    context = rclpy.context.Context()
-    rclpy.init(context=context)
-    node = rclpy.create_node('test_node5', context=context)
-    try:
-        node.handle = 'garbage'
-        ret = False
-    except AttributeError:
-        node.destroy_node()
-        ret = True
-    finally:
-        rclpy.shutdown(context=context)
-    return ret
-
-
-def func_launch(function, message):
-    pool = multiprocessing.Pool(1)
-    result = pool.apply(
-        func=run_catch_report_raise,
-        args=(function,)
-    )
-
-    assert result, message
-    pool.close()
-    pool.join()
+import pytest
+import rclpy
+from rclpy.handle import InvalidHandle
+from test_msgs.msg import BasicTypes
+from test_msgs.srv import BasicTypes as BasicTypesSrv
 
 
 def test_destroy_node():
-    func_launch(func_destroy_node, 'failed to destroy node')
+    context = rclpy.context.Context()
+    rclpy.init(context=context)
+    try:
+        node = rclpy.create_node('test_node1', context=context)
+        node.destroy_node()
+    finally:
+        rclpy.shutdown(context=context)
 
 
 def test_destroy_node_twice():
-    func_launch(func_destroy_node_twice, 'succeeded to destroy same node twice o_O')
-
-
-def test_destroy_corrupted_node():
-    func_launch(func_destroy_corrupted_node, 'destroyed a non existing node o_O')
+    context = rclpy.context.Context()
+    rclpy.init(context=context)
+    try:
+        node = rclpy.create_node('test_node2', context=context)
+        node.destroy_node()
+        with pytest.raises(InvalidHandle):
+            node.destroy_node()
+    finally:
+        rclpy.shutdown(context=context)
 
 
 def test_destroy_timers():
-    func_launch(func_destroy_timers, 'failed to destroy node entities')
+    context = rclpy.context.Context()
+    rclpy.init(context=context)
+    try:
+        node = rclpy.create_node('test_node3', context=context)
+        try:
+            timer1 = node.create_timer(0.1, None)
+            timer2 = node.create_timer(1, None)
+            timer2  # noqa
+
+            assert 2 == len(tuple(node.timers))
+            assert node.destroy_timer(timer1)
+
+            assert 1 == len(tuple(node.timers))
+        finally:
+            node.destroy_node()
+        assert 0 == len(tuple(node.timers))
+    finally:
+        rclpy.shutdown(context=context)
 
 
 def test_destroy_entities():
-    func_launch(func_destroy_entities, 'failed to destroy node entities')
+    context = rclpy.context.Context()
+    rclpy.init(context=context)
+    try:
+        node = rclpy.create_node('test_node4', context=context)
+        try:
+            timer = node.create_timer(0.1, None)
+            timer  # noqa
+            assert 1 == len(tuple(node.timers))
+            pub1 = node.create_publisher(BasicTypes, 'pub1_topic')
+            assert 2 == len(tuple(node.publishers))
+            pub2 = node.create_publisher(BasicTypes, 'pub2_topic')
+            pub2  # noqa
+            assert 3 == len(tuple(node.publishers))
+            sub1 = node.create_subscription(
+                BasicTypes, 'sub1_topic', lambda msg: ...)
+            assert 1 == len(tuple(node.subscriptions))
+            sub2 = node.create_subscription(
+                BasicTypes, 'sub2_topic', lambda msg: ...)
+            sub2  # noqa
+            assert 2 == len(tuple(node.subscriptions))
+
+            assert node.destroy_publisher(pub1)
+            assert 2 == len(tuple(node.publishers))
+
+            assert node.destroy_subscription(sub1)
+            assert 1 == len(tuple(node.subscriptions))
+        finally:
+            node.destroy_node()
+        assert 0 == len(tuple(node.timers))
+        assert 0 == len(tuple(node.publishers))
+        assert 0 == len(tuple(node.subscriptions))
+    finally:
+        rclpy.shutdown(context=context)
 
 
-def test_corrupt_node_handle():
-    func_launch(func_corrupt_node_handle, 'successfully modified node handle o_O')
+def test_destroy_subscription_asap():
+    context = rclpy.context.Context()
+    rclpy.init(context=context)
+
+    try:
+        node = rclpy.create_node('test_destroy_subscription_asap', context=context)
+        try:
+            sub = node.create_subscription(BasicTypes, 'sub_topic', lambda msg: ...)
+
+            # handle valid
+            with sub.handle:
+                pass
+
+            with sub.handle:
+                node.destroy_subscription(sub)
+                # handle valid because it's still being used
+                with sub.handle:
+                    pass
+
+            with pytest.raises(InvalidHandle):
+                # handle invalid because it was destroyed when no one was using it
+                with sub.handle:
+                    pass
+        finally:
+            node.destroy_node()
+    finally:
+        rclpy.shutdown(context=context)
+
+
+def test_destroy_node_asap():
+    context = rclpy.context.Context()
+    rclpy.init(context=context)
+
+    try:
+        node = rclpy.create_node('test_destroy_subscription_asap', context=context)
+        with node.handle:
+            node.destroy_node()
+            # handle valid because it's still being used
+            with node.handle:
+                pass
+
+        with pytest.raises(InvalidHandle):
+            # handle invalid because it was destroyed when no one was using it
+            with node.handle:
+                pass
+    finally:
+        rclpy.shutdown(context=context)
+
+
+def test_destroy_publisher_asap():
+    context = rclpy.context.Context()
+    rclpy.init(context=context)
+
+    try:
+        node = rclpy.create_node('test_destroy_publisher_asap', context=context)
+        try:
+            pub = node.create_publisher(BasicTypes, 'pub_topic')
+
+            # handle valid
+            with pub.handle:
+                pass
+
+            with pub.handle:
+                node.destroy_publisher(pub)
+                # handle valid because it's still being used
+                with pub.handle:
+                    pass
+
+            with pytest.raises(InvalidHandle):
+                # handle invalid because it was destroyed when no one was using it
+                with pub.handle:
+                    pass
+        finally:
+            node.destroy_node()
+    finally:
+        rclpy.shutdown(context=context)
+
+
+def test_destroy_client_asap():
+    context = rclpy.context.Context()
+    rclpy.init(context=context)
+
+    try:
+        node = rclpy.create_node('test_destroy_client_asap', context=context)
+        try:
+            client = node.create_client(BasicTypesSrv, 'cli_service')
+
+            # handle valid
+            with client.handle:
+                pass
+
+            with client.handle:
+                node.destroy_client(client)
+                # handle valid because it's still being used
+                with client.handle:
+                    pass
+
+            with pytest.raises(InvalidHandle):
+                # handle invalid because it was destroyed when no one was using it
+                with client.handle:
+                    pass
+        finally:
+            node.destroy_node()
+    finally:
+        rclpy.shutdown(context=context)
+
+
+def test_destroy_service_asap():
+    context = rclpy.context.Context()
+    rclpy.init(context=context)
+
+    try:
+        node = rclpy.create_node('test_destroy_service_asap', context=context)
+        try:
+            service = node.create_service(BasicTypesSrv, 'srv_service', lambda req, res: ...)
+
+            # handle valid
+            with service.handle:
+                pass
+
+            with service.handle:
+                node.destroy_service(service)
+                # handle valid because it's still being used
+                with service.handle:
+                    pass
+
+            with pytest.raises(InvalidHandle):
+                # handle invalid because it was destroyed when no one was using it
+                with service.handle:
+                    pass
+        finally:
+            node.destroy_node()
+    finally:
+        rclpy.shutdown(context=context)
+
+
+def test_destroy_timer_asap():
+    context = rclpy.context.Context()
+    rclpy.init(context=context)
+
+    try:
+        node = rclpy.create_node('test_destroy_timer_asap', context=context)
+        try:
+            timer = node.create_timer(1.0, lambda: ...)
+
+            # handle valid
+            with timer.handle:
+                pass
+
+            with timer.handle:
+                node.destroy_timer(timer)
+                # handle valid because it's still being used
+                with timer.handle:
+                    pass
+
+            with pytest.raises(InvalidHandle):
+                # handle invalid because it was destroyed when no one was using it
+                with timer.handle:
+                    pass
+        finally:
+            node.destroy_node()
+    finally:
+        rclpy.shutdown(context=context)

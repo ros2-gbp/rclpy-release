@@ -45,10 +45,10 @@ class GoalEvent(Enum):
     """Goal events that cause state transitions."""
 
     EXECUTE = 1
-    CANCEL = 2
-    SET_SUCCEEDED = 3
-    SET_ABORTED = 4
-    SET_CANCELED = 5
+    CANCEL_GOAL = 2
+    SUCCEED = 3
+    ABORT = 4
+    CANCELED = 5
 
 
 class ServerGoalHandle:
@@ -134,6 +134,9 @@ class ServerGoalHandle:
         self._action_server.notify_execute(self, execute_callback)
 
     def publish_feedback(self, feedback):
+        if not isinstance(feedback, self._action_server.action_type.Feedback):
+            raise TypeError()
+
         with self._lock:
             # Ignore for already destructed goal handles
             if self._handle is None:
@@ -149,14 +152,14 @@ class ServerGoalHandle:
             _rclpy_action.rclpy_action_publish_feedback(
                 self._action_server._handle, feedback_message)
 
-    def set_succeeded(self):
-        self._update_state(GoalEvent.SET_SUCCEEDED)
+    def succeed(self):
+        self._update_state(GoalEvent.SUCCEED)
 
-    def set_aborted(self):
-        self._update_state(GoalEvent.SET_ABORTED)
+    def abort(self):
+        self._update_state(GoalEvent.ABORT)
 
-    def set_canceled(self):
-        self._update_state(GoalEvent.SET_CANCELED)
+    def canceled(self):
+        self._update_state(GoalEvent.CANCELED)
 
     def destroy(self):
         with self._lock:
@@ -244,18 +247,19 @@ class ActionServer(Waitable):
         check_for_type_support(action_type)
         self._node = node
         self._action_type = action_type
-        self._handle = _rclpy_action.rclpy_action_create_server(
-            node.handle,
-            node.get_clock().handle,
-            action_type,
-            action_name,
-            goal_service_qos_profile.get_c_qos_profile(),
-            result_service_qos_profile.get_c_qos_profile(),
-            cancel_service_qos_profile.get_c_qos_profile(),
-            feedback_pub_qos_profile.get_c_qos_profile(),
-            status_pub_qos_profile.get_c_qos_profile(),
-            result_timeout,
-        )
+        with node.handle as node_capsule, node.get_clock().handle as clock_capsule:
+            self._handle = _rclpy_action.rclpy_action_create_server(
+                node_capsule,
+                clock_capsule,
+                action_type,
+                action_name,
+                goal_service_qos_profile.get_c_qos_profile(),
+                result_service_qos_profile.get_c_qos_profile(),
+                cancel_service_qos_profile.get_c_qos_profile(),
+                feedback_pub_qos_profile.get_c_qos_profile(),
+                status_pub_qos_profile.get_c_qos_profile(),
+                result_timeout,
+            )
 
         # key: UUID in bytes, value: GoalHandle
         self._goal_handles = {}
@@ -330,7 +334,7 @@ class ActionServer(Waitable):
         if goal_handle.is_active:
             self._node.get_logger().warning(
                 'Goal state not set, assuming aborted. Goal ID: {0}'.format(goal_uuid))
-            goal_handle.set_aborted()
+            goal_handle.abort()
 
         self._node.get_logger().debug(
             'Goal with ID {0} finished with state {1}'.format(goal_uuid, goal_handle.status))
@@ -363,7 +367,7 @@ class ActionServer(Waitable):
 
             if CancelResponse.ACCEPT == response:
                 # Notify goal handle
-                goal_handle._update_state(GoalEvent.CANCEL)
+                goal_handle._update_state(GoalEvent.CANCEL_GOAL)
             else:
                 # Remove from response
                 cancel_response.goals_canceling.remove(goal_info)
@@ -597,13 +601,14 @@ class ActionServer(Waitable):
 
     def destroy(self):
         """Destroy the underlying action server handle."""
-        if self._handle is None or self._node.handle is None:
+        if self._handle is None:
             return
 
         for goal_handle in self._goal_handles.values():
             goal_handle.destroy()
 
-        _rclpy_action.rclpy_action_destroy_entity(self._handle, self._node.handle)
+        with self._node.handle as node_capsule:
+            _rclpy_action.rclpy_action_destroy_entity(self._handle, node_capsule)
         self._node.remove_waitable(self)
         self._handle = None
 
