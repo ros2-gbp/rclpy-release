@@ -14,8 +14,12 @@
 
 import unittest
 from unittest.mock import Mock
+import warnings
 
+from rcl_interfaces.msg import FloatingPointRange
+from rcl_interfaces.msg import IntegerRange
 from rcl_interfaces.msg import ParameterDescriptor
+from rcl_interfaces.msg import ParameterType
 from rcl_interfaces.msg import ParameterValue
 from rcl_interfaces.msg import SetParametersResult
 from rcl_interfaces.srv import GetParameters
@@ -26,9 +30,12 @@ from rclpy.exceptions import InvalidParameterValueException
 from rclpy.exceptions import InvalidServiceNameException
 from rclpy.exceptions import InvalidTopicNameException
 from rclpy.exceptions import ParameterAlreadyDeclaredException
+from rclpy.exceptions import ParameterImmutableException
 from rclpy.exceptions import ParameterNotDeclaredException
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.parameter import Parameter
+from rclpy.qos import qos_profile_default
+from rclpy.qos import qos_profile_sensor_data
 from test_msgs.msg import BasicTypes
 
 TEST_NODE = 'my_node'
@@ -59,22 +66,35 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
         self.assertEqual(self.node.get_clock().clock_type, ClockType.ROS_TIME)
 
     def test_create_publisher(self):
-        self.node.create_publisher(BasicTypes, 'chatter')
+        self.node.create_publisher(BasicTypes, 'chatter', 0)
+        self.node.create_publisher(BasicTypes, 'chatter', 1)
+        self.node.create_publisher(BasicTypes, 'chatter', qos_profile_sensor_data)
         with self.assertRaisesRegex(InvalidTopicNameException, 'must not contain characters'):
-            self.node.create_publisher(BasicTypes, 'chatter?')
+            self.node.create_publisher(BasicTypes, 'chatter?', 1)
         with self.assertRaisesRegex(InvalidTopicNameException, 'must not start with a number'):
-            self.node.create_publisher(BasicTypes, '/chatter/42_is_the_answer')
+            self.node.create_publisher(BasicTypes, '/chatter/42_is_the_answer', 1)
         with self.assertRaisesRegex(ValueError, 'unknown substitution'):
-            self.node.create_publisher(BasicTypes, 'chatter/{bad_sub}')
+            self.node.create_publisher(BasicTypes, 'chatter/{bad_sub}', 1)
+        with self.assertRaisesRegex(ValueError, 'must be greater than or equal to zero'):
+            self.node.create_publisher(BasicTypes, 'chatter', -1)
+        with self.assertRaisesRegex(TypeError, 'Expected QoSProfile or int'):
+            self.node.create_publisher(BasicTypes, 'chatter', 'foo')
 
     def test_create_subscription(self):
-        self.node.create_subscription(BasicTypes, 'chatter', lambda msg: print(msg))
+        self.node.create_subscription(BasicTypes, 'chatter', lambda msg: print(msg), 0)
+        self.node.create_subscription(BasicTypes, 'chatter', lambda msg: print(msg), 1)
+        self.node.create_subscription(
+            BasicTypes, 'chatter', lambda msg: print(msg), qos_profile_sensor_data)
         with self.assertRaisesRegex(InvalidTopicNameException, 'must not contain characters'):
-            self.node.create_subscription(BasicTypes, 'chatter?', lambda msg: print(msg))
+            self.node.create_subscription(BasicTypes, 'chatter?', lambda msg: print(msg), 1)
         with self.assertRaisesRegex(InvalidTopicNameException, 'must not start with a number'):
-            self.node.create_subscription(BasicTypes, '/chatter/42ish', lambda msg: print(msg))
+            self.node.create_subscription(BasicTypes, '/chatter/42ish', lambda msg: print(msg), 1)
         with self.assertRaisesRegex(ValueError, 'unknown substitution'):
-            self.node.create_subscription(BasicTypes, 'foo/{bad_sub}', lambda msg: print(msg))
+            self.node.create_subscription(BasicTypes, 'foo/{bad_sub}', lambda msg: print(msg), 1)
+        with self.assertRaisesRegex(ValueError, 'must be greater than or equal to zero'):
+            self.node.create_subscription(BasicTypes, 'chatter', lambda msg: print(msg), -1)
+        with self.assertRaisesRegex(TypeError, 'Expected QoSProfile or int'):
+            self.node.create_subscription(BasicTypes, 'chatter', lambda msg: print(msg), 'foo')
 
     def raw_subscription_callback(self, msg):
         print('Raw subscription callback: %s length %d' % (msg, len(msg)))
@@ -83,12 +103,13 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
     def test_create_raw_subscription(self):
         executor = SingleThreadedExecutor(context=self.context)
         executor.add_node(self.node)
-        basic_types_pub = self.node.create_publisher(BasicTypes, 'raw_subscription_test')
+        basic_types_pub = self.node.create_publisher(BasicTypes, 'raw_subscription_test', 1)
         self.raw_subscription_msg = None  # None=No result yet
         self.node.create_subscription(
             BasicTypes,
             'raw_subscription_test',
             self.raw_subscription_callback,
+            1,
             raw=True
         )
         basic_types_msg = BasicTypes()
@@ -123,6 +144,56 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'unknown substitution'):
             self.node.create_service(GetParameters, 'foo/{bad_sub}', lambda req: None)
 
+    def test_deprecation_warnings(self):
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always')
+            self.node.create_publisher(BasicTypes, 'chatter')
+            assert len(w) == 1
+            assert issubclass(w[0].category, UserWarning)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always')
+            self.node.create_publisher(BasicTypes, 'chatter', qos_profile=qos_profile_sensor_data)
+            assert len(w) == 1
+            assert issubclass(w[0].category, UserWarning)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always')
+            self.node.create_publisher(BasicTypes, 'chatter', qos_profile=qos_profile_sensor_data)
+            assert len(w) == 1
+            assert issubclass(w[0].category, UserWarning)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always')
+            self.node.create_publisher(BasicTypes, 'chatter', qos_profile_default)
+            assert len(w) == 1
+            assert issubclass(w[0].category, UserWarning)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always')
+            self.node.create_subscription(BasicTypes, 'chatter', lambda msg: print(msg))
+            assert len(w) == 1
+            assert issubclass(w[0].category, UserWarning)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always')
+            self.node.create_subscription(
+                BasicTypes, 'chatter', lambda msg: print(msg), qos_profile=qos_profile_sensor_data)
+            assert len(w) == 1
+            assert issubclass(w[0].category, UserWarning)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always')
+            self.node.create_subscription(
+                BasicTypes, 'chatter', lambda msg: print(msg), qos_profile=qos_profile_sensor_data)
+            assert len(w) == 1
+            assert issubclass(w[0].category, UserWarning)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always')
+            self.node.create_subscription(
+                BasicTypes, 'chatter', lambda msg: print(msg), qos_profile_default)
+            assert len(w) == 1
+            assert issubclass(w[0].category, UserWarning)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always')
+            self.node.create_subscription(BasicTypes, 'chatter', lambda msg: print(msg), raw=True)
+            assert len(w) == 1
+            assert issubclass(w[0].category, UserWarning)
+
     def test_service_names_and_types(self):
         # test that it doesn't raise
         self.node.get_service_names_and_types()
@@ -147,15 +218,15 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
         self.assertEqual(0, self.node.count_publishers(fq_topic_name))
         self.assertEqual(0, self.node.count_subscribers(fq_topic_name))
 
-        self.node.create_publisher(BasicTypes, short_topic_name)
+        self.node.create_publisher(BasicTypes, short_topic_name, 1)
         self.assertEqual(1, self.node.count_publishers(short_topic_name))
         self.assertEqual(1, self.node.count_publishers(fq_topic_name))
 
-        self.node.create_subscription(BasicTypes, short_topic_name, lambda msg: print(msg))
+        self.node.create_subscription(BasicTypes, short_topic_name, lambda msg: print(msg), 1)
         self.assertEqual(1, self.node.count_subscribers(short_topic_name))
         self.assertEqual(1, self.node.count_subscribers(fq_topic_name))
 
-        self.node.create_subscription(BasicTypes, short_topic_name, lambda msg: print(msg))
+        self.node.create_subscription(BasicTypes, short_topic_name, lambda msg: print(msg), 1)
         self.assertEqual(2, self.node.count_subscribers(short_topic_name))
         self.assertEqual(2, self.node.count_subscribers(fq_topic_name))
 
@@ -246,6 +317,23 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
         self.assertIsInstance(result, SetParametersResult)
         self.assertTrue(result.successful)
 
+    def test_describe_undeclared_parameter(self):
+        self.assertFalse(self.node.has_parameter('foo'))
+
+        descriptor = self.node.describe_parameter('foo')
+        self.assertEqual(descriptor, ParameterDescriptor())
+
+    def test_describe_undeclared_parameters(self):
+        self.assertFalse(self.node.has_parameter('foo'))
+        self.assertFalse(self.node.has_parameter('bar'))
+
+        # Check list.
+        descriptor_list = self.node.describe_parameters(['foo', 'bar'])
+        self.assertIsInstance(descriptor_list, list)
+        self.assertEqual(len(descriptor_list), 2)
+        self.assertEqual(descriptor_list[0], ParameterDescriptor())
+        self.assertEqual(descriptor_list[1], ParameterDescriptor())
+
     def test_node_get_parameter(self):
         self.node.set_parameters([Parameter('foo', Parameter.Type.INTEGER, 42)])
         self.assertIsInstance(self.node.get_parameter('foo'), Parameter)
@@ -312,14 +400,11 @@ class TestNode(unittest.TestCase):
         result_initial_foo = self.node.declare_parameter(
             'initial_foo', ParameterValue(), ParameterDescriptor())
         result_foo = self.node.declare_parameter(
-            'foo', ParameterValue(
-                type=Parameter.Type.INTEGER.value, integer_value=42), ParameterDescriptor())
+            'foo', 42, ParameterDescriptor())
         result_bar = self.node.declare_parameter(
-            'bar', ParameterValue(
-                type=Parameter.Type.STRING.value, string_value='hello'), ParameterDescriptor())
+            'bar', 'hello', ParameterDescriptor())
         result_baz = self.node.declare_parameter(
-            'baz', ParameterValue(
-                type=Parameter.Type.DOUBLE.value, double_value=2.41), ParameterDescriptor())
+            'baz', 2.41, ParameterDescriptor())
 
         # OK cases.
         self.assertIsInstance(result_initial_foo, Parameter)
@@ -338,45 +423,38 @@ class TestNode(unittest.TestCase):
         # Error cases.
         with self.assertRaises(ParameterAlreadyDeclaredException):
             self.node.declare_parameter(
-                'foo', ParameterValue(
-                    type=Parameter.Type.STRING.value, string_value='raise'), ParameterDescriptor())
+                'foo', 'raise', ParameterDescriptor())
         with self.assertRaises(InvalidParameterException):
             self.node.declare_parameter(
-                '123foo', ParameterValue(
-                    type=Parameter.Type.STRING.value, string_value='raise'), ParameterDescriptor())
+                '123foo', 'raise', ParameterDescriptor())
         with self.assertRaises(InvalidParameterException):
             self.node.declare_parameter(
-                'foo??', ParameterValue(
-                    type=Parameter.Type.STRING.value, string_value='raise'), ParameterDescriptor())
+                'foo??', 'raise', ParameterDescriptor())
 
         self.node.set_parameters_callback(self.reject_parameter_callback)
         with self.assertRaises(InvalidParameterValueException):
             self.node.declare_parameter(
-                'reject_me', ParameterValue(
-                    type=Parameter.Type.STRING.value, string_value='raise'), ParameterDescriptor())
+                'reject_me', 'raise', ParameterDescriptor())
 
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(TypeError):
             self.node.declare_parameter(
                 1,
-                ParameterValue(type=Parameter.Type.STRING.value, string_value='wrong_name_type'),
+                'wrong_name_type',
                 ParameterDescriptor())
 
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(TypeError):
             self.node.declare_parameter(
-                'wrong_parameter_value_type', 1234, ParameterDescriptor())
+                'wrong_parameter_value_type', ParameterValue(), ParameterDescriptor())
 
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(TypeError):
             self.node.declare_parameter(
-                'wrong_parameter_descriptor_type', ParameterValue(), ParameterValue())
+                'wrong_parameter_descriptor_type', 1, ParameterValue())
 
     def test_declare_parameters(self):
         parameters = [
-            ('foo', ParameterValue(
-                type=Parameter.Type.INTEGER.value, integer_value=42), ParameterDescriptor()),
-            ('bar', ParameterValue(
-                type=Parameter.Type.STRING.value, string_value='hello'), ParameterDescriptor()),
-            ('baz', ParameterValue(
-                type=Parameter.Type.DOUBLE.value, double_value=2.41), ParameterDescriptor()),
+            ('foo', 42, ParameterDescriptor()),
+            ('bar', 'hello', ParameterDescriptor()),
+            ('baz', 2.41, ParameterDescriptor()),
         ]
 
         result = self.node.declare_parameters('', parameters)
@@ -414,63 +492,53 @@ class TestNode(unittest.TestCase):
         # Declare a new set of parameters; the first one is not already declared,
         # but 2nd and 3rd one are.
         parameters = [
-            ('foobar', ParameterValue(
-                type=Parameter.Type.INTEGER.value, integer_value=43), ParameterDescriptor()),
-            ('bar', ParameterValue(
-                type=Parameter.Type.STRING.value, string_value='hello'), ParameterDescriptor()),
-            ('baz', ParameterValue(
-                type=Parameter.Type.DOUBLE.value, double_value=2.41), ParameterDescriptor()),
+            ('foobar', 43, ParameterDescriptor()),
+            ('bar', 'hello', ParameterDescriptor()),
+            ('baz', 2.41, ParameterDescriptor()),
         ]
         with self.assertRaises(ParameterAlreadyDeclaredException):
             self.node.declare_parameters('', parameters)
 
         # Declare a new set; the third one shall fail because of its name.
         parameters = [
-            ('foobarbar', ParameterValue(
-                type=Parameter.Type.INTEGER.value, integer_value=44), ParameterDescriptor()),
-            ('barbarbar', ParameterValue(
-                type=Parameter.Type.STRING.value, string_value='world'), ParameterDescriptor()),
-            ('baz??wrong_name', ParameterValue(
-                type=Parameter.Type.DOUBLE.value, double_value=2.41), ParameterDescriptor()),
+            ('foobarbar', 44, ParameterDescriptor()),
+            ('barbarbar', 'world', ParameterDescriptor()),
+            ('baz??wrong_name', 2.41, ParameterDescriptor()),
         ]
         with self.assertRaises(InvalidParameterException):
             self.node.declare_parameters('', parameters)
 
         # Declare a new set; the third one shall be rejected by the callback.
         parameters = [
-            ('im_ok', ParameterValue(
-                type=Parameter.Type.INTEGER.value, integer_value=44), ParameterDescriptor()),
-            ('im_also_ok', ParameterValue(
-                type=Parameter.Type.STRING.value, string_value='world'), ParameterDescriptor()),
-            ('reject_me', ParameterValue(
-                type=Parameter.Type.DOUBLE.value, double_value=2.41), ParameterDescriptor()),
+            ('im_ok', 44, ParameterDescriptor()),
+            ('im_also_ok', 'world', ParameterDescriptor()),
+            ('reject_me', 2.41, ParameterDescriptor()),
         ]
         self.node.set_parameters_callback(self.reject_parameter_callback)
         with self.assertRaises(InvalidParameterValueException):
             self.node.declare_parameters('', parameters)
 
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(TypeError):
             self.node.declare_parameters(
                 '',
                 [(
                     1,
-                    ParameterValue(
-                        type=Parameter.Type.STRING.value, string_value='wrong_name_type'),
+                    'wrong_name_type',
                     ParameterDescriptor()
                 )]
             )
 
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(TypeError):
             self.node.declare_parameters(
                 '',
                 [(
                     'wrong_parameter_value_type',
-                    1234,
+                    ParameterValue(),
                     ParameterDescriptor()
                 )]
             )
 
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(TypeError):
             self.node.declare_parameters(
                 '',
                 [(
@@ -483,6 +551,38 @@ class TestNode(unittest.TestCase):
     def reject_parameter_callback(self, parameter_list):
         rejected_parameters = (param for param in parameter_list if 'reject' in param.name)
         return SetParametersResult(successful=(not any(rejected_parameters)))
+
+    def test_node_undeclare_parameter_has_parameter(self):
+        # Undeclare unexisting parameter.
+        with self.assertRaises(ParameterNotDeclaredException):
+            self.node.undeclare_parameter('foo')
+
+        # Verify that it doesn't exist.
+        self.assertFalse(self.node.has_parameter('foo'))
+
+        # Declare parameter, verify existance, undeclare, and verify again.
+        self.node.declare_parameter(
+            'foo',
+            'hello',
+            ParameterDescriptor()
+        )
+        self.assertTrue(self.node.has_parameter('foo'))
+        self.node.undeclare_parameter('foo')
+        self.assertFalse(self.node.has_parameter('foo'))
+
+        # Try with a read only parameter.
+        self.assertFalse(self.node.has_parameter('immutable_foo'))
+        self.node.declare_parameter(
+            'immutable_foo',
+            'I am immutable',
+            ParameterDescriptor(read_only=True)
+        )
+        with self.assertRaises(ParameterImmutableException):
+            self.node.undeclare_parameter('immutable_foo')
+
+        # Verify that it still exists with the same value.
+        self.assertTrue(self.node.has_parameter('immutable_foo'))
+        self.assertEqual(self.node.get_parameter('immutable_foo').value, 'I am immutable')
 
     def test_node_set_undeclared_parameters(self):
         with self.assertRaises(ParameterNotDeclaredException):
@@ -509,6 +609,608 @@ class TestNode(unittest.TestCase):
             'initial_foo', Parameter('foo', Parameter.Type.INTEGER, 152))
         self.assertEqual(result.name, 'foo')
         self.assertEqual(result.value, 152)
+
+    def test_node_set_parameters(self):
+        integer_value = 42
+        string_value = 'hello'
+        float_value = 2.41
+        parameter_tuples = [
+            (
+                'foo',
+                integer_value,
+                ParameterDescriptor()
+            ),
+            (
+                'bar',
+                string_value,
+                ParameterDescriptor()
+            ),
+            (
+                'baz',
+                float_value,
+                ParameterDescriptor()
+            )
+        ]
+
+        # Create rclpy.Parameter list from tuples.
+        parameters = [
+            Parameter(
+                name=parameter_tuples[0][0],
+                value=integer_value
+            ),
+            Parameter(
+                name=parameter_tuples[1][0],
+                value=string_value
+            ),
+            Parameter(
+                name=parameter_tuples[2][0],
+                value=float_value
+            ),
+        ]
+
+        with self.assertRaises(ParameterNotDeclaredException):
+            self.node.set_parameters(parameters)
+
+        self.node.declare_parameters('', parameter_tuples)
+        result = self.node.set_parameters(parameters)
+
+        # OK cases: check successful result and parameter value for each parameter set.
+        self.assertIsInstance(result, list)
+        self.assertIsInstance(result[0], SetParametersResult)
+        self.assertIsInstance(result[1], SetParametersResult)
+        self.assertIsInstance(result[2], SetParametersResult)
+        self.assertTrue(result[0].successful)
+        self.assertTrue(result[1].successful)
+        self.assertTrue(result[2].successful)
+        self.assertEqual(self.node.get_parameter('foo').value, 42)
+        self.assertEqual(self.node.get_parameter('bar').value, 'hello')
+        self.assertEqual(self.node.get_parameter('baz').value, 2.41)
+
+        # Now we modify the declared parameters, add a new one and set them again.
+        integer_value = 24
+        string_value = 'bye'
+        float_value = 1.42
+        extra_value = 2.71
+        parameter_tuples.append(
+            (
+                'foobar',
+                extra_value,
+                ParameterDescriptor())
+            )
+        parameters = [
+            Parameter(
+                name=parameter_tuples[0][0],
+                value=integer_value
+            ),
+            Parameter(
+                name=parameter_tuples[1][0],
+                value=string_value
+            ),
+            Parameter(
+                name=parameter_tuples[2][0],
+                value=float_value
+            ),
+            Parameter(
+                name=parameter_tuples[3][0],
+                value=float_value
+            ),
+        ]
+        # The first three parameters should have been set; the fourth one causes the exception.
+        with self.assertRaises(ParameterNotDeclaredException):
+            self.node.set_parameters(parameters)
+
+        # Validate first three.
+        self.assertEqual(self.node.get_parameter('foo').value, 24)
+        self.assertEqual(self.node.get_parameter('bar').value, 'bye')
+        self.assertEqual(self.node.get_parameter('baz').value, 1.42)
+
+        # Confirm that the fourth one does not exist.
+        with self.assertRaises(ParameterNotDeclaredException):
+            self.node.get_parameter('foobar')
+
+    def test_node_set_parameters_rejection(self):
+        # Declare a new parameter and set a callback so that it's rejected when set.
+        reject_parameter_tuple = (
+            'reject_me',
+            True,
+            ParameterDescriptor()
+        )
+
+        self.node.declare_parameter(*reject_parameter_tuple)
+        self.node.set_parameters_callback(self.reject_parameter_callback)
+        result = self.node.set_parameters(
+            [
+                Parameter(
+                    name=reject_parameter_tuple[0],
+                    value=reject_parameter_tuple[1]
+                )
+            ]
+        )
+        self.assertIsInstance(result, list)
+        self.assertIsInstance(result[0], SetParametersResult)
+        self.assertFalse(result[0].successful)
+
+    def test_node_set_parameters_read_only(self):
+        integer_value = 42
+        string_value = 'hello'
+        float_value = 2.41
+        parameter_tuples = [
+            (
+                'immutable_foo',
+                integer_value,
+                ParameterDescriptor(read_only=True)
+            ),
+            (
+                'bar',
+                string_value,
+                ParameterDescriptor()
+            ),
+            (
+                'immutable_baz',
+                float_value,
+                ParameterDescriptor(read_only=True)
+            )
+        ]
+
+        # Create rclpy.Parameter list from tuples.
+        parameters = [
+            Parameter(
+                name=parameter_tuples[0][0],
+                value=integer_value
+            ),
+            Parameter(
+                name=parameter_tuples[1][0],
+                value=string_value
+            ),
+            Parameter(
+                name=parameter_tuples[2][0],
+                value=float_value
+            ),
+        ]
+
+        self.node.declare_parameters('', parameter_tuples)
+
+        # Try setting a different value to the declared parameters.
+        integer_value = 24
+        string_value = 'bye'
+
+        float_value = 1.42
+
+        # Re-create parameters with modified values.
+        parameters = [
+            Parameter(
+                name=parameter_tuples[0][0],
+                value=integer_value
+            ),
+            Parameter(
+                name=parameter_tuples[1][0],
+                value=string_value
+            ),
+            Parameter(
+                name=parameter_tuples[2][0],
+                value=float_value
+            ),
+        ]
+
+        result = self.node.set_parameters(parameters)
+
+        # Only the parameter that is not read_only should have succeeded.
+        self.assertIsInstance(result, list)
+        self.assertIsInstance(result[0], SetParametersResult)
+        self.assertIsInstance(result[1], SetParametersResult)
+        self.assertIsInstance(result[2], SetParametersResult)
+        self.assertFalse(result[0].successful)
+        self.assertTrue(result[1].successful)
+        self.assertFalse(result[2].successful)
+        self.assertEqual(self.node.get_parameter('immutable_foo').value, 42)
+        self.assertEqual(self.node.get_parameter('bar').value, 'bye')
+        self.assertEqual(self.node.get_parameter('immutable_baz').value, 2.41)
+
+    def test_node_set_parameters_implicit_undeclare(self):
+        parameter_tuples = [
+            (
+                'foo',
+                42,
+                ParameterDescriptor()
+            ),
+            (
+                'bar',
+                'hello',
+                ParameterDescriptor()
+            ),
+            (
+                'baz',
+                2.41,
+                ParameterDescriptor()
+            )
+        ]
+
+        self.node.declare_parameters('', parameter_tuples)
+
+        # Verify that the parameters are set.
+        self.assertEqual(self.node.get_parameter('foo').value, 42)
+        self.assertEqual(self.node.get_parameter('bar').value, 'hello')
+        self.assertEqual(self.node.get_parameter('baz').value, 2.41)
+
+        # Now undeclare one of them implicitly.
+        self.node.set_parameters([Parameter('bar', Parameter.Type.NOT_SET, None)])
+        self.assertEqual(self.node.get_parameter('foo').value, 42)
+        self.assertFalse(self.node.has_parameter('bar'))
+        self.assertEqual(self.node.get_parameter('baz').value, 2.41)
+
+    def test_node_set_parameters_atomically(self):
+        integer_value = 42
+        string_value = 'hello'
+        float_value = 2.41
+        parameter_tuples = [
+            (
+                'foo',
+                integer_value,
+                ParameterDescriptor()
+            ),
+            (
+                'bar',
+                string_value,
+                ParameterDescriptor()
+            ),
+            (
+                'baz',
+                float_value,
+                ParameterDescriptor()
+            )
+        ]
+
+        # Create rclpy.Parameter list from tuples.
+        parameters = [
+            Parameter(
+                name=parameter_tuples[0][0],
+                value=integer_value
+            ),
+            Parameter(
+                name=parameter_tuples[1][0],
+                value=string_value
+            ),
+            Parameter(
+                name=parameter_tuples[2][0],
+                value=float_value
+            ),
+        ]
+
+        with self.assertRaises(ParameterNotDeclaredException):
+            self.node.set_parameters_atomically(parameters)
+
+        self.node.declare_parameters('', parameter_tuples)
+        result = self.node.set_parameters_atomically(parameters)
+
+        # OK case: check successful aggregated result.
+        self.assertIsInstance(result, SetParametersResult)
+        self.assertTrue(result.successful)
+        self.assertEqual(self.node.get_parameter('foo').value, 42)
+        self.assertEqual(self.node.get_parameter('bar').value, 'hello')
+        self.assertEqual(self.node.get_parameter('baz').value, 2.41)
+
+        # Now we modify the declared parameters, add a new one and set them again.
+        integer_value = 24
+        string_value = 'bye'
+        float_value = 1.42
+        extra_value = 2.71
+        parameter_tuples.append(
+            (
+                'foobar',
+                extra_value,
+                ParameterDescriptor())
+            )
+        parameters = [
+            Parameter(
+                name=parameter_tuples[0][0],
+                value=integer_value
+            ),
+            Parameter(
+                name=parameter_tuples[1][0],
+                value=string_value
+            ),
+            Parameter(
+                name=parameter_tuples[2][0],
+                value=float_value
+            ),
+            Parameter(
+                name=parameter_tuples[3][0],
+                value=float_value
+            ),
+        ]
+
+        # The fourth parameter causes the exception, hence none is set.
+        with self.assertRaises(ParameterNotDeclaredException):
+            self.node.set_parameters_atomically(parameters)
+
+        # Confirm that the first three were not modified.
+        self.assertEqual(self.node.get_parameter('foo').value, 42)
+        self.assertEqual(self.node.get_parameter('bar').value, 'hello')
+        self.assertEqual(self.node.get_parameter('baz').value, 2.41)
+
+        # Confirm that the fourth one does not exist.
+        with self.assertRaises(ParameterNotDeclaredException):
+            self.node.get_parameter('foobar')
+
+    def test_node_set_parameters_atomically_rejection(self):
+        # Declare a new parameter and set a callback so that it's rejected when set.
+        reject_parameter_tuple = (
+            'reject_me',
+            True,
+            ParameterDescriptor()
+        )
+
+        self.node.declare_parameter(*reject_parameter_tuple)
+        self.node.set_parameters_callback(self.reject_parameter_callback)
+        result = self.node.set_parameters_atomically(
+            [
+                Parameter(
+                    name=reject_parameter_tuple[0],
+                    value=reject_parameter_tuple[1]
+                )
+            ]
+        )
+        self.assertIsInstance(result, SetParametersResult)
+        self.assertFalse(result.successful)
+
+    def test_node_set_parameters_atomically_read_only(self):
+        integer_value = 42
+        string_value = 'hello'
+        float_value = 2.41
+        parameter_tuples = [
+            (
+                'foo',
+                integer_value,
+                ParameterDescriptor()
+            ),
+            (
+                'bar',
+                string_value,
+                ParameterDescriptor()
+            ),
+            (
+                'immutable_baz',
+                float_value,
+                ParameterDescriptor(read_only=True)
+            )
+        ]
+
+        # Create rclpy.Parameter list from tuples.
+        parameters = [
+            Parameter(
+                name=parameter_tuples[0][0],
+                value=integer_value
+            ),
+            Parameter(
+                name=parameter_tuples[1][0],
+                value=string_value
+            ),
+            Parameter(
+                name=parameter_tuples[2][0],
+                value=float_value
+            ),
+        ]
+
+        self.node.declare_parameters('', parameter_tuples)
+
+        # Try setting a different value to the declared parameters.
+        integer_value = 24
+        string_value = 'bye'
+        float_value = 1.42
+
+        parameters = [
+            Parameter(
+                name=parameter_tuples[0][0],
+                value=integer_value
+            ),
+            Parameter(
+                name=parameter_tuples[1][0],
+                value=string_value
+            ),
+            Parameter(
+                name=parameter_tuples[2][0],
+                value=float_value
+            ),
+        ]
+
+        result = self.node.set_parameters_atomically(parameters)
+
+        # At least one parameter is read-only, so the overall result should be a failure.
+        # All the parameters should have their original value.
+        self.assertIsInstance(result, SetParametersResult)
+        self.assertFalse(result.successful)
+        self.assertEqual(self.node.get_parameter('foo').value, 42)
+        self.assertEqual(self.node.get_parameter('bar').value, 'hello')
+        self.assertEqual(self.node.get_parameter('immutable_baz').value, 2.41)
+
+    def test_node_set_parameters_atomically_implicit_undeclare(self):
+        parameter_tuples = [
+            (
+                'foo',
+                42,
+                ParameterDescriptor()
+            ),
+            (
+                'bar',
+                'hello',
+                ParameterDescriptor()
+            ),
+            (
+                'baz',
+                2.41,
+                ParameterDescriptor()
+            )
+        ]
+
+        self.node.declare_parameters('', parameter_tuples)
+
+        # Verify that the parameters are set.
+        self.assertEqual(self.node.get_parameter('foo').value, 42)
+        self.assertEqual(self.node.get_parameter('bar').value, 'hello')
+        self.assertEqual(self.node.get_parameter('baz').value, 2.41)
+
+        # Now undeclare one of them implicitly.
+        self.node.set_parameters_atomically([Parameter('bar', Parameter.Type.NOT_SET, None)])
+        self.assertEqual(self.node.get_parameter('foo').value, 42)
+        self.assertFalse(self.node.has_parameter('bar'))
+        self.assertEqual(self.node.get_parameter('baz').value, 2.41)
+
+    def test_describe_parameter(self):
+        with self.assertRaises(ParameterNotDeclaredException):
+            self.node.describe_parameter('foo')
+
+        # Declare parameter with descriptor.
+        self.node.declare_parameter(
+            'foo',
+            'hello',
+            ParameterDescriptor(
+                name='foo',
+                type=ParameterType.PARAMETER_STRING,
+                additional_constraints='some constraints',
+                read_only=True,
+                floating_point_range=[FloatingPointRange(from_value=-2.0, to_value=2.0, step=0.1)],
+                integer_range=[IntegerRange(from_value=-10, to_value=10, step=2)]
+            )
+        )
+
+        descriptor = self.node.describe_parameter('foo')
+        self.assertEqual(descriptor.name, 'foo')
+        self.assertEqual(descriptor.type, ParameterType.PARAMETER_STRING)
+        self.assertEqual(descriptor.additional_constraints, 'some constraints')
+        self.assertEqual(descriptor.read_only, True)
+        self.assertEqual(descriptor.floating_point_range[0].from_value, -2.0)
+        self.assertEqual(descriptor.floating_point_range[0].to_value, 2.0)
+        self.assertEqual(descriptor.floating_point_range[0].step, 0.1)
+        self.assertEqual(descriptor.integer_range[0].from_value, -10)
+        self.assertEqual(descriptor.integer_range[0].to_value, 10)
+        self.assertEqual(descriptor.integer_range[0].step, 2)
+
+    def test_describe_parameters(self):
+        with self.assertRaises(ParameterNotDeclaredException):
+            self.node.describe_parameter('foo')
+        with self.assertRaises(ParameterNotDeclaredException):
+            self.node.describe_parameter('bar')
+
+        # Declare parameters with descriptors.
+        self.node.declare_parameter(
+            'foo',
+            'hello',
+            ParameterDescriptor(
+                name='foo',
+                type=ParameterType.PARAMETER_STRING,
+                additional_constraints='some constraints',
+                read_only=True,
+                floating_point_range=[FloatingPointRange(from_value=-2.0, to_value=2.0, step=0.1)],
+                integer_range=[IntegerRange(from_value=-10, to_value=10, step=2)]
+            )
+        )
+        self.node.declare_parameter(
+            'bar',
+            'hello',
+            ParameterDescriptor(
+                name='bar',
+                type=ParameterType.PARAMETER_INTEGER,
+                additional_constraints='some more constraints',
+                read_only=True,
+                floating_point_range=[FloatingPointRange(from_value=-3.0, to_value=3.0, step=0.3)],
+                integer_range=[IntegerRange(from_value=-20, to_value=20, step=3)]
+            )
+        )
+
+        # Check list.
+        descriptor_list = self.node.describe_parameters(['foo', 'bar'])
+        self.assertIsInstance(descriptor_list, list)
+        self.assertEqual(len(descriptor_list), 2)
+
+        # Check individual descriptors.
+        foo_descriptor = descriptor_list[0]
+        self.assertEqual(foo_descriptor.name, 'foo')
+        self.assertEqual(foo_descriptor.type, ParameterType.PARAMETER_STRING)
+        self.assertEqual(foo_descriptor.additional_constraints, 'some constraints')
+        self.assertEqual(foo_descriptor.read_only, True)
+        self.assertEqual(foo_descriptor.floating_point_range[0].from_value, -2.0)
+        self.assertEqual(foo_descriptor.floating_point_range[0].to_value, 2.0)
+        self.assertEqual(foo_descriptor.floating_point_range[0].step, 0.1)
+        self.assertEqual(foo_descriptor.integer_range[0].from_value, -10)
+        self.assertEqual(foo_descriptor.integer_range[0].to_value, 10)
+        self.assertEqual(foo_descriptor.integer_range[0].step, 2)
+
+        bar_descriptor = descriptor_list[1]
+        self.assertEqual(bar_descriptor.name, 'bar')
+        self.assertEqual(bar_descriptor.type, ParameterType.PARAMETER_INTEGER)
+        self.assertEqual(bar_descriptor.additional_constraints, 'some more constraints')
+        self.assertEqual(bar_descriptor.read_only, True)
+        self.assertEqual(bar_descriptor.floating_point_range[0].from_value, -3.0)
+        self.assertEqual(bar_descriptor.floating_point_range[0].to_value, 3.0)
+        self.assertEqual(bar_descriptor.floating_point_range[0].step, 0.3)
+        self.assertEqual(bar_descriptor.integer_range[0].from_value, -20)
+        self.assertEqual(bar_descriptor.integer_range[0].to_value, 20)
+        self.assertEqual(bar_descriptor.integer_range[0].step, 3)
+
+    # TODO(jubeira): test cases failing because of non-compliant existing parameter values
+    # once the feature is implemented.
+    def test_set_descriptor(self):
+        with self.assertRaises(ParameterNotDeclaredException):
+            self.node.set_descriptor('foo', ParameterDescriptor())
+
+        # Declare parameter with default descriptor.
+        self.node.declare_parameter(
+            'foo',
+            'hello',
+            ParameterDescriptor()
+        )
+        self.assertEqual(self.node.describe_parameter('foo'), ParameterDescriptor())
+
+        # Now modify the descriptor and check again.
+        value = self.node.set_descriptor(
+            'foo',
+            ParameterDescriptor(
+                name='foo',
+                type=ParameterType.PARAMETER_STRING,
+                additional_constraints='some constraints',
+                read_only=True,
+                floating_point_range=[FloatingPointRange(from_value=-2.0, to_value=2.0, step=0.1)],
+                integer_range=[IntegerRange(from_value=-10, to_value=10, step=2)]
+            )
+        )
+        self.assertEqual(value.type, Parameter.Type.STRING.value)
+        self.assertEqual(value.string_value, 'hello')
+
+        descriptor = self.node.describe_parameter('foo')
+        self.assertEqual(descriptor.name, 'foo')
+        self.assertEqual(descriptor.type, ParameterType.PARAMETER_STRING)
+        self.assertEqual(descriptor.additional_constraints, 'some constraints')
+        self.assertEqual(descriptor.read_only, True)
+        self.assertEqual(descriptor.floating_point_range[0].from_value, -2.0)
+        self.assertEqual(descriptor.floating_point_range[0].to_value, 2.0)
+        self.assertEqual(descriptor.floating_point_range[0].step, 0.1)
+        self.assertEqual(descriptor.integer_range[0].from_value, -10)
+        self.assertEqual(descriptor.integer_range[0].to_value, 10)
+        self.assertEqual(descriptor.integer_range[0].step, 2)
+
+    def test_set_descriptor_read_only(self):
+        with self.assertRaises(ParameterNotDeclaredException):
+            self.node.set_descriptor('foo', ParameterDescriptor())
+
+        # Declare parameter with a read_only descriptor.
+        self.node.declare_parameter(
+            'foo',
+            'hello',
+            ParameterDescriptor(read_only=True)
+        )
+        self.assertEqual(self.node.describe_parameter('foo'), ParameterDescriptor(read_only=True))
+
+        # Try modifying the descriptor.
+        with self.assertRaises(ParameterImmutableException):
+            self.node.set_descriptor(
+                'foo',
+                ParameterDescriptor(
+                    name='foo',
+                    type=ParameterType.PARAMETER_STRING,
+                    additional_constraints='some constraints',
+                    read_only=False,
+                )
+            )
 
 
 class TestCreateNode(unittest.TestCase):
