@@ -25,31 +25,29 @@ from typing import Callable
 from typing import Coroutine
 from typing import Generator
 from typing import List
-from typing import Optional
-from typing import Set
+from typing import Optional  # noqa: F401
+from typing import Set  # noqa: F401
 from typing import Tuple
 from typing import TYPE_CHECKING
 from typing import TypeVar
 from typing import Union
 
 
-from rclpy.client import Client
-from rclpy.clock import Clock
-from rclpy.clock import ClockType
+from rclpy.client import Client  # noqa: F401
 from rclpy.context import Context
 from rclpy.guard_condition import GuardCondition
 from rclpy.handle import InvalidHandle
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
-from rclpy.service import Service
+from rclpy.service import Service  # noqa: F401
 from rclpy.signals import SignalHandlerGuardCondition
-from rclpy.subscription import Subscription
+from rclpy.subscription import Subscription  # noqa: F401
 from rclpy.task import Future
 from rclpy.task import Task
-from rclpy.timer import Timer
+from rclpy.timer import WallTimer
 from rclpy.utilities import get_default_context
 from rclpy.utilities import timeout_sec_to_nsec
 from rclpy.waitable import NumberOfEntities
-from rclpy.waitable import Waitable
+from rclpy.waitable import Waitable  # noqa: F401
 
 # For documentation purposes
 # TODO(jacobperron): Make all entities implement the 'Waitable' interface for better type checking
@@ -130,12 +128,6 @@ class ShutdownException(Exception):
     pass
 
 
-class ExternalShutdownException(Exception):
-    """Context has been shutdown."""
-
-    pass
-
-
 class Executor:
     """
     The base class for an executor.
@@ -153,10 +145,10 @@ class Executor:
     def __init__(self, *, context: Context = None) -> None:
         super().__init__()
         self._context = get_default_context() if context is None else context
-        self._nodes: Set[Node] = set()
+        self._nodes = set()  # type: Set[Node]
         self._nodes_lock = RLock()
         # Tasks to be executed (oldest first) 3-tuple Task, Entity, Node
-        self._tasks: List[Tuple[Task, Optional[WaitableEntityType], Optional[Node]]] = []
+        self._tasks = []  # type: List[Tuple[Task, Optional[WaitableEntityType], Optional[Node]]]
         self._tasks_lock = Lock()
         # This is triggered when wait_for_ready_callbacks should rebuild the wait list
         self._guard = GuardCondition(
@@ -170,10 +162,7 @@ class Executor:
         self._cb_iter = None
         self._last_args = None
         self._last_kwargs = None
-        # Executor cannot use ROS clock because that requires a node
-        self._clock = Clock(clock_type=ClockType.STEADY_TIME)
         self._sigint_gc = SignalHandlerGuardCondition(context)
-        self._context.on_shutdown(self.wake)
 
     @property
     def context(self) -> Context:
@@ -441,7 +430,7 @@ class Executor:
         timeout_timer = None
         timeout_nsec = timeout_sec_to_nsec(timeout_sec)
         if timeout_nsec > 0:
-            timeout_timer = Timer(None, None, timeout_nsec, self._clock)
+            timeout_timer = WallTimer(None, None, timeout_nsec)
 
         yielded_work = False
         while not yielded_work and not self._is_shutdown:
@@ -465,12 +454,12 @@ class Executor:
                     self._tasks = list(filter(lambda t_e_n: not t_e_n[0].done(), self._tasks))
 
             # Gather entities that can be waited on
-            subscriptions: List[Subscription] = []
-            guards: List[GuardCondition] = []
-            timers: List[Timer] = []
-            clients: List[Client] = []
-            services: List[Service] = []
-            waitables: List[Waitable] = []
+            subscriptions = []  # type: List[Subscription]
+            guards = []  # type: List[GuardCondition]
+            timers = []  # type: List[WallTimer]
+            clients = []  # type: List[Client]
+            services = []  # type: List[Service]
+            waitables = []  # type: List[Waitable]
             for node in nodes_to_use:
                 subscriptions.extend(filter(self.can_execute, node.subscriptions))
                 timers.extend(filter(self.can_execute, node.timers))
@@ -560,8 +549,6 @@ class Executor:
                 _rclpy.rclpy_wait(wait_set, timeout_nsec)
                 if self._is_shutdown:
                     raise ShutdownException()
-                if not self._context.ok():
-                    raise ExternalShutdownException()
 
                 # get ready entities
                 subs_ready = _rclpy.rclpy_get_ready_entities('subscription', wait_set)
@@ -706,8 +693,6 @@ class MultiThreadedExecutor(Executor):
     def spin_once(self, timeout_sec: float = None) -> None:
         try:
             handler, entity, node = self.wait_for_ready_callbacks(timeout_sec=timeout_sec)
-        except ExternalShutdownException:
-            pass
         except ShutdownException:
             pass
         except TimeoutException:
