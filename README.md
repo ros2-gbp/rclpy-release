@@ -1,3 +1,26 @@
+## rclpy (eloquent) - 0.8.2-1
+
+The packages in the `rclpy` repository were released into the `eloquent` distro by running `/usr/bin/bloom-release -r eloquent rclpy --override-release-repository-push-url git@github.com:ros2-gbp/rclpy-release` on `Wed, 13 Nov 2019 14:09:30 -0000`
+
+The `rclpy` package was released.
+
+Version of package(s) in repository `rclpy`:
+
+- upstream repository: https://github.com/ros2/rclpy.git
+- release repository: https://github.com/ros2-gbp/rclpy-release.git
+- rosdistro version: `0.8.1-1`
+- old version: `0.8.1-1`
+- new version: `0.8.2-1`
+
+Versions of tools used:
+
+- bloom version: `0.9.0`
+- catkin_pkg version: `0.4.13`
+- rosdep version: `0.16.1`
+- rosdistro version: `0.7.5`
+- vcstools version: `0.1.42`
+
+
 ## rclpy (eloquent) - 0.8.1-1
 
 The packages in the `rclpy` repository were released into the `eloquent` distro by running `/usr/bin/bloom-release --rosdistro eloquent rclpy` on `Thu, 24 Oct 2019 02:33:25 -0000`
