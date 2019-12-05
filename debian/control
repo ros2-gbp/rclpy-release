@@ -1,0 +1,12 @@
+Source: ros-crystal-rclpy
+Section: misc
+Priority: optional
+Maintainer: William Woodall <william@osrfoundation.org>
+Build-Depends: debhelper (>= 9.0.0), python3-pytest, ros-crystal-ament-cmake, ros-crystal-ament-cmake-pytest, ros-crystal-ament-lint-auto, ros-crystal-ament-lint-common, ros-crystal-python-cmake-module, ros-crystal-rcl, ros-crystal-rcl-action, ros-crystal-rcl-interfaces, ros-crystal-rcl-yaml-param-parser, ros-crystal-rcutils, ros-crystal-rmw-implementation, ros-crystal-rmw-implementation-cmake, ros-crystal-rosidl-generator-py, ros-crystal-test-msgs, ros-crystal-unique-identifier-msgs, ros-crystal-ros-workspace
+Homepage: 
+Standards-Version: 3.9.2
+
+Package: ros-crystal-rclpy
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, ros-crystal-ament-index-python, ros-crystal-builtin-interfaces, ros-crystal-rcl, ros-crystal-rcl-action, ros-crystal-rcl-yaml-param-parser, ros-crystal-rmw-implementation, ros-crystal-unique-identifier-msgs, ros-crystal-ros-workspace
+Description: Package containing the Python client.
