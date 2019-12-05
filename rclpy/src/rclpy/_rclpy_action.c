@@ -119,7 +119,7 @@ rclpy_action_get_rmw_qos_profile(PyObject * Py_UNUSED(self), PyObject * args)
 
   PyObject * pyqos_profile = NULL;
   if (0 == strcmp(rmw_profile, "rcl_action_qos_profile_status_default")) {
-    pyqos_profile = rclpy_common_convert_to_qos_dict(&rcl_action_qos_profile_status_default);
+    pyqos_profile = rclpy_convert_to_py_qos_policy((void *)&rcl_action_qos_profile_status_default);
   } else {
     return PyErr_Format(PyExc_RuntimeError,
              "Requested unknown rmw_qos_profile: '%s'", rmw_profile);
@@ -1349,33 +1349,33 @@ convert_from_py_goal_event(const int64_t pyevent)
   }
   to_decref[num_to_decref++] = pyexecute;
 
-  PyObject * pycancel_goal = PyObject_GetAttrString(pygoal_event_class, "CANCEL_GOAL");
-  if (!pycancel_goal) {
+  PyObject * pycancel = PyObject_GetAttrString(pygoal_event_class, "CANCEL");
+  if (!pycancel) {
     MULTI_DECREF(to_decref, num_to_decref)
     return -1;
   }
-  to_decref[num_to_decref++] = pycancel_goal;
+  to_decref[num_to_decref++] = pycancel;
 
-  PyObject * pysucceed = PyObject_GetAttrString(pygoal_event_class, "SUCCEED");
-  if (!pysucceed) {
+  PyObject * pyset_succeeded = PyObject_GetAttrString(pygoal_event_class, "SET_SUCCEEDED");
+  if (!pyset_succeeded) {
     MULTI_DECREF(to_decref, num_to_decref);
     return -1;
   }
-  to_decref[num_to_decref++] = pysucceed;
+  to_decref[num_to_decref++] = pyset_succeeded;
 
-  PyObject * pyabort = PyObject_GetAttrString(pygoal_event_class, "ABORT");
-  if (!pyabort) {
+  PyObject * pyset_aborted = PyObject_GetAttrString(pygoal_event_class, "SET_ABORTED");
+  if (!pyset_aborted) {
     MULTI_DECREF(to_decref, num_to_decref)
     return -1;
   }
-  to_decref[num_to_decref++] = pyabort;
+  to_decref[num_to_decref++] = pyset_aborted;
 
-  PyObject * pycanceled = PyObject_GetAttrString(pygoal_event_class, "CANCELED");
-  if (!pycanceled) {
+  PyObject * pyset_canceled = PyObject_GetAttrString(pygoal_event_class, "SET_CANCELED");
+  if (!pyset_canceled) {
     MULTI_DECREF(to_decref, num_to_decref)
     return -1;
   }
-  to_decref[num_to_decref++] = pycanceled;
+  to_decref[num_to_decref++] = pyset_canceled;
 
   PyObject * pyexecute_val = PyObject_GetAttrString(pyexecute, "value");
   if (!pyexecute_val) {
@@ -1384,55 +1384,55 @@ convert_from_py_goal_event(const int64_t pyevent)
   }
   to_decref[num_to_decref++] = pyexecute_val;
 
-  PyObject * pycancel_goal_val = PyObject_GetAttrString(pycancel_goal, "value");
-  if (!pycancel_goal_val) {
+  PyObject * pycancel_val = PyObject_GetAttrString(pycancel, "value");
+  if (!pycancel_val) {
     MULTI_DECREF(to_decref, num_to_decref);
     return -1;
   }
-  to_decref[num_to_decref++] = pycancel_goal_val;
+  to_decref[num_to_decref++] = pycancel_val;
 
-  PyObject * pysucceed_val = PyObject_GetAttrString(pysucceed, "value");
-  if (!pysucceed_val) {
+  PyObject * pyset_succeeded_val = PyObject_GetAttrString(pyset_succeeded, "value");
+  if (!pyset_succeeded_val) {
     MULTI_DECREF(to_decref, num_to_decref);
     return -1;
   }
-  to_decref[num_to_decref++] = pysucceed_val;
+  to_decref[num_to_decref++] = pyset_succeeded_val;
 
-  PyObject * pyabort_val = PyObject_GetAttrString(pyabort, "value");
-  if (!pyabort_val) {
+  PyObject * pyset_aborted_val = PyObject_GetAttrString(pyset_aborted, "value");
+  if (!pyset_aborted_val) {
     MULTI_DECREF(to_decref, num_to_decref);
     return -1;
   }
-  to_decref[num_to_decref++] = pyabort_val;
+  to_decref[num_to_decref++] = pyset_aborted_val;
 
-  PyObject * pycanceled_val = PyObject_GetAttrString(pycanceled, "value");
-  if (!pycanceled_val) {
+  PyObject * pyset_canceled_val = PyObject_GetAttrString(pyset_canceled, "value");
+  if (!pyset_canceled_val) {
     MULTI_DECREF(to_decref, num_to_decref);
     return -1;
   }
-  to_decref[num_to_decref++] = pycanceled_val;
+  to_decref[num_to_decref++] = pyset_canceled_val;
 
   const int64_t execute = PyLong_AsLong(pyexecute_val);
-  const int64_t cancel_goal = PyLong_AsLong(pycancel_goal_val);
-  const int64_t succeed = PyLong_AsLong(pysucceed_val);
-  const int64_t abort = PyLong_AsLong(pyabort_val);
-  const int64_t canceled = PyLong_AsLong(pycanceled_val);
+  const int64_t cancel = PyLong_AsLong(pycancel_val);
+  const int64_t set_succeeded = PyLong_AsLong(pyset_succeeded_val);
+  const int64_t set_aborted = PyLong_AsLong(pyset_aborted_val);
+  const int64_t set_canceled = PyLong_AsLong(pyset_canceled_val);
   MULTI_DECREF(to_decref, num_to_decref)
 
   if (execute == pyevent) {
     return GOAL_EVENT_EXECUTE;
   }
-  if (cancel_goal == pyevent) {
-    return GOAL_EVENT_CANCEL_GOAL;
+  if (cancel == pyevent) {
+    return GOAL_EVENT_CANCEL;
   }
-  if (succeed == pyevent) {
-    return GOAL_EVENT_SUCCEED;
+  if (set_succeeded == pyevent) {
+    return GOAL_EVENT_SET_SUCCEEDED;
   }
-  if (abort == pyevent) {
-    return GOAL_EVENT_ABORT;
+  if (set_aborted == pyevent) {
+    return GOAL_EVENT_SET_ABORTED;
   }
-  if (canceled == pyevent) {
-    return GOAL_EVENT_CANCELED;
+  if (set_canceled == pyevent) {
+    return GOAL_EVENT_SET_CANCELED;
   }
 
   PyErr_Format(
@@ -1682,120 +1682,6 @@ rclpy_action_expire_goals(PyObject * Py_UNUSED(self), PyObject * args)
   return result_tuple;
 }
 
-
-static PyObject *
-rclpy_action_get_client_names_and_types_by_node(PyObject * Py_UNUSED(self), PyObject * args)
-{
-  PyObject * pynode;
-  char * remote_node_name;
-  char * remote_node_namespace;
-
-  if (!PyArg_ParseTuple(args, "Oss", &pynode, &remote_node_name, &remote_node_namespace)) {
-    return NULL;
-  }
-
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
-  if (!node) {
-    return NULL;
-  }
-
-  rcl_names_and_types_t names_and_types = rcl_get_zero_initialized_names_and_types();
-  rcl_allocator_t allocator = rcl_get_default_allocator();
-  rcl_ret_t ret = rcl_action_get_client_names_and_types_by_node(
-    node,
-    &allocator,
-    remote_node_name,
-    remote_node_namespace,
-    &names_and_types);
-  if (RCL_RET_OK != ret) {
-    PyErr_Format(
-      PyExc_RuntimeError,
-      "Failed to get action client names and type: %s", rcl_get_error_string().str);
-    rcl_reset_error();
-    return NULL;
-  }
-
-  PyObject * pynames_and_types = rclpy_convert_to_py_names_and_types(&names_and_types);
-  if (!rclpy_names_and_types_fini(&names_and_types)) {
-    Py_XDECREF(pynames_and_types);
-    return NULL;
-  }
-  return pynames_and_types;
-}
-
-static PyObject *
-rclpy_action_get_server_names_and_types_by_node(PyObject * Py_UNUSED(self), PyObject * args)
-{
-  PyObject * pynode;
-  char * remote_node_name;
-  char * remote_node_namespace;
-
-  if (!PyArg_ParseTuple(args, "Oss", &pynode, &remote_node_name, &remote_node_namespace)) {
-    return NULL;
-  }
-
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
-  if (!node) {
-    return NULL;
-  }
-
-  rcl_names_and_types_t names_and_types = rcl_get_zero_initialized_names_and_types();
-  rcl_allocator_t allocator = rcl_get_default_allocator();
-  rcl_ret_t ret = rcl_action_get_server_names_and_types_by_node(
-    node,
-    &allocator,
-    remote_node_name,
-    remote_node_namespace,
-    &names_and_types);
-  if (RCL_RET_OK != ret) {
-    PyErr_Format(
-      PyExc_RuntimeError,
-      "Failed to get action server names and type: %s", rcl_get_error_string().str);
-    rcl_reset_error();
-    return NULL;
-  }
-
-  PyObject * pynames_and_types = rclpy_convert_to_py_names_and_types(&names_and_types);
-  if (!rclpy_names_and_types_fini(&names_and_types)) {
-    Py_XDECREF(pynames_and_types);
-    return NULL;
-  }
-  return pynames_and_types;
-}
-
-static PyObject *
-rclpy_action_get_names_and_types(PyObject * Py_UNUSED(self), PyObject * args)
-{
-  PyObject * pynode;
-
-  if (!PyArg_ParseTuple(args, "O", &pynode)) {
-    return NULL;
-  }
-
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
-  if (!node) {
-    return NULL;
-  }
-
-  rcl_names_and_types_t names_and_types = rcl_get_zero_initialized_names_and_types();
-  rcl_allocator_t allocator = rcl_get_default_allocator();
-  rcl_ret_t ret = rcl_action_get_names_and_types(node, &allocator, &names_and_types);
-  if (RCL_RET_OK != ret) {
-    PyErr_Format(
-      PyExc_RuntimeError,
-      "Failed to get action names and type: %s", rcl_get_error_string().str);
-    rcl_reset_error();
-    return NULL;
-  }
-
-  PyObject * pynames_and_types = rclpy_convert_to_py_names_and_types(&names_and_types);
-  if (!rclpy_names_and_types_fini(&names_and_types)) {
-    Py_XDECREF(pynames_and_types);
-    return NULL;
-  }
-  return pynames_and_types;
-}
-
 /// Define the public methods of this module
 static PyMethodDef rclpy_action_methods[] = {
   {
@@ -1931,24 +1817,6 @@ static PyMethodDef rclpy_action_methods[] = {
   {
     "rclpy_action_expire_goals", rclpy_action_expire_goals, METH_VARARGS,
     "Expire goals associated with an action server."
-  },
-  {
-    "rclpy_action_get_client_names_and_types_by_node",
-    rclpy_action_get_client_names_and_types_by_node,
-    METH_VARARGS,
-    "Get action client names and types by node."
-  },
-  {
-    "rclpy_action_get_server_names_and_types_by_node",
-    rclpy_action_get_server_names_and_types_by_node,
-    METH_VARARGS,
-    "Get action server names and types by node."
-  },
-  {
-    "rclpy_action_get_names_and_types",
-    rclpy_action_get_names_and_types,
-    METH_VARARGS,
-    "Get action names and types."
   },
 
   {NULL, NULL, 0, NULL}  /* sentinel */

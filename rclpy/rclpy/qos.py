@@ -12,71 +12,39 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from enum import Enum
 from enum import IntEnum
 
-from rclpy.duration import Duration
 from rclpy.impl.implementation_singleton import rclpy_action_implementation as _rclpy_action
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 
 
-class InvalidQoSProfileException(Exception):
-    """Raised when concstructing a QoSProfile with invalid arguments."""
-
-    def __init__(self, *args):
-        Exception.__init__(self, 'Invalid QoSProfile', *args)
-
-
 class QoSProfile:
     """Define Quality of Service policies."""
-
-    # default QoS profile not exposed to the user to encourage them to think about QoS settings
-    __qos_profile_default_dict = _rclpy.rclpy_get_rmw_qos_profile('qos_profile_default')
 
     __slots__ = [
         '_history',
         '_depth',
         '_reliability',
         '_durability',
-        '_lifespan',
-        '_deadline',
-        '_liveliness',
-        '_liveliness_lease_duration',
         '_avoid_ros_namespace_conventions',
     ]
 
     def __init__(self, **kwargs):
         assert all('_' + key in self.__slots__ for key in kwargs.keys()), \
             'Invalid arguments passed to constructor: %r' % kwargs.keys()
-
-        if 'history' not in kwargs:
-            if 'depth' not in kwargs:
-                raise InvalidQoSProfileException('History and/or depth settings are required.')
-            kwargs['history'] = QoSHistoryPolicy.RMW_QOS_POLICY_HISTORY_KEEP_LAST
-
-        self.history = kwargs.get('history')
-
-        if (
-            QoSHistoryPolicy.RMW_QOS_POLICY_HISTORY_KEEP_LAST == self.history and
-            'depth' not in kwargs
-        ):
-            raise InvalidQoSProfileException('History set to KEEP_LAST without a depth setting.')
-
-        self.depth = kwargs.get('depth', QoSProfile.__qos_profile_default_dict['depth'])
+        self.history = kwargs.get(
+            'history',
+            QoSHistoryPolicy.RMW_QOS_POLICY_HISTORY_SYSTEM_DEFAULT)
+        self.depth = kwargs.get('depth', int())
         self.reliability = kwargs.get(
-            'reliability', QoSProfile.__qos_profile_default_dict['reliability'])
+            'reliability',
+            QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_SYSTEM_DEFAULT)
         self.durability = kwargs.get(
-            'durability', QoSProfile.__qos_profile_default_dict['durability'])
-        self.lifespan = kwargs.get('lifespan', QoSProfile.__qos_profile_default_dict['lifespan'])
-        self.deadline = kwargs.get('deadline', QoSProfile.__qos_profile_default_dict['deadline'])
-        self.liveliness = kwargs.get(
-            'liveliness', QoSProfile.__qos_profile_default_dict['liveliness'])
-        self.liveliness_lease_duration = kwargs.get(
-            'liveliness_lease_duration',
-            QoSProfile.__qos_profile_default_dict['liveliness_lease_duration'])
+            'durability',
+            QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_SYSTEM_DEFAULT)
         self.avoid_ros_namespace_conventions = kwargs.get(
             'avoid_ros_namespace_conventions',
-            QoSProfile.__qos_profile_default_dict['avoid_ros_namespace_conventions'])
+            False)
 
     @property
     def history(self):
@@ -139,66 +107,6 @@ class QoSProfile:
         self._depth = value
 
     @property
-    def lifespan(self):
-        """
-        Get field 'lifespan'.
-
-        :returns: lifespan attribute
-        :rtype: Duration
-        """
-        return self._lifespan
-
-    @lifespan.setter
-    def lifespan(self, value):
-        assert isinstance(value, Duration)
-        self._lifespan = value
-
-    @property
-    def deadline(self):
-        """
-        Get field 'deadline'.
-
-        :returns: deadline attribute.
-        :rtype: Duration
-        """
-        return self._deadline
-
-    @deadline.setter
-    def deadline(self, value):
-        assert isinstance(value, Duration)
-        self._deadline = value
-
-    @property
-    def liveliness(self):
-        """
-        Get field 'liveliness'.
-
-        :returns: liveliness attribute
-        :rtype: QoSLivelinessPolicy
-        """
-        return self._liveliness
-
-    @liveliness.setter
-    def liveliness(self, value):
-        assert isinstance(value, (QoSLivelinessPolicy, int))
-        self._liveliness = QoSLivelinessPolicy(value)
-
-    @property
-    def liveliness_lease_duration(self):
-        """
-        Get field 'liveliness_lease_duration'.
-
-        :returns: liveliness_lease_duration attribute.
-        :rtype: Duration
-        """
-        return self._liveliness_lease_duration
-
-    @liveliness_lease_duration.setter
-    def liveliness_lease_duration(self, value):
-        assert isinstance(value, Duration)
-        self._liveliness_lease_duration = value
-
-    @property
     def avoid_ros_namespace_conventions(self):
         """
         Get field 'avoid_ros_namespace_conventions'.
@@ -219,51 +127,11 @@ class QoSProfile:
             self.depth,
             self.reliability,
             self.durability,
-            self.lifespan.get_c_duration(),
-            self.deadline.get_c_duration(),
-            self.liveliness,
-            self.liveliness_lease_duration.get_c_duration(),
             self.avoid_ros_namespace_conventions,
         )
 
-    def __eq__(self, other):
-        if not isinstance(other, QoSProfile):
-            return False
-        return all(
-            self.__getattribute__(slot) == other.__getattribute__(slot)
-            for slot in self.__slots__)
 
-
-class QoSPolicyEnum(IntEnum):
-    """
-    Base for QoS Policy enumerations.
-
-    Provides helper function to filter keys for utilities.
-    """
-
-    @classmethod
-    def short_keys(cls):
-        """Return a list of shortened typing-friendly enum values."""
-        return [k.lower() for k in cls.__members__.keys() if not k.startswith('RMW')]
-
-    @classmethod
-    def get_from_short_key(cls, name):
-        """Retrieve a policy type from a short name, case-insensitive."""
-        return cls[name.upper()].value
-
-    @property
-    def short_key(self):
-        for k, v in self.__class__.__members__.items():
-            if k.startswith('RMW'):
-                continue
-            if self.value == v:
-                return k.lower()
-        raise AttributeError(
-            'failed to find value %s in %s' %
-            (self.value, self.__class__.__name__))
-
-
-class HistoryPolicy(QoSPolicyEnum):
+class QoSHistoryPolicy(IntEnum):
     """
     Enum for QoS History settings.
 
@@ -271,18 +139,11 @@ class HistoryPolicy(QoSPolicyEnum):
     """
 
     RMW_QOS_POLICY_HISTORY_SYSTEM_DEFAULT = 0
-    SYSTEM_DEFAULT = RMW_QOS_POLICY_HISTORY_SYSTEM_DEFAULT
     RMW_QOS_POLICY_HISTORY_KEEP_LAST = 1
-    KEEP_LAST = RMW_QOS_POLICY_HISTORY_KEEP_LAST
     RMW_QOS_POLICY_HISTORY_KEEP_ALL = 2
-    KEEP_ALL = RMW_QOS_POLICY_HISTORY_KEEP_ALL
 
 
-# Alias with the old name, for retrocompatibility
-QoSHistoryPolicy = HistoryPolicy
-
-
-class ReliabilityPolicy(QoSPolicyEnum):
+class QoSReliabilityPolicy(IntEnum):
     """
     Enum for QoS Reliability settings.
 
@@ -290,18 +151,11 @@ class ReliabilityPolicy(QoSPolicyEnum):
     """
 
     RMW_QOS_POLICY_RELIABILITY_SYSTEM_DEFAULT = 0
-    SYSTEM_DEFAULT = RMW_QOS_POLICY_RELIABILITY_SYSTEM_DEFAULT
     RMW_QOS_POLICY_RELIABILITY_RELIABLE = 1
-    RELIABLE = RMW_QOS_POLICY_RELIABILITY_RELIABLE
     RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT = 2
-    BEST_EFFORT = RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT
 
 
-# Alias with the old name, for retrocompatibility
-QoSReliabilityPolicy = ReliabilityPolicy
-
-
-class DurabilityPolicy(QoSPolicyEnum):
+class QoSDurabilityPolicy(IntEnum):
     """
     Enum for QoS Durability settings.
 
@@ -309,69 +163,21 @@ class DurabilityPolicy(QoSPolicyEnum):
     """
 
     RMW_QOS_POLICY_DURABILITY_SYSTEM_DEFAULT = 0
-    SYSTEM_DEFAULT = RMW_QOS_POLICY_DURABILITY_SYSTEM_DEFAULT
     RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL = 1
-    TRANSIENT_LOCAL = RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL
     RMW_QOS_POLICY_DURABILITY_VOLATILE = 2
-    VOLATILE = RMW_QOS_POLICY_DURABILITY_VOLATILE
 
 
-# Alias with the old name, for retrocompatibility
-QoSDurabilityPolicy = DurabilityPolicy
-
-
-class LivelinessPolicy(QoSPolicyEnum):
-    """
-    Enum for QoS Liveliness settings.
-
-    This enum matches the one defined in rmw/types.h
-    """
-
-    RMW_QOS_POLICY_LIVELINESS_SYSTEM_DEFAULT = 0
-    SYSTEM_DEFAULT = RMW_QOS_POLICY_LIVELINESS_SYSTEM_DEFAULT
-    RMW_QOS_POLICY_LIVELINESS_AUTOMATIC = 1
-    AUTOMATIC = RMW_QOS_POLICY_LIVELINESS_AUTOMATIC
-    RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_NODE = 2
-    MANUAL_BY_NODE = RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_NODE
-    RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC = 3
-    MANUAL_BY_TOPIC = RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC
-
-
-# Alias with the old name, for retrocompatibility
-QoSLivelinessPolicy = LivelinessPolicy
-
-qos_profile_system_default = QoSProfile(**_rclpy.rclpy_get_rmw_qos_profile(
-    'qos_profile_system_default'))
-qos_profile_sensor_data = QoSProfile(**_rclpy.rclpy_get_rmw_qos_profile(
-    'qos_profile_sensor_data'))
-qos_profile_services_default = QoSProfile(**_rclpy.rclpy_get_rmw_qos_profile(
-    'qos_profile_services_default'))
-qos_profile_parameters = QoSProfile(**_rclpy.rclpy_get_rmw_qos_profile(
-    'qos_profile_parameters'))
-qos_profile_parameter_events = QoSProfile(**_rclpy.rclpy_get_rmw_qos_profile(
-    'qos_profile_parameter_events'))
-qos_profile_action_status_default = QoSProfile(
-    **_rclpy_action.rclpy_action_get_rmw_qos_profile('rcl_action_qos_profile_status_default'))
-
-
-class QoSPresetProfiles(Enum):
-    SYSTEM_DEFAULT = qos_profile_system_default
-    SENSOR_DATA = qos_profile_sensor_data
-    SERVICES_DEFAULT = qos_profile_services_default
-    PARAMETERS = qos_profile_parameters
-    PARAMETER_EVENTS = qos_profile_parameter_events
-    ACTION_STATUS_DEFAULT = qos_profile_action_status_default
-
-    """Noted that the following are duplicated from QoSPolicyEnum.
-
-    Our supported version of Python3 (3.5) doesn't have a fix that allows mixins on Enum.
-    """
-    @classmethod
-    def short_keys(cls):
-        """Return a list of shortened typing-friendly enum values."""
-        return [k.lower() for k in cls.__members__.keys() if not k.startswith('RMW')]
-
-    @classmethod
-    def get_from_short_key(cls, name):
-        """Retrieve a policy type from a short name, case-insensitive."""
-        return cls[name.upper()].value
+qos_profile_default = _rclpy.rclpy_get_rmw_qos_profile(
+    'qos_profile_default')
+qos_profile_system_default = _rclpy.rclpy_get_rmw_qos_profile(
+    'qos_profile_system_default')
+qos_profile_sensor_data = _rclpy.rclpy_get_rmw_qos_profile(
+    'qos_profile_sensor_data')
+qos_profile_services_default = _rclpy.rclpy_get_rmw_qos_profile(
+    'qos_profile_services_default')
+qos_profile_parameters = _rclpy.rclpy_get_rmw_qos_profile(
+    'qos_profile_parameters')
+qos_profile_parameter_events = _rclpy.rclpy_get_rmw_qos_profile(
+    'qos_profile_parameter_events')
+qos_profile_action_status_default = _rclpy_action.rclpy_action_get_rmw_qos_profile(
+    'rcl_action_qos_profile_status_default')

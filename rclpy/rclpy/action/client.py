@@ -23,8 +23,7 @@ from action_msgs.srv import CancelGoal
 from rclpy.executors import await_or_execute
 from rclpy.impl.implementation_singleton import rclpy_action_implementation as _rclpy_action
 from rclpy.qos import qos_profile_action_status_default
-from rclpy.qos import qos_profile_services_default
-from rclpy.qos import QoSProfile
+from rclpy.qos import qos_profile_default, qos_profile_services_default
 from rclpy.task import Future
 from rclpy.type_support import check_for_type_support
 from rclpy.waitable import NumberOfEntities, Waitable
@@ -121,7 +120,7 @@ class ActionClient(Waitable):
         goal_service_qos_profile=qos_profile_services_default,
         result_service_qos_profile=qos_profile_services_default,
         cancel_service_qos_profile=qos_profile_services_default,
-        feedback_sub_qos_profile=QoSProfile(depth=10),
+        feedback_sub_qos_profile=qos_profile_default,
         status_sub_qos_profile=qos_profile_action_status_default
     ):
         """
@@ -148,17 +147,16 @@ class ActionClient(Waitable):
         check_for_type_support(action_type)
         self._node = node
         self._action_type = action_type
-        with node.handle as node_capsule:
-            self._client_handle = _rclpy_action.rclpy_action_create_client(
-                node_capsule,
-                action_type,
-                action_name,
-                goal_service_qos_profile.get_c_qos_profile(),
-                result_service_qos_profile.get_c_qos_profile(),
-                cancel_service_qos_profile.get_c_qos_profile(),
-                feedback_sub_qos_profile.get_c_qos_profile(),
-                status_sub_qos_profile.get_c_qos_profile()
-            )
+        self._client_handle = _rclpy_action.rclpy_action_create_client(
+            node.handle,
+            action_type,
+            action_name,
+            goal_service_qos_profile.get_c_qos_profile(),
+            result_service_qos_profile.get_c_qos_profile(),
+            cancel_service_qos_profile.get_c_qos_profile(),
+            feedback_sub_qos_profile.get_c_qos_profile(),
+            status_sub_qos_profile.get_c_qos_profile()
+        )
 
         self._is_ready = False
 
@@ -234,35 +232,35 @@ class ActionClient(Waitable):
         data = {}
         if self._is_goal_response_ready:
             taken_data = _rclpy_action.rclpy_action_take_goal_response(
-                self._client_handle, self._action_type.Impl.SendGoalService.Response)
+                self._client_handle, self._action_type.GoalRequestService.Response)
             # If take fails, then we get (None, None)
             if all(taken_data):
                 data['goal'] = taken_data
 
         if self._is_cancel_response_ready:
             taken_data = _rclpy_action.rclpy_action_take_cancel_response(
-                self._client_handle, self._action_type.Impl.CancelGoalService.Response)
+                self._client_handle, self._action_type.CancelGoalService.Response)
             # If take fails, then we get (None, None)
             if all(taken_data):
                 data['cancel'] = taken_data
 
         if self._is_result_response_ready:
             taken_data = _rclpy_action.rclpy_action_take_result_response(
-                self._client_handle, self._action_type.Impl.GetResultService.Response)
+                self._client_handle, self._action_type.GoalResultService.Response)
             # If take fails, then we get (None, None)
             if all(taken_data):
                 data['result'] = taken_data
 
         if self._is_feedback_ready:
             taken_data = _rclpy_action.rclpy_action_take_feedback(
-                self._client_handle, self._action_type.Impl.FeedbackMessage)
+                self._client_handle, self._action_type.Feedback)
             # If take fails, then we get None
             if taken_data is not None:
                 data['feedback'] = taken_data
 
         if self._is_status_ready:
             taken_data = _rclpy_action.rclpy_action_take_status(
-                self._client_handle, self._action_type.Impl.GoalStatusMessage)
+                self._client_handle, self._action_type.GoalStatusMessage)
             # If take fails, then we get None
             if taken_data is not None:
                 data['status'] = taken_data
@@ -302,7 +300,7 @@ class ActionClient(Waitable):
 
         if 'feedback' in taken_data:
             feedback_msg = taken_data['feedback']
-            goal_uuid = bytes(feedback_msg.goal_id.uuid)
+            goal_uuid = bytes(feedback_msg.action_goal_id.uuid)
             # Call a registered callback if there is one
             if goal_uuid in self._feedback_callbacks:
                 await await_or_execute(self._feedback_callbacks[goal_uuid], feedback_msg)
@@ -351,20 +349,14 @@ class ActionClient(Waitable):
         :type goal: action_type.Goal
         :return: The result response.
         :rtype: action_type.Result
-        :raises: TypeError if the type of the passed goal isn't an instance of
-          the Goal type of the provided action when the service was
-          constructed.
         """
-        if not isinstance(goal, self._action_type.Goal):
-            raise TypeError()
-
         event = threading.Event()
 
         def unblock(future):
             nonlocal event
             event.set()
 
-        send_goal_future = self.send_goal_async(goal, kwargs)
+        send_goal_future = self.send_goal_async(goal, **kwargs)
         send_goal_future.add_done_callback(unblock)
 
         event.wait()
@@ -394,30 +386,21 @@ class ActionClient(Waitable):
         :return: a Future instance to a goal handle that completes when the goal request
             has been accepted or rejected.
         :rtype: :class:`rclpy.task.Future` instance
-        :raises: TypeError if the type of the passed goal isn't an instance of
-          the Goal type of the provided action when the service was
-          constructed.
         """
-        if not isinstance(goal, self._action_type.Goal):
-            raise TypeError()
-
-        request = self._action_type.Impl.SendGoalService.Request()
-        request.goal_id = self._generate_random_uuid() if goal_uuid is None else goal_uuid
-        request.goal = goal
-        sequence_number = _rclpy_action.rclpy_action_send_goal_request(
-            self._client_handle, request)
+        goal.action_goal_id = self._generate_random_uuid() if goal_uuid is None else goal_uuid
+        sequence_number = _rclpy_action.rclpy_action_send_goal_request(self._client_handle, goal)
         if sequence_number in self._pending_goal_requests:
             raise RuntimeError(
                 'Sequence ({}) conflicts with pending goal request'.format(sequence_number))
 
         if feedback_callback is not None:
             # TODO(jacobperron): Move conversion function to a general-use package
-            goal_uuid = bytes(request.goal_id.uuid)
+            goal_uuid = bytes(goal.action_goal_id.uuid)
             self._feedback_callbacks[goal_uuid] = feedback_callback
 
         future = Future()
         self._pending_goal_requests[sequence_number] = future
-        self._sequence_number_to_goal_id[sequence_number] = request.goal_id
+        self._sequence_number_to_goal_id[sequence_number] = goal.action_goal_id
         future.add_done_callback(self._remove_pending_goal_request)
         # Add future so executor is aware
         self.add_future(future)
@@ -515,8 +498,8 @@ class ActionClient(Waitable):
             raise TypeError(
                 'Expected type ClientGoalHandle but received {}'.format(type(goal_handle)))
 
-        result_request = self._action_type.Impl.GetResultService.Request()
-        result_request.goal_id = goal_handle.goal_id
+        result_request = self._action_type.GoalResultService.Request()
+        result_request.action_goal_id = goal_handle.goal_id
         sequence_number = _rclpy_action.rclpy_action_send_result_request(
             self._client_handle,
             result_request)
@@ -538,9 +521,8 @@ class ActionClient(Waitable):
 
         :return: True if an action server is ready, False otherwise.
         """
-        with self._node.handle as node_capsule:
-            return _rclpy_action.rclpy_action_server_is_available(
-                node_capsule,
+        return _rclpy_action.rclpy_action_server_is_available(
+                self._node.handle,
                 self._client_handle)
 
     def wait_for_server(self, timeout_sec=None):
@@ -565,11 +547,10 @@ class ActionClient(Waitable):
 
     def destroy(self):
         """Destroy the underlying action client handle."""
-        if self._client_handle is None:
+        if self._client_handle is None or self._node.handle is None:
             return
-        with self._node.handle as node_capsule:
-            _rclpy_action.rclpy_action_destroy_entity(self._client_handle, node_capsule)
-            self._node.remove_waitable(self)
+        _rclpy_action.rclpy_action_destroy_entity(self._client_handle, self._node.handle)
+        self._node.remove_waitable(self)
         self._client_handle = None
 
     def __del__(self):

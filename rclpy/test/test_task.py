@@ -138,8 +138,7 @@ class TestTask(unittest.TestCase):
         t()
         self.assertTrue(t.done())
         self.assertEqual('Sentinel Exception', t.exception().sentinel_value)
-        with self.assertRaises(Exception):
-            t.result()
+        self.assertEqual(None, t.result())
 
     def test_coroutine_exception(self):
 
@@ -152,8 +151,7 @@ class TestTask(unittest.TestCase):
         t()
         self.assertTrue(t.done())
         self.assertEqual('Sentinel Exception', t.exception().sentinel_value)
-        with self.assertRaises(Exception):
-            t.result()
+        self.assertEqual(None, t.result())
 
     def test_task_normal_callable_args(self):
         arg_in = 'Sentinel Arg'
@@ -240,19 +238,6 @@ class TestFuture(unittest.TestCase):
         except StopIteration as e:
             self.assertEqual('Sentinel Result', e.value)
 
-    def test_await_exception(self):
-        f = Future()
-
-        async def coro():
-            nonlocal f
-            return await f
-
-        c = coro()
-        c.send(None)
-        f.set_exception(RuntimeError('test exception'))
-        with self.assertRaises(RuntimeError):
-            c.send(None)
-
     def test_cancel_schedules_callbacks(self):
         executor = DummyExecutor()
         f = Future(executor=executor)
@@ -273,54 +258,6 @@ class TestFuture(unittest.TestCase):
         f.add_done_callback(lambda f: None)
         f.set_exception('Anything')
         self.assertTrue(executor.done_callbacks)
-
-    def test_cancel_invokes_callbacks(self):
-        called = False
-
-        def cb(fut):
-            nonlocal called
-            called = True
-
-        f = Future()
-        f.add_done_callback(cb)
-        f.cancel()
-        assert called
-
-    def test_set_result_invokes_callbacks(self):
-        called = False
-
-        def cb(fut):
-            nonlocal called
-            called = True
-
-        f = Future()
-        f.add_done_callback(cb)
-        f.set_result('Anything')
-        assert called
-
-    def test_set_exception_invokes_callbacks(self):
-        called = False
-
-        def cb(fut):
-            nonlocal called
-            called = True
-
-        f = Future()
-        f.add_done_callback(cb)
-        f.set_exception('Anything')
-        assert called
-
-    def test_add_done_callback_invokes_callback(self):
-        called = False
-
-        def cb(fut):
-            nonlocal called
-            called = True
-
-        f = Future()
-        f.set_result('Anything')
-        f.add_done_callback(cb)
-        assert called
 
 
 if __name__ == '__main__':

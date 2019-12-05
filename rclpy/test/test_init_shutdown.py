@@ -12,61 +12,133 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pytest
-import rclpy
-from rclpy.exceptions import NotInitializedException
+import multiprocessing
+import sys
+import traceback
 
 
-def test_init():
+def run_catch_report_raise(func, *args, **kwargs):
+    try:
+        return func(*args, **kwargs)
+    except Exception:
+        print('exception in {0}():'.format(func.__name__), file=sys.stderr)
+        traceback.print_exc()
+        raise
+
+
+def func_init():
+    import rclpy
     context = rclpy.context.Context()
-    rclpy.init(context=context)
+    try:
+        rclpy.init(context=context)
+    except RuntimeError:
+        return False
+
     rclpy.shutdown(context=context)
+    return True
 
 
-def test_init_with_non_utf8_arguments():
+def func_init_shutdown():
+    import rclpy
     context = rclpy.context.Context()
-    # Embed non decodable characters e.g. due to
-    # wrong locale settings.
-    # See PEP-383 for further reference.
-    args = ['my-node.py', 'Ragnar\udcc3\udcb6k']
-    with pytest.raises(UnicodeEncodeError):
-        rclpy.init(context=context, args=args)
+    try:
+        rclpy.init(context=context)
+        rclpy.shutdown(context=context)
+        return True
+    except RuntimeError:
+        return False
 
 
-def test_init_shutdown_sequence():
-    context = rclpy.context.Context()
-    rclpy.init(context=context)
-    rclpy.shutdown(context=context)
-    context = rclpy.context.Context()  # context cannot be reused but should not interfere
-    rclpy.init(context=context)
-    rclpy.shutdown(context=context)
+def func_init_shutdown_sequence():
+    import rclpy
+    try:
+        # local
+        context = rclpy.context.Context()
+        rclpy.init(context=context)
+        rclpy.shutdown(context=context)
+        context = rclpy.context.Context()  # context cannot be reused but should not interfere
+        rclpy.init(context=context)
+        rclpy.shutdown(context=context)
 
-    # global
-    rclpy.init()
-    rclpy.shutdown()
-    rclpy.init()
-    rclpy.shutdown()
+        # global
+        rclpy.init()
+        rclpy.shutdown()
+        rclpy.init()
+        rclpy.shutdown()
+
+        return True
+    except RuntimeError:
+        return False
 
 
-def test_double_init():
+def func_double_init():
+    import rclpy
     context = rclpy.context.Context()
     rclpy.init(context=context)
     try:
-        with pytest.raises(RuntimeError):
-            rclpy.init(context=context)
+        rclpy.init(context=context)
+    except RuntimeError:
+        return True
     finally:
         rclpy.shutdown(context=context)
+    return False
 
 
-def test_double_shutdown():
+def func_double_shutdown():
+    import rclpy
     context = rclpy.context.Context()
     rclpy.init(context=context)
     rclpy.shutdown(context=context)
-    with pytest.raises(RuntimeError):
+    try:
         rclpy.shutdown(context=context)
+    except RuntimeError:
+        return True
+
+    return False
+
+
+def func_create_node_without_init():
+    import rclpy
+    from rclpy.exceptions import NotInitializedException
+    context = rclpy.context.Context()
+    try:
+        rclpy.create_node('foo', context=context)
+    except NotInitializedException:
+        return True
+    return False
+
+
+def func_launch(function, message):
+    pool = multiprocessing.Pool(1)
+    result = pool.apply(
+        func=run_catch_report_raise,
+        args=(function,)
+    )
+
+    assert result, message
+    pool.close()
+    pool.join()
+
+
+def test_init():
+    func_launch(func_init, 'failed to initialize rclpy')
+
+
+def test_init_shutdown():
+    func_launch(func_init_shutdown, 'failed to shutdown rclpy')
+
+
+def test_init_shutdown_sequence():
+    func_launch(func_init_shutdown_sequence, 'failed to initialize rclpy after shutdown')
+
+
+def test_double_init():
+    func_launch(func_double_init, 'Expected Runtime error when initializing rclpy twice')
+
+
+def test_double_shutdown():
+    func_launch(func_double_shutdown, 'Expected Runtime error when shutting down rclpy twice')
 
 
 def test_create_node_without_init():
-    context = rclpy.context.Context()
-    with pytest.raises(NotInitializedException):
-        rclpy.create_node('foo', context=context)
+    func_launch(func_create_node_without_init, 'Expected NotInitializedException')

@@ -31,8 +31,7 @@ class TestParametersCallback(unittest.TestCase):
         rclpy.shutdown(context=cls.context)
 
     def setUp(self):
-        self.node = rclpy.create_node(
-            'parameters_callback_node', context=self.context, allow_undeclared_parameters=True)
+        self.node = rclpy.create_node('parameters_callback_node', context=self.context)
 
     def tearDown(self):
         self.node.destroy_node()

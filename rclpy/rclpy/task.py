@@ -15,7 +15,6 @@
 import inspect
 import sys
 import threading
-import warnings
 import weakref
 
 
@@ -55,14 +54,14 @@ class Future:
         # Yield if the task is not finished
         while not self._done:
             yield
-        return self.result()
+        return self._result
 
     def cancel(self):
         """Request cancellation of the running task if it is not done already."""
         with self._lock:
             if not self._done:
                 self._cancelled = True
-        self._schedule_or_invoke_done_callbacks()
+            self._schedule_done_callbacks()
 
     def cancelled(self):
         """
@@ -86,12 +85,8 @@ class Future:
         """
         Get the result of a done task.
 
-        :raises: Exception if one was set during the task.
-
         :return: The result set by the task
         """
-        if self._exception:
-            raise self.exception()
         return self._result
 
     def exception(self):
@@ -113,7 +108,7 @@ class Future:
             self._result = result
             self._done = True
             self._cancelled = False
-        self._schedule_or_invoke_done_callbacks()
+            self._schedule_done_callbacks()
 
     def set_exception(self, exception):
         """
@@ -126,31 +121,15 @@ class Future:
             self._exception_fetched = False
             self._done = True
             self._cancelled = False
-        self._schedule_or_invoke_done_callbacks()
+            self._schedule_done_callbacks()
 
-    def _schedule_or_invoke_done_callbacks(self):
-        """
-        Schedule done callbacks on the executor if possible, else run them directly.
-
-        This function assumes self._lock is not held.
-        """
-        with self._lock:
-            executor = self._executor()
-            callbacks = self._callbacks
-            self._callbacks = []
-
+    def _schedule_done_callbacks(self):
+        """Schedule done callbacks on the executor if possible."""
+        executor = self._executor()
         if executor is not None:
-            # Have the executor take care of the callbacks
-            for callback in callbacks:
+            for callback in self._callbacks:
                 executor.create_task(callback, self)
-        else:
-            # No executor, call right away
-            for callback in callbacks:
-                try:
-                    callback(self)
-                except Exception as e:
-                    # Don't let exceptions be raised because there may be more callbacks to call
-                    warnings.warn('Unhandled exception in done callback: {}'.format(e))
+        self._callbacks = []
 
     def _set_executor(self, executor):
         """Set the executor this future is associated with."""
@@ -164,27 +143,15 @@ class Future:
         """
         Add a callback to be executed when the task is done.
 
-        Callbacks should not raise exceptions.
-
-        The callback may be called immediately by this method if the future is already done.
-        If this happens and the callback raises, the exception will be raised by this method.
-
         :param callback: a callback taking the future as an agrument to be run when completed
         """
-        invoke = False
         with self._lock:
             if self._done:
                 executor = self._executor()
                 if executor is not None:
                     executor.create_task(callback, self)
-                else:
-                    invoke = True
             else:
                 self._callbacks.append(callback)
-
-        # Invoke when not holding self._lock
-        if invoke:
-            callback(self)
 
 
 class Task(Future):

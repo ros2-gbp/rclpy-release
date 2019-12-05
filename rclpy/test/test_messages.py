@@ -16,7 +16,7 @@ import unittest
 
 import rclpy
 
-from test_msgs.msg import BasicTypes, Strings
+from test_msgs.msg import Primitives
 
 
 class TestMessages(unittest.TestCase):
@@ -39,24 +39,9 @@ class TestMessages(unittest.TestCase):
         cls.node.destroy_node()
         rclpy.shutdown(context=cls.context)
 
-    def test_unicode_string(self):
-        msg = Strings()
+    def test_invalid_string_raises(self):
+        msg = Primitives()
         msg.string_value = 'ñu'
-        pub = self.node.create_publisher(Strings, 'chatter', 1)
-        pub.publish(msg)
-        self.node.destroy_publisher(pub)
-
-    def test_different_type_raises(self):
-        # TODO(bmarchi): When a publisher is destroyed for opensplice,
-        # the topic from the previous test is kept around and is cached, so
-        # the new publisher can't be created because opensplice checks
-        # if the parameters of the created topic are the same as the one
-        # that has in memory. It's expected that if any participant
-        # is not subscribed/publishing to a topic, this is destroyed.
-        # Revert the topic name to 'chatter' once proper topic destruction
-        # for opensplice is possible.
-        pub = self.node.create_publisher(
-            BasicTypes, 'chatter_different_message_type', 1)
-        with self.assertRaises(TypeError):
-            pub.publish('different message type')
-        self.node.destroy_publisher(pub)
+        pub = self.node.create_publisher(Primitives, 'chatter')
+        with self.assertRaises(UnicodeEncodeError):
+            pub.publish(msg)

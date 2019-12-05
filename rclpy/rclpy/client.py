@@ -14,78 +14,44 @@
 
 import threading
 import time
-from typing import Dict
-from typing import TypeVar
 
-from rclpy.callback_groups import CallbackGroup
-from rclpy.context import Context
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
-from rclpy.qos import QoSProfile
 from rclpy.task import Future
-
-# Used for documentation purposes only
-SrvType = TypeVar('SrvType')
-SrvTypeRequest = TypeVar('SrvTypeRequest')
-SrvTypeResponse = TypeVar('SrvTypeResponse')
 
 
 class Client:
     def __init__(
-        self,
-        context: Context,
-        client_handle,
-        srv_type: SrvType,
-        srv_name: str,
-        qos_profile: QoSProfile,
-        callback_group: CallbackGroup
-    ) -> None:
-        """
-        Create a container for a ROS service client.
-
-        .. warning:: Users should not create a service client with this constuctor, instead they
-           should call :meth:`.Node.create_client`.
-
-        :param context: The context associated with the service client.
-        :param client_handle: :class:`Handle` wrapping the underlying ``rcl_client_t`` object.
-        :param srv_type: The service type.
-        :param srv_name: The name of the service.
-        :param qos_profile: The quality of service profile to apply the service client.
-        :param callback_group: The callback group for the service client. If ``None``, then the
-            nodes default callback group is used.
-        """
+            self, node_handle, context, client_handle, client_pointer,
+            srv_type, srv_name, qos_profile, callback_group):
+        self.node_handle = node_handle
         self.context = context
-        self.__handle = client_handle
+        self.client_handle = client_handle
+        self.client_pointer = client_pointer
         self.srv_type = srv_type
         self.srv_name = srv_name
         self.qos_profile = qos_profile
         # Key is a sequence number, value is an instance of a Future
-        self._pending_requests: Dict[int, Future] = {}
+        self._pending_requests = {}
         self.callback_group = callback_group
         # True when the callback is ready to fire but has not been "taken" by an executor
         self._executor_event = False
 
-    def call(self, request: SrvTypeRequest) -> SrvTypeResponse:
+    def call(self, req):
         """
         Make a service request and wait for the result.
 
         Do not call this method in a callback or a deadlock may occur.
 
-        :param request: The service request.
-        :return: The service response.
-        :raises: TypeError if the type of the passed request isn't an instance
-          of the Request type of the provided service when the client was
-          constructed.
+        :param req: The service request
+        :return: The service response
         """
-        if not isinstance(request, self.srv_type.Request):
-            raise TypeError()
-
         event = threading.Event()
 
         def unblock(future):
             nonlocal event
             event.set()
 
-        future = self.call_async(request)
+        future = self.call_async(req)
         future.add_done_callback(unblock)
 
         event.wait()
@@ -93,13 +59,13 @@ class Client:
             raise future.exception()
         return future.result()
 
-    def remove_pending_request(self, future: Future) -> None:
+    def remove_pending_request(self, future):
         """
         Remove a future from the list of pending requests.
 
-        This prevents a future from receiving a response and executing its done callbacks.
-
-        :param future: A future returned from :meth:`call_async`
+        This prevents a future from receiving a request and executing its done callbacks.
+        :param future: a future returned from :meth:`call_async`
+        :type future: rclpy.task.Future
         """
         for seq, req_future in self._pending_requests.items():
             if future == req_future:
@@ -109,21 +75,14 @@ class Client:
                     pass
                 break
 
-    def call_async(self, request: SrvTypeRequest) -> Future:
+    def call_async(self, req):
         """
         Make a service request and asyncronously get the result.
 
-        :param request: The service request.
-        :return: A future that completes when the request does.
-        :raises: TypeError if the type of the passed request isn't an instance
-          of the Request type of the provided service when the client was
-          constructed.
+        :return: a Future instance that completes when the request does
+        :rtype: :class:`rclpy.task.Future` instance
         """
-        if not isinstance(request, self.srv_type.Request):
-            raise TypeError()
-
-        with self.handle as capsule:
-            sequence_number = _rclpy.rclpy_send_request(capsule, request)
+        sequence_number = _rclpy.rclpy_send_request(self.client_handle, req)
         if sequence_number in self._pending_requests:
             raise RuntimeError('Sequence (%r) conflicts with pending request' % sequence_number)
 
@@ -134,24 +93,10 @@ class Client:
 
         return future
 
-    def service_is_ready(self) -> bool:
-        """
-        Check if there is a service server ready.
+    def service_is_ready(self):
+        return _rclpy.rclpy_service_server_is_available(self.node_handle, self.client_handle)
 
-        :return: ``True`` if a server is ready, ``False`` otherwise.
-        """
-        with self.handle as capsule:
-            return _rclpy.rclpy_service_server_is_available(capsule)
-
-    def wait_for_service(self, timeout_sec: float = None) -> bool:
-        """
-        Wait for a service server to become ready.
-
-        Returns as soon as a server becomes ready or if the timeout expires.
-
-        :param timeout_sec: Seconds to wait. If ``None``, then wait forever.
-        :return: ``True`` if server became ready while waiting or ``False`` on a timeout.
-        """
+    def wait_for_service(self, timeout_sec=None):
         # TODO(sloretz) Return as soon as the service is available
         # This is a temporary implementation. The sleep time is arbitrary.
         sleep_time = 0.25
@@ -162,10 +107,3 @@ class Client:
             timeout_sec -= sleep_time
 
         return self.service_is_ready()
-
-    @property
-    def handle(self):
-        return self.__handle
-
-    def destroy(self):
-        self.handle.destroy()

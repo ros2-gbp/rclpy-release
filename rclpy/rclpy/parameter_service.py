@@ -12,11 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from rcl_interfaces.msg import ParameterDescriptor
-from rcl_interfaces.msg import SetParametersResult
 from rcl_interfaces.srv import DescribeParameters, GetParameters, GetParameterTypes
 from rcl_interfaces.srv import ListParameters, SetParameters, SetParametersAtomically
-from rclpy.exceptions import ParameterNotDeclaredException
 from rclpy.parameter import Parameter, PARAMETER_SEPARATOR_STRING
 from rclpy.qos import qos_profile_parameters
 from rclpy.validate_topic_name import TOPIC_SEPARATOR_STRING
@@ -65,22 +62,19 @@ class ParameterService:
 
     def _describe_parameters_callback(self, request, response):
         for name in request.names:
-            try:
-                descriptor = self._node.describe_parameter(name)
-            except ParameterNotDeclaredException:
-                descriptor = ParameterDescriptor()
-            response.descriptors.append(descriptor)
+            p = self._node.get_parameter(name)
+            response.descriptors.append(p.get_descriptor())
         return response
 
     def _get_parameters_callback(self, request, response):
         for name in request.names:
-            p = self._node.get_parameter_or(name)
+            p = self._node.get_parameter(name)
             response.values.append(p.get_parameter_value())
         return response
 
     def _get_parameter_types_callback(self, request, response):
         for name in request.names:
-            response.types.append(self._node.get_parameter_or(name).type_)
+            response.types.append(self._node.get_parameter(name).get_parameter_type())
         return response
 
     def _list_parameters_callback(self, request, response):
@@ -90,9 +84,6 @@ class ParameterService:
                 names_with_prefixes.append(name)
                 continue
             elif request.prefixes:
-                for prefix in request.prefixes:
-                    if name.startswith(prefix):
-                        response.result.names.append(name)
                 continue
             else:
                 response.result.names.append(name)
@@ -127,23 +118,10 @@ class ParameterService:
     def _set_parameters_callback(self, request, response):
         for p in request.parameters:
             param = Parameter.from_parameter_msg(p)
-            try:
-                result = self._node.set_parameters_atomically([param])
-            except ParameterNotDeclaredException as e:
-                result = SetParametersResult(
-                    successful=False,
-                    reason=str(e)
-                )
-            response.results.append(result)
+            response.results.append(self._node.set_parameters_atomically([param]))
         return response
 
     def _set_parameters_atomically_callback(self, request, response):
-        try:
-            response.result = self._node.set_parameters_atomically([
-                Parameter.from_parameter_msg(p) for p in request.parameters])
-        except ParameterNotDeclaredException as e:
-            response.result = SetParametersResult(
-                    successful=False,
-                    reason=str(e)
-                )
+        response.result = self._node.set_parameters_atomically([
+            Parameter.from_parameter_msg(p) for p in request.parameters])
         return response

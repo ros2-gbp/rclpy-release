@@ -12,61 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-A collection of functions for writing a ROS program.
-
-A typical ROS program consists of the following operations:
-
-#. Initialization
-#. Create one or more ROS nodes
-#. Process node callbacks
-#. Shutdown
-
-Inititalization is done by calling :func:`init` for a particular :class:`.Context`.
-This must be done before any ROS nodes can be created.
-
-Creating a ROS node is done by calling :func:`create_node` or by instantiating a
-:class:`.Node`.
-A node can be used to create common ROS entities like publishers, subscriptions, services,
-and actions.
-
-After a node is created, items of work can be done (e.g. subscription callbacks) by *spinning* on
-the node.
-The following functions can be used to process work that is waiting to be executed: :func:`spin`,
-:func:`spin_once`, and :func:`spin_until_future_complete`.
-
-When finished with a previously initialized :class:`.Context` (ie. done using
-all ROS nodes associated with the context), the :func:`shutdown` function should be called.
-This will invalidate all entities derived from the context.
-"""
-
 import sys
-from typing import List
-from typing import TYPE_CHECKING
 
-from rclpy.context import Context
-from rclpy.parameter import Parameter
-from rclpy.task import Future
 from rclpy.utilities import get_default_context
-from rclpy.utilities import get_rmw_implementation_identifier  # noqa: F401
-from rclpy.utilities import ok  # noqa: F401 forwarding to this module
+from rclpy.utilities import get_rmw_implementation_identifier  # noqa
+from rclpy.utilities import ok  # noqa: forwarding to this module
 from rclpy.utilities import shutdown as _shutdown
-from rclpy.utilities import try_shutdown  # noqa: F401
-
-# Avoid loading extensions on module import
-if TYPE_CHECKING:
-    from rclpy.executors import Executor  # noqa: F401
-    from rclpy.node import Node  # noqa: F401
+from rclpy.utilities import try_shutdown  # noqa
 
 
-def init(*, args: List[str] = None, context: Context = None) -> None:
-    """
-    Initialize ROS communications for a given context.
-
-    :param args: List of command line arguments.
-    :param context: The context to initialize. If ``None``, then the default context is used
-        (see :func:`.get_default_context`).
-    """
+def init(*, args=None, context=None):
     context = get_default_context() if context is None else context
     # imported locally to avoid loading extensions on module import
     from rclpy.impl.implementation_singleton import rclpy_implementation
@@ -78,7 +33,7 @@ def init(*, args: List[str] = None, context: Context = None) -> None:
 __executor = None
 
 
-def get_global_executor() -> 'Executor':
+def get_global_executor():
     global __executor
     if __executor is None:
         # imported locally to avoid loading extensions on module import
@@ -87,15 +42,7 @@ def get_global_executor() -> 'Executor':
     return __executor
 
 
-def shutdown(*, context: Context = None) -> None:
-    """
-    Shutdown a previously initialized context.
-
-    This will also shutdown the global executor.
-
-    :param context: The context to invalidate. If ``None``, then the default context is used
-        (see :func:`.get_default_context`).
-    """
+def shutdown(*, context=None):
     global __executor
     if __executor is not None:
         __executor.shutdown()
@@ -104,65 +51,46 @@ def shutdown(*, context: Context = None) -> None:
 
 
 def create_node(
-    node_name: str,
-    *,
-    context: Context = None,
-    cli_args: List[str] = None,
-    namespace: str = None,
-    use_global_arguments: bool = True,
-    start_parameter_services: bool = True,
-    parameter_overrides: List[Parameter] = None,
-    allow_undeclared_parameters: bool = False,
-    automatically_declare_parameters_from_overrides: bool = False
-) -> 'Node':
+    node_name, *, context=None, cli_args=None, namespace=None, use_global_arguments=True,
+    start_parameter_services=True, initial_parameters=None
+):
     """
-    Create an instance of :class:`.Node`.
+    Create an instance of :class:`rclpy.node.Node`.
 
-    :param node_name: A name to give to the node.
-    :param context: The context to associated with the node, or ``None`` for the default global
-        context.
-    :param cli_args: Command line arguments to be used by the node. Being specific to a ROS node,
-        an implicit `--ros-args` scope flag always precedes these arguments.
-    :param namespace: The namespace prefix to apply to entities associated with the node
-        (node name, topics, etc).
-    :param use_global_arguments: ``False`` if the node should ignore process-wide command line
-        arguments.
-    :param start_parameter_services: ``False`` if the node should not create parameter services.
-    :param parameter_overrides: A list of :class:`.Parameter` which are used to override the
-        initial values of parameters declared on this node.
-     :param allow_undeclared_parameters: if True undeclared parameters are allowed, default False.
-        This option doesn't affect `parameter_overrides`.
-    :param automatically_declare_parameters_from_overrides: If True, the "parameter overrides" will
-        be used to implicitly declare parameters on the node during creation, default False.
-    :return: An instance of the newly created node.
+    :param node_name: A unique name to give to this node.
+    :param context: The context to be associated with, or None for the default global context.
+    :param cli_args: A list of strings of command line args to be used only by this node.
+    :param namespace: The namespace to which relative topic and service names will be prefixed.
+    :param use_global_arguments: False if the node should ignore process-wide command line args.
+    :param start_parameter_services: False if the node should not create parameter services.
+    :param initial_parameters: A list of rclpy.parameter.Parameters to be set during node creation.
+    :return: An instance of a node
+    :rtype: :class:`rclpy.node.Node`
     """
     # imported locally to avoid loading extensions on module import
-    from rclpy.node import Node  # noqa: F811
+    from rclpy.node import Node
     return Node(
         node_name, context=context, cli_args=cli_args, namespace=namespace,
         use_global_arguments=use_global_arguments,
         start_parameter_services=start_parameter_services,
-        parameter_overrides=parameter_overrides,
-        allow_undeclared_parameters=allow_undeclared_parameters,
-        automatically_declare_parameters_from_overrides=(
-            automatically_declare_parameters_from_overrides
-        ))
+        initial_parameters=initial_parameters)
 
 
-def spin_once(node: 'Node', *, executor: 'Executor' = None, timeout_sec: float = None) -> None:
+def spin_once(node, *, executor=None, timeout_sec=None):
     """
-    Execute one item of work or wait until a timeout expires.
+    Execute one item of work or wait until timeout expires.
 
-    One callback will be executed by the provided executor as long as that callback is ready
-    before the timeout expires.
+    One callback will be executed in a SingleThreadedExecutor as long as that
+    callback is ready before the timeout expires.
 
-    If no executor is provided (ie. ``None``), then the global executor is used.
-    It is possible the work done is for a node other than the one provided if the global executor
-    has a partially completed coroutine.
+    It is possible the work done may be for a node other than the one passed to this method
+    if the global executor has a partially completed coroutine.
 
     :param node: A node to add to the executor to check for work.
-    :param executor: The executor to use, or the global executor if ``None``.
-    :param timeout_sec: Seconds to wait. Block forever if ``None`` or negative. Don't wait if 0.
+    :param executor: The executor to use, or the global executor if None is passed.
+    :param timeout_sec: Seconds to wait. Block forever if None or negative. Don't wait if 0
+    :return: Always returns None regardless whether work executes or timeout expires.
+    :rtype: None
     """
     executor = get_global_executor() if executor is None else executor
     try:
@@ -172,16 +100,17 @@ def spin_once(node: 'Node', *, executor: 'Executor' = None, timeout_sec: float =
         executor.remove_node(node)
 
 
-def spin(node: 'Node', executor: 'Executor' = None) -> None:
+def spin(node, executor=None):
     """
-    Execute work and block until the context associated with the executor is shutdown.
+    Execute work blocking until the library is shutdown.
 
-    Callbacks will be executed by the provided executor.
-
-    This function blocks.
+    Callbacks will be executed in a SingleThreadedExecutor until shutdown() is called.
+    This method blocks.
 
     :param node: A node to add to the executor to check for work.
-    :param executor: The executor to use, or the global executor if ``None``.
+    :param executor: The executor to use, or the global executor if None is passed.
+    :return: Always returns None regardless whether work executes or timeout expires.
+    :rtype: None
     """
     executor = get_global_executor() if executor is None else executor
     try:
@@ -192,27 +121,21 @@ def spin(node: 'Node', executor: 'Executor' = None) -> None:
         executor.remove_node(node)
 
 
-def spin_until_future_complete(
-    node: 'Node',
-    future: Future,
-    executor: 'Executor' = None,
-    timeout_sec: float = None
-) -> None:
+def spin_until_future_complete(node, future, executor=None):
     """
     Execute work until the future is complete.
 
-    Callbacks and other work will be executed by the provided executor until ``future.done()``
-    returns ``True`` or the context associated with the executor is shutdown.
+    Callbacks and other work will be executed in a SingleThreadedExecutor until future.done()
+    returns True or rclpy is shutdown.
 
     :param node: A node to add to the executor to check for work.
     :param future: The future object to wait on.
-    :param executor: The executor to use, or the global executor if ``None``.
-    :param timeout_sec: Seconds to wait. Block until the future is complete
-        if ``None`` or negative. Don't wait if 0.
+    :param executor: The executor to use, or the global executor if None is passed.
+    :type future: rclpy.task.Future
     """
     executor = get_global_executor() if executor is None else executor
     try:
         executor.add_node(node)
-        executor.spin_until_future_complete(future, timeout_sec)
+        executor.spin_until_future_complete(future)
     finally:
         executor.remove_node(node)

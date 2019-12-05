@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import builtin_interfaces.msg
+import builtin_interfaces
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 
 
@@ -76,6 +76,3 @@ class Duration:
         if not isinstance(msg, builtin_interfaces.msg.Duration):
             raise TypeError('Must pass a builtin_interfaces.msg.Duration object')
         return cls(seconds=msg.sec, nanoseconds=msg.nanosec)
-
-    def get_c_duration(self):
-        return self._duration_handle

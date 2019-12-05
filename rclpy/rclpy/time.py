@@ -12,13 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import builtin_interfaces.msg
+import builtin_interfaces
 from rclpy.clock import ClockType
 from rclpy.duration import Duration
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
-
-
-CONVERSION_CONSTANT = 10 ** 9
 
 
 class Time:
@@ -30,7 +27,7 @@ class Time:
             raise ValueError('Seconds value must not be negative')
         if nanoseconds < 0:
             raise ValueError('Nanoseconds value must not be negative')
-        total_nanoseconds = int(seconds * CONVERSION_CONSTANT)
+        total_nanoseconds = int(seconds * 1e9)
         total_nanoseconds += int(nanoseconds)
         try:
             self._time_handle = _rclpy.rclpy_create_time_point(total_nanoseconds, clock_type)
@@ -51,7 +48,7 @@ class Time:
         :rtype: tuple(int, int)
         """
         nanoseconds = self.nanoseconds
-        return (nanoseconds // CONVERSION_CONSTANT, nanoseconds % CONVERSION_CONSTANT)
+        return (int(nanoseconds / 1e9), nanoseconds % 1e9)
 
     @property
     def clock_type(self):
@@ -136,7 +133,8 @@ class Time:
         return NotImplemented
 
     def to_msg(self):
-        seconds, nanoseconds = self.seconds_nanoseconds()
+        seconds = int(self.nanoseconds * 1e-9)
+        nanoseconds = int(self.nanoseconds % 1e9)
         return builtin_interfaces.msg.Time(sec=seconds, nanosec=nanoseconds)
 
     @classmethod

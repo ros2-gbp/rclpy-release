@@ -23,7 +23,7 @@ from rclpy.clock import ClockType
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.node import check_for_type_support
-from rclpy.qos import QoSProfile
+from rclpy.qos import qos_profile_default
 from rclpy.task import Future
 from rclpy.waitable import NumberOfEntities
 from rclpy.waitable import Waitable
@@ -41,9 +41,8 @@ class ClientWaitable(Waitable):
     def __init__(self, node):
         super().__init__(ReentrantCallbackGroup())
 
-        with node.handle as node_capsule:
-            self.client = _rclpy.rclpy_create_client(
-                node_capsule, EmptySrv, 'test_client', QoSProfile(depth=10).get_c_qos_profile())
+        self.client = _rclpy.rclpy_create_client(
+            node.handle, EmptySrv, 'test_client', qos_profile_default.get_c_qos_profile())[0]
         self.client_index = None
         self.client_is_ready = False
 
@@ -84,9 +83,8 @@ class ServerWaitable(Waitable):
     def __init__(self, node):
         super().__init__(ReentrantCallbackGroup())
 
-        with node.handle as node_capsule:
-            self.server = _rclpy.rclpy_create_service(
-                node_capsule, EmptySrv, 'test_server', QoSProfile(depth=10).get_c_qos_profile())
+        self.server = _rclpy.rclpy_create_service(
+            node.handle, EmptySrv, 'test_server', qos_profile_default.get_c_qos_profile())[0]
         self.server_index = None
         self.server_is_ready = False
 
@@ -129,9 +127,9 @@ class TimerWaitable(Waitable):
 
         self._clock = Clock(clock_type=ClockType.STEADY_TIME)
         period_nanoseconds = 10000
-        with self._clock.handle as clock_capsule:
-            self.timer = _rclpy.rclpy_create_timer(
-                clock_capsule, node.context.handle, period_nanoseconds)
+        self.timer = _rclpy.rclpy_create_timer(
+            self._clock._clock_handle, node.context.handle, period_nanoseconds
+        )[0]
         self.timer_index = None
         self.timer_is_ready = False
 
@@ -173,9 +171,12 @@ class SubscriptionWaitable(Waitable):
     def __init__(self, node):
         super().__init__(ReentrantCallbackGroup())
 
-        with node.handle as node_capsule:
-            self.subscription = _rclpy.rclpy_create_subscription(
-                node_capsule, EmptyMsg, 'test_topic', QoSProfile(depth=10).get_c_qos_profile())
+        self.guard_condition = _rclpy.rclpy_create_guard_condition(node.context.handle)[0]
+        self.guard_condition_index = None
+        self.guard_is_ready = False
+
+        self.subscription = _rclpy.rclpy_create_subscription(
+            node.handle, EmptyMsg, 'test_topic', qos_profile_default.get_c_qos_profile())[0]
         self.subscription_index = None
         self.subscription_is_ready = False
 
@@ -217,7 +218,7 @@ class GuardConditionWaitable(Waitable):
     def __init__(self, node):
         super().__init__(ReentrantCallbackGroup())
 
-        self.guard_condition = _rclpy.rclpy_create_guard_condition(node.context.handle)
+        self.guard_condition = _rclpy.rclpy_create_guard_condition(node.context.handle)[0]
         self.guard_condition_index = None
         self.guard_is_ready = False
 
@@ -281,9 +282,7 @@ class TestWaitable(unittest.TestCase):
     def setUpClass(cls):
         cls.context = rclpy.context.Context()
         rclpy.init(context=cls.context)
-        cls.node = rclpy.create_node(
-            'TestWaitable', namespace='/rclpy/test', context=cls.context,
-            allow_undeclared_parameters=True)
+        cls.node = rclpy.create_node('TestWaitable', namespace='/rclpy/test', context=cls.context)
         cls.executor = SingleThreadedExecutor(context=cls.context)
         cls.executor.add_node(cls.node)
 
@@ -305,8 +304,6 @@ class TestWaitable(unittest.TestCase):
 
     def tearDown(self):
         self.node.remove_waitable(self.waitable)
-        # Ensure resources inside the waitable are destroyed before the node in tearDownClass
-        del self.waitable
 
     def test_waitable_with_client(self):
         self.waitable = ClientWaitable(self.node)
@@ -314,7 +311,7 @@ class TestWaitable(unittest.TestCase):
 
         server = self.node.create_service(EmptySrv, 'test_client', lambda req, resp: resp)
 
-        while not _rclpy.rclpy_service_server_is_available(self.waitable.client):
+        while not _rclpy.rclpy_service_server_is_available(self.node.handle, self.waitable.client):
             time.sleep(0.1)
 
         thr = self.start_spin_thread(self.waitable)
@@ -351,7 +348,7 @@ class TestWaitable(unittest.TestCase):
     def test_waitable_with_subscription(self):
         self.waitable = SubscriptionWaitable(self.node)
         self.node.add_waitable(self.waitable)
-        pub = self.node.create_publisher(EmptyMsg, 'test_topic', 1)
+        pub = self.node.create_publisher(EmptyMsg, 'test_topic')
 
         thr = self.start_spin_thread(self.waitable)
         pub.publish(EmptyMsg())
@@ -383,23 +380,21 @@ class TestWaitable(unittest.TestCase):
 class TestNumberOfEntities(unittest.TestCase):
 
     def test_add(self):
-        n1 = NumberOfEntities(1, 2, 3, 4, 5, 6)
-        n2 = NumberOfEntities(10, 20, 30, 40, 50, 60)
+        n1 = NumberOfEntities(1, 2, 3, 4, 5)
+        n2 = NumberOfEntities(10, 20, 30, 40, 50)
         n = n1 + n2
         assert n.num_subscriptions == 11
         assert n.num_guard_conditions == 22
         assert n.num_timers == 33
         assert n.num_clients == 44
         assert n.num_services == 55
-        assert n.num_events == 66
 
     def test_add_assign(self):
-        n1 = NumberOfEntities(1, 2, 3, 4, 5, 6)
-        n2 = NumberOfEntities(10, 20, 30, 40, 50, 60)
+        n1 = NumberOfEntities(1, 2, 3, 4, 5)
+        n2 = NumberOfEntities(10, 20, 30, 40, 50)
         n1 += n2
         assert n1.num_subscriptions == 11
         assert n1.num_guard_conditions == 22
         assert n1.num_timers == 33
         assert n1.num_clients == 44
         assert n1.num_services == 55
-        assert n1.num_events == 66

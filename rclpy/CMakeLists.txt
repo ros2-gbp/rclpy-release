@@ -62,8 +62,9 @@ function(configure_python_c_extension_library _library_name)
     ${PythonExtra_LIBRARIES}
   )
 
-  ament_target_dependencies(${_library_name}
-    "PythonExtra"
+  target_include_directories(${_library_name}
+    PUBLIC
+    ${PythonExtra_INCLUDE_DIRS}
   )
 
   install(TARGETS ${_library_name}
@@ -80,11 +81,10 @@ target_link_libraries(rclpy_common
 target_include_directories(rclpy_common
   PUBLIC
   src/rclpy_common/include
+  ${PythonExtra_INCLUDE_DIRS}
 )
 ament_target_dependencies(rclpy_common
-  "rcl"
   "rmw"
-  "PythonExtra"
 )
 
 # Causes the visibility macros to use dllexport rather than dllimport,
@@ -137,24 +137,6 @@ ament_target_dependencies(rclpy_logging
   "rcutils"
 )
 
-# Signal handling library
-add_library(
-  rclpy_signal_handler
-  SHARED src/rclpy/_rclpy_signal_handler.c
-)
-configure_python_c_extension_library(rclpy_signal_handler)
-ament_target_dependencies(rclpy_signal_handler
-  "rcl"
-  "rcutils"
-)
-
-# Pycapsule handling library
-add_library(
-  rclpy_pycapsule
-  SHARED src/rclpy/_rclpy_pycapsule.c
-)
-configure_python_c_extension_library(rclpy_pycapsule)
-
 if(NOT WIN32)
   ament_environment_hooks(
     "${ament_cmake_package_templates_ENVIRONMENT_HOOK_LIBRARY_PATH}"
@@ -176,54 +158,12 @@ if(BUILD_TESTING)
     string(REPLACE "\\" "/" ament_index_build_path "${ament_index_build_path}")
   endif()
   if(NOT _typesupport_impls STREQUAL "")
-
-  # Run each test in its own pytest invocation to isolate any global state in rclpy
-  set(_rclpy_pytest_tests
-    test/test_action_client.py
-    test/test_action_graph.py
-    test/test_action_server.py
-    test/test_callback_group.py
-    test/test_client.py
-    test/test_clock.py
-    test/test_create_node.py
-    test/test_create_while_spinning.py
-    test/test_destruction.py
-    test/test_executor.py
-    test/test_expand_topic_name.py
-    test/test_guard_condition.py
-    test/test_handle.py
-    test/test_init_shutdown.py
-    test/test_logging.py
-    test/test_messages.py
-    test/test_node.py
-    test/test_parameter.py
-    test/test_parameters_callback.py
-    test/test_qos.py
-    test/test_qos_event.py
-    test/test_rate.py
-    test/test_task.py
-    test/test_time_source.py
-    test/test_time.py
-    test/test_timer.py
-    test/test_topic_or_service_is_hidden.py
-    test/test_utilities.py
-    test/test_validate_full_topic_name.py
-    test/test_validate_namespace.py
-    test/test_validate_node_name.py
-    test/test_validate_topic_name.py
-    test/test_waitable.py
-  )
-
-  foreach(_test_path ${_rclpy_pytest_tests})
-    get_filename_component(_test_name ${_test_path} NAME_WE)
-    ament_add_pytest_test(${_test_name} ${_test_path}
+    ament_add_pytest_test(rclpytests test
       PYTHON_EXECUTABLE "${PYTHON_EXECUTABLE}"
       APPEND_ENV AMENT_PREFIX_PATH=${ament_index_build_path}
         PYTHONPATH=${CMAKE_CURRENT_BINARY_DIR}
-      TIMEOUT 120
-      WERROR ON
+      TIMEOUT 200
     )
-  endforeach()
   endif()
 endif()
 set(PYTHON_EXECUTABLE "${_PYTHON_EXECUTABLE}")
