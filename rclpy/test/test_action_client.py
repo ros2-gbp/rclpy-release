@@ -34,13 +34,16 @@ class MockActionServer():
 
     def __init__(self, node):
         self.goal_srv = node.create_service(
-            Fibonacci.GoalRequestService, '/fibonacci/_action/send_goal', self.goal_callback)
+            Fibonacci.Impl.SendGoalService, '/fibonacci/_action/send_goal',
+            self.goal_callback)
         self.cancel_srv = node.create_service(
-            Fibonacci.CancelGoalService, '/fibonacci/_action/cancel_goal', self.cancel_callback)
+            Fibonacci.Impl.CancelGoalService, '/fibonacci/_action/cancel_goal',
+            self.cancel_callback)
         self.result_srv = node.create_service(
-            Fibonacci.GoalResultService, '/fibonacci/_action/get_result', self.result_callback)
+            Fibonacci.Impl.GetResultService, '/fibonacci/_action/get_result',
+            self.result_callback)
         self.feedback_pub = node.create_publisher(
-            Fibonacci.Feedback, '/fibonacci/_action/feedback')
+            Fibonacci.Impl.FeedbackMessage, '/fibonacci/_action/feedback', 1)
 
     def goal_callback(self, request, response):
         response.accepted = True
@@ -54,9 +57,9 @@ class MockActionServer():
         return response
 
     def publish_feedback(self, goal_id):
-        feedback = Fibonacci.Feedback()
-        feedback.action_goal_id = goal_id
-        self.feedback_pub.publish(feedback)
+        feedback_message = Fibonacci.Impl.FeedbackMessage()
+        feedback_message.goal_id = goal_id
+        self.feedback_pub.publish(feedback_message)
 
 
 class TestActionClient(unittest.TestCase):
@@ -95,11 +98,11 @@ class TestActionClient(unittest.TestCase):
             self.node,
             Fibonacci,
             'fibonacci',
-            goal_service_qos_profile=rclpy.qos.qos_profile_default,
-            result_service_qos_profile=rclpy.qos.qos_profile_default,
-            cancel_service_qos_profile=rclpy.qos.qos_profile_default,
-            feedback_sub_qos_profile=rclpy.qos.qos_profile_default,
-            status_sub_qos_profile=rclpy.qos.qos_profile_default
+            goal_service_qos_profile=rclpy.qos.QoSProfile(depth=10),
+            result_service_qos_profile=rclpy.qos.QoSProfile(depth=10),
+            cancel_service_qos_profile=rclpy.qos.QoSProfile(depth=10),
+            feedback_sub_qos_profile=rclpy.qos.QoSProfile(depth=10),
+            status_sub_qos_profile=rclpy.qos.QoSProfile(depth=10)
         )
         ac.destroy()
 
@@ -321,6 +324,16 @@ class TestActionClient(unittest.TestCase):
             result_future = goal_handle.get_result_async()
             rclpy.spin_until_future_complete(self.node, result_future, self.executor)
             self.assertTrue(result_future.done())
+        finally:
+            ac.destroy()
+
+    def test_different_type_raises(self):
+        ac = ActionClient(self.node, Fibonacci, 'fibonacci')
+        try:
+            with self.assertRaises(TypeError):
+                ac.send_goal('different goal type')
+            with self.assertRaises(TypeError):
+                ac.send_goal_async('different goal type')
         finally:
             ac.destroy()
 

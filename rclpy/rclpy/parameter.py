@@ -15,7 +15,7 @@
 from enum import Enum
 
 from rcl_interfaces.msg import Parameter as ParameterMsg
-from rcl_interfaces.msg import ParameterDescriptor, ParameterType, ParameterValue
+from rcl_interfaces.msg import ParameterType, ParameterValue
 
 PARAMETER_SEPARATOR_STRING = '.'
 
@@ -34,6 +34,40 @@ class Parameter:
         DOUBLE_ARRAY = ParameterType.PARAMETER_DOUBLE_ARRAY
         STRING_ARRAY = ParameterType.PARAMETER_STRING_ARRAY
 
+        @classmethod
+        def from_parameter_value(cls, parameter_value):
+            """
+            Get a Parameter.Type from a given variable.
+
+            :return: A Parameter.Type corresponding to the instance type of the given value.
+            :raises: TypeError if the conversion to a type was not possible.
+            """
+            if parameter_value is None:
+                return Parameter.Type.NOT_SET
+            elif isinstance(parameter_value, bool):
+                return Parameter.Type.BOOL
+            elif isinstance(parameter_value, int):
+                return Parameter.Type.INTEGER
+            elif isinstance(parameter_value, float):
+                return Parameter.Type.DOUBLE
+            elif isinstance(parameter_value, str):
+                return Parameter.Type.STRING
+            elif isinstance(parameter_value, (list, tuple)):
+                if all(isinstance(v, bytes) for v in parameter_value):
+                    return Parameter.Type.BYTE_ARRAY
+                elif all(isinstance(v, bool) for v in parameter_value):
+                    return Parameter.Type.BOOL_ARRAY
+                elif all(isinstance(v, int) for v in parameter_value):
+                    return Parameter.Type.INTEGER_ARRAY
+                elif all(isinstance(v, float) for v in parameter_value):
+                    return Parameter.Type.DOUBLE_ARRAY
+                elif all(isinstance(v, str) for v in parameter_value):
+                    return Parameter.Type.STRING_ARRAY
+                else:
+                    raise TypeError('The given value is not a list of one of the allowed types.')
+            else:
+                raise TypeError('The given value is not one of the allowed types.')
+
         def check(self, parameter_value):
             if Parameter.Type.NOT_SET == self:
                 return parameter_value is None
@@ -46,19 +80,19 @@ class Parameter:
             if Parameter.Type.STRING == self:
                 return isinstance(parameter_value, str)
             if Parameter.Type.BYTE_ARRAY == self:
-                return isinstance(parameter_value, list) and \
+                return isinstance(parameter_value, (list, tuple)) and \
                     all(isinstance(v, bytes) and len(v) == 1 for v in parameter_value)
             if Parameter.Type.BOOL_ARRAY == self:
-                return isinstance(parameter_value, list) and \
+                return isinstance(parameter_value, (list, tuple)) and \
                     all(isinstance(v, bool) for v in parameter_value)
             if Parameter.Type.INTEGER_ARRAY == self:
-                return isinstance(parameter_value, list) and \
+                return isinstance(parameter_value, (list, tuple)) and \
                     all(isinstance(v, int) for v in parameter_value)
             if Parameter.Type.DOUBLE_ARRAY == self:
-                return isinstance(parameter_value, list) and \
+                return isinstance(parameter_value, (list, tuple)) and \
                     all(isinstance(v, float) for v in parameter_value)
             if Parameter.Type.STRING_ARRAY == self:
-                return isinstance(parameter_value, list) and \
+                return isinstance(parameter_value, (list, tuple)) and \
                     all(isinstance(v, str) for v in parameter_value)
             return False
 
@@ -86,7 +120,11 @@ class Parameter:
             value = param_msg.value.string_array_value
         return cls(param_msg.name, type_, value)
 
-    def __init__(self, name, type_, value=None):
+    def __init__(self, name, type_=None, value=None):
+        if type_ is None:
+            # This will raise a TypeError if it is not possible to get a type from the value.
+            type_ = Parameter.Type.from_parameter_value(value)
+
         if not isinstance(type_, Parameter.Type):
             raise TypeError("type must be an instance of '{}'".format(repr(Parameter.Type)))
 
@@ -108,9 +146,6 @@ class Parameter:
     @property
     def value(self):
         return self._value
-
-    def get_descriptor(self):
-        return ParameterDescriptor(name=self.name, type=self.type_.value)
 
     def get_parameter_value(self):
         parameter_value = ParameterValue(type=self.type_.value)

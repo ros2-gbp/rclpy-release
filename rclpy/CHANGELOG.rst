@@ -1,57 +1,150 @@
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-Changelog for package rclpy
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-0.6.5 (2019-12-05)
+0.7.9 (2019-12-10)
 ------------------
-* Send feedback callbacks properly in send_goal() of action client (`#451 <https://github.com/ros2/rclpy/issues/451>`_) (`#467 <https://github.com/ros2/rclpy/issues/467>`_)
-* Action server: catch exception from user execute callback (`#437 <https://github.com/ros2/rclpy/issues/437>`_)
-* Contributors: Jacob Perron, Werner Neubauer
+* Added guard against unexpected action responses. (`#475 <https://github.com/ros2/rclpy/issues/475>`_)
+  Fixes https://github.com/ros2/demos/issues/417
+* Future invokes done callbacks when done (`#477 <https://github.com/ros2/rclpy/issues/477>`_)
+* Added missing exec depend on rcl_interfaces. (`#472 <https://github.com/ros2/rclpy/issues/472>`_)
+* Fixed import to use builtin_interfaces.msg. (`#473 <https://github.com/ros2/rclpy/issues/473>`_)
+* Fixed sending of feedback callbacks in send_goal() of action client. (`#466 <https://github.com/ros2/rclpy/issues/466>`_)
+* Contributors: Dirk Thomas, Jacob Perron, Steven! Ragnarök
 
-0.6.4 (2019-03-29)
+0.7.8 (2019-10-11)
 ------------------
-* Backport fix sigint guard condition lifecycle bug (`#298 <https://github.com/ros2/rclpy/issues/298>`_)
-* Contributors: Wei Liu
+* Updated to accept tuples as parameter arrays. (`#442 <https://github.com/ros2/rclpy/issues/442>`_)
+* Fixed uncaught exception from user execute callback in Action Server. (`#439 <https://github.com/ros2/rclpy/issues/439>`_)
+  Fixes `#296 <https://github.com/ros2/rclpy/issues/296>`_.
+* Contributors: Christian Rauch, Jacob Perron, Steven! Ragnarök
 
-0.6.3 (2019-03-09)
+0.7.7 (2019-09-06)
 ------------------
-* Backport Python Actions (`#282 <https://github.com/ros2/rclpy/issues/282>`_)
-  * Add Action Client (`#262 <https://github.com/ros2/rclpy/issues/262>`_)
-  * Add rclpy_action module
-  * Implement action client
-  * Move common conversion function and typedefs to shared header file (impl/common.h)
-  * Add tests using mock action server
-  * Add action module for aggregating action related submodules
-  * Extend Waitable API so executors are aware of Futures
-  * Move check_for_type_support() to its own module
-  * Fix Executor not executing tasks if there are no ready entities in the wait set (`#272 <https://github.com/ros2/rclpy/issues/272>`_)
-  * Fix Node's reference to executor (`#275 <https://github.com/ros2/rclpy/issues/275>`_)
-  * Abstract type conversions into functions (`#269 <https://github.com/ros2/rclpy/issues/269>`_)
-  * Abstract type conversions into functions
-  * Move common C functions to a shared library 'rclpy_common'
-  * Add ActionServer (`#270 <https://github.com/ros2/rclpy/issues/270>`_)
-  * Add Action server functions to extension module
-  * Separated service related macros into separate request and response calls
-  * Add server goal handle functions to extension module
-  * Update Action extension module to use conversion functions
-  * Add implementation of Python ActionServer
-  * Handles goal and cancel requests, responds, and calls user-defined functions for executing goals.
-  * Handle result requests
-  * Handle expired goals
-  * Publish goal status array and feedback
-  * Add `handle_accepted_callback` to ActionServer
-  * Enable test using MultiThreadedExecutor (`#280 <https://github.com/ros2/rclpy/issues/280>`_)
-  * Guard against failed take when taking action messages (`#281 <https://github.com/ros2/rclpy/issues/281>`_)
+* Fixed Python 3.5 compatibility by removing unsupported type hints. (`#414 <https://github.com/ros2/rclpy/issues/414>`_)
+* Contributors: Steven! Ragnarök
+
+0.7.6 (2019-08-28)
+------------------
+* Fix missing raise (`#390 <https://github.com/ros2/rclpy/pull/390>`_)
+* Fix time conversion for big nanoseconds value (`#384 <https://github.com/ros2/rclpy/pull/384>`_)
+* Contributors: Daniel Wang, Vinnam Kim
+
+0.7.5 (2019-08-01)
+------------------
+* Updated to use params from node '/**' from parameter YAML file. (`#399 <https://github.com/ros2/rclpy/issues/399>`_)
+* Updated to declare 'use_sim_time' when attaching node to time source. (`#401 <https://github.com/ros2/rclpy/issues/401>`_)
+* Fixed an errant conversion to nsecs in executors timeout.` (`#397 <https://github.com/ros2/rclpy/issues/397>`_)
+* Fixed parameter handling issues. (`#394 <https://github.com/ros2/rclpy/issues/394>`_)
+  * Fixing namespace expansion for declare_parameters. (`#377 <https://github.com/ros2/rclpy/issues/377>`_)
+  * Allowing parameter declaration without a given value. (`#382 <https://github.com/ros2/rclpy/issues/382>`_)
+* Contributors: Juan Ignacio Ubeira, Scott K Logan
+
+0.7.4 (2019-06-12)
+------------------
+* Fix API documentation related to ROS graph methods (`#366 <https://github.com/ros2/rclpy/issues/366>`_)
 * Contributors: Jacob Perron
 
-0.6.2 (2019-02-08)
+0.7.3 (2019-05-29)
 ------------------
-* Added Waitable to callback group (`#265 <https://github.com/ros2/rclpy/issues/265>`_)
-* Fixed flake8 error (`#263 <https://github.com/ros2/rclpy/issues/263>`_)
-* Added HIDDEN_NODE_PREFIX definition to node.py (`#259 <https://github.com/ros2/rclpy/issues/259>`_)
-* Added rclpy raw subscriptions (`#242 <https://github.com/ros2/rclpy/issues/242>`_)
-* Added a test for invalid string checks on publishing (`#256 <https://github.com/ros2/rclpy/issues/256>`_)
-* Contributors: AAlon, Jacob Perron, Joseph Duchesne, Michel Hidalgo, Shane Loretz
+* Rename parameter options (`#363 <https://github.com/ros2/rclpy/issues/363>`_)
+  * rename the initial_parameters option to parameter_overrides
+  * rename automatically_declare_initial_parameters to automatically_declare_parameters_from_overrides
+  * update allow_undeclared_parameters docs
+* Consolidate create_publisher arguments (`#362 <https://github.com/ros2/rclpy/issues/362>`_)
+* Enforcing parameter ranges. (`#357 <https://github.com/ros2/rclpy/issues/357>`_)
+* Initialize QoSProfile with values from rmw_qos_profile_default (`#356 <https://github.com/ros2/rclpy/issues/356>`_)
+* Contributors: Dirk Thomas, Emerson Knapp, Juan Ignacio Ubeira, William Woodall
+
+0.7.2 (2019-05-20)
+------------------
+* Add convenience name translations for use by commandline utilities etc. (`#352 <https://github.com/ros2/rclpy/issues/352>`_)
+* Wait for nodes to discover each other in test_action_graph.py (`#354 <https://github.com/ros2/rclpy/issues/354>`_)
+* Destroy publishers after test is done (`#355 <https://github.com/ros2/rclpy/issues/355>`_)
+* Create RLock() early to avoid exception at shutdown (`#351 <https://github.com/ros2/rclpy/issues/351>`_)
+* Fix qos event argument being wrapped in list. It shouldn't have been (`#349 <https://github.com/ros2/rclpy/issues/349>`_)
+* Parameter flexibility enhancements (`#347 <https://github.com/ros2/rclpy/issues/347>`_)
+* Update troubleshooting reference to index.ros.org (`#348 <https://github.com/ros2/rclpy/issues/348>`_)
+* Update test since unicode characters are allowed now (`#346 <https://github.com/ros2/rclpy/issues/346>`_)
+* Parameter handling improvements. (`#345 <https://github.com/ros2/rclpy/issues/345>`_)
+* Encourage users to always provide a QoS history depth (`#344 <https://github.com/ros2/rclpy/issues/344>`_)
+* QoS - API and implementation for Liveliness and Deadline event callbacks (`#316 <https://github.com/ros2/rclpy/issues/316>`_)
+* Ignore flake8 error 'imported but unused' (`#343 <https://github.com/ros2/rclpy/issues/343>`_)
+* Contributors: Dirk Thomas, Emerson Knapp, Jacob Perron, Juan Ignacio Ubeira, Michael Carroll, Michel Hidalgo, Shane Loretz
+
+0.7.1 (2019-05-08)
+------------------
+* Update tests to include namespace in ROS types (`#294 <https://github.com/ros2/rclpy/issues/294>`_)
+* Capsule available at self.handle (`#340 <https://github.com/ros2/rclpy/issues/340>`_)
+* Wake executor when entities created or destroyed (`#336 <https://github.com/ros2/rclpy/issues/336>`_)
+* Setting automatic declaration for initial parameters to False. (`#339 <https://github.com/ros2/rclpy/issues/339>`_)
+* Improve signal handling (`#338 <https://github.com/ros2/rclpy/issues/338>`_)
+* Parameter API enhancements (`#325 <https://github.com/ros2/rclpy/issues/325>`_)
+* QoS - Expose the assert_liveliness API for Publishers and Nodes (`#313 <https://github.com/ros2/rclpy/issues/313>`_)
+* Minimal change to build against new rcl API (`#305 <https://github.com/ros2/rclpy/issues/305>`_)
+* Remove extra references to node handle (`#335 <https://github.com/ros2/rclpy/issues/335>`_)
+* API updates for RMW preallocation work. (`#337 <https://github.com/ros2/rclpy/issues/337>`_)
+* Make pub/sub/cli/srv/etc lists use @property on node (`#333 <https://github.com/ros2/rclpy/issues/333>`_)
+* Ignore ValueError in SignalHandlerGuardCondition.__del_\_ (`#334 <https://github.com/ros2/rclpy/issues/334>`_)
+* Use new test interface definitions (`#332 <https://github.com/ros2/rclpy/issues/332>`_)
+* Thread safe node.destroy\_* (`#319 <https://github.com/ros2/rclpy/issues/319>`_)
+* Make `destroy_node` thread safe (`#330 <https://github.com/ros2/rclpy/issues/330>`_)
+* Remove most of the timing checks in test_executor (`#329 <https://github.com/ros2/rclpy/issues/329>`_)
+* Prevent rcutils_log from accessing invalid memory (`#326 <https://github.com/ros2/rclpy/issues/326>`_)
+* Wait set uses pointers to rcl types not rcl->impl types (`#324 <https://github.com/ros2/rclpy/issues/324>`_)
+* QoS - Expose Lifespan, Deadline, and Liveliness policy settings (`#312 <https://github.com/ros2/rclpy/issues/312>`_)
+* Remove __eq_\_ and __hash_\_ from Subscription (`#323 <https://github.com/ros2/rclpy/issues/323>`_)
+* Fix subscription pycapsule not being destroyed (`#320 <https://github.com/ros2/rclpy/issues/320>`_)
+* Make destroy_subscription thread safe (`#318 <https://github.com/ros2/rclpy/issues/318>`_)
+* enforce correct message type is passed to various API (`#317 <https://github.com/ros2/rclpy/issues/317>`_)
+* Every executor gets its own SIGINT guard condition (`#308 <https://github.com/ros2/rclpy/issues/308>`_)
+* add missing error handling and cleanup (`#315 <https://github.com/ros2/rclpy/issues/315>`_)
+* Rename action state transitions (`#300 <https://github.com/ros2/rclpy/issues/300>`_)
+* Contributors: Chris Lalancette, Dirk Thomas, Emerson Knapp, Jacob Perron, Juan Ignacio Ubeira, Michael Carroll, Michel Hidalgo, Shane Loretz, Thomas Moulard
+
+0.7.0 (2019-04-14)
+------------------
+* Added action graph API. (`#306 <https://github.com/ros2/rclpy/issues/306>`_)
+* Added timeout to executor_spin_until_future_complete. (`#301 <https://github.com/ros2/rclpy/issues/301>`_)
+* Refactored QoS Python-C conversion into less error-prone pattern (pre-QoS, standalone). (`#307 <https://github.com/ros2/rclpy/issues/307>`_)
+* Set QoS profile to default values to future-proof against uninitialized data if new fields are added
+* Fixed executor bug by refreshing nodes when executor is woken. (`#310 <https://github.com/ros2/rclpy/issues/310>`_)
+* Updated so executor exits immediately when shut down. (`#309 <https://github.com/ros2/rclpy/issues/309>`_)
+* Updated to use rosgraph_msgs.msg.Clock for TimeSource. (`#304 <https://github.com/ros2/rclpy/issues/304>`_)
+* Added param callback to time_source. (`#297 <https://github.com/ros2/rclpy/issues/297>`_)
+* Updated tests to pass with numpy arrays. (`#292 <https://github.com/ros2/rclpy/issues/292>`_)
+* Improved error handling to avoid memory leaks in C extension. (`#278 <https://github.com/ros2/rclpy/issues/278>`_)
+* Fixed sigint guard condition's lifecycle bug. (`#288 <https://github.com/ros2/rclpy/issues/288>`_)
+  Updated to use ament_target_dependencies where possible. (`#286 <https://github.com/ros2/rclpy/issues/286>`_)
+* Improved documentation. (`#277 <https://github.com/ros2/rclpy/issues/277>`_)
+  * Document node.py.
+  * Fix C extension documentation.
+  * Document init, shutdown, and spinning.
+  * Document Publisher and Subscription.
+  * Document Client and Service.
+  * Add warnings to constructors of client and service.
+  * Document executors and callback groups.
+  * Use typing,TYPE_CHECKING variable for condition imports used by annotations.
+  * Add instructions for building docs to README.
+  * Clarify doc briefs for graph discovery functions.
+* Added RcutilsLogger.warning. (`#284 <https://github.com/ros2/rclpy/issues/284>`_)
+* Changed logger.warn (deprecated) to logger.warning. (`#283 <https://github.com/ros2/rclpy/issues/283>`_)
+* Updated to use separated action types. (`#274 <https://github.com/ros2/rclpy/issues/274>`_)
+* Updated to guard against failed take when taking action messages. (`#281 <https://github.com/ros2/rclpy/issues/281>`_)
+* Enabled test using MultiThreadedExecutor. (`#280 <https://github.com/ros2/rclpy/issues/280>`_)
+* Added ActionServer. (`#270 <https://github.com/ros2/rclpy/issues/270>`_)
+* Changed error raised by executor dict interface to KeyError. (`#276 <https://github.com/ros2/rclpy/issues/276>`_)
+* Abstracted type conversions into functions (`#269 <https://github.com/ros2/rclpy/issues/269>`_)
+* Fixed Node's reference to executor. (`#275 <https://github.com/ros2/rclpy/issues/275>`_)
+* Updated to enforce UTF8 argv on rclpy.init(). (`#273 <https://github.com/ros2/rclpy/issues/273>`_)
+* Fixed Executor not executing tasks if there are no ready entities in the wait set. (`#272 <https://github.com/ros2/rclpy/issues/272>`_)
+* Replaced PyUnicode_1BYTE_DATA() with PyUnicode_AsUTF8(). (`#271 <https://github.com/ros2/rclpy/issues/271>`_)
+* Added Action Client. (`#262 <https://github.com/ros2/rclpy/issues/262>`_)
+* Updated to pass context to wait set. (`#258 <https://github.com/ros2/rclpy/issues/258>`_)
+* Added Waitable to callback group. (`#265 <https://github.com/ros2/rclpy/issues/265>`_)
+* Fixed flake8 error. (`#263 <https://github.com/ros2/rclpy/issues/263>`_)
+* Added HIDDEN_NODE_PREFIX definition to node.py. (`#259 <https://github.com/ros2/rclpy/issues/259>`_)
+* Added rclpy raw subscriptions. (`#242 <https://github.com/ros2/rclpy/issues/242>`_)
+* Added a test for invalid string checks on publishing. (`#256 <https://github.com/ros2/rclpy/issues/256>`_)
+* Contributors: AAlon, Dirk Thomas, Emerson Knapp, Jacob Perron, Joseph Duchesne, Michel Hidalgo, Shane Loretz, Vinnam Kim, Wei Liu, William Woodall, ivanpauno
 
 0.6.1 (2018-12-07)
 ------------------
