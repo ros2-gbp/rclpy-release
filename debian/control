@@ -1,0 +1,12 @@
+Source: ros-dashing-rclpy
+Section: misc
+Priority: optional
+Maintainer: William Woodall <william@osrfoundation.org>
+Build-Depends: debhelper (>= 9.0.0), python3-pytest, ros-dashing-ament-cmake, ros-dashing-ament-cmake-pytest, ros-dashing-ament-lint-auto, ros-dashing-ament-lint-common, ros-dashing-python-cmake-module, ros-dashing-rcl, ros-dashing-rcl-action, ros-dashing-rcl-yaml-param-parser, ros-dashing-rcutils, ros-dashing-rmw-implementation, ros-dashing-rmw-implementation-cmake, ros-dashing-rosidl-generator-py, ros-dashing-test-msgs, ros-dashing-unique-identifier-msgs, ros-dashing-ros-workspace
+Homepage: 
+Standards-Version: 3.9.2
+
+Package: ros-dashing-rclpy
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, ros-dashing-ament-index-python, ros-dashing-builtin-interfaces, ros-dashing-rcl, ros-dashing-rcl-action, ros-dashing-rcl-interfaces, ros-dashing-rcl-yaml-param-parser, ros-dashing-rmw-implementation, ros-dashing-rosgraph-msgs, ros-dashing-unique-identifier-msgs, ros-dashing-ros-workspace
+Description: Package containing the Python client.
