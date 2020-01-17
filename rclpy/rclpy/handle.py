@@ -55,6 +55,10 @@ class Handle:
         self.__capsule_name = _rclpy_capsule.rclpy_pycapsule_name(pycapsule)
         self.__capsule_pointer = _rclpy_capsule.rclpy_pycapsule_pointer(pycapsule)
 
+    def __bool__(self):
+        """Return True if the handle is valid."""
+        return self.__valid
+
     def __eq__(self, other):
         return self.__capsule_pointer == other.__capsule_pointer
 
@@ -161,7 +165,7 @@ class Handle:
         # assumes self.__rlock is held
         deps_lock = self.__dependents_rlock
         # Turn weak references to regular references
-        dependent_handles = [dep for dep in self.__dependent_handles]
+        dependent_handles = list(self.__dependent_handles)
 
         if not dependent_handles:
             # no dependents to wait on

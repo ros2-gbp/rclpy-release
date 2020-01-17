@@ -200,6 +200,7 @@ if(BUILD_TESTING)
     test/test_parameters_callback.py
     test/test_qos.py
     test/test_qos_event.py
+    test/test_rate.py
     test/test_task.py
     test/test_time_source.py
     test/test_time.py
@@ -219,7 +220,8 @@ if(BUILD_TESTING)
       PYTHON_EXECUTABLE "${PYTHON_EXECUTABLE}"
       APPEND_ENV AMENT_PREFIX_PATH=${ament_index_build_path}
         PYTHONPATH=${CMAKE_CURRENT_BINARY_DIR}
-      TIMEOUT 60
+      TIMEOUT 120
+      WERROR ON
     )
   endforeach()
   endif()
