@@ -70,6 +70,15 @@ RCLPY_COMMON_PUBLIC
 bool
 rclpy_names_and_types_fini(rcl_names_and_types_t * names_and_types);
 
+/// Get the type support structure for a Python ROS message type.
+/**
+ * \param[in] pymsg_type The Python ROS message type.
+ * \return The type support structure or NULL if an error occurred.
+ */
+RCLPY_COMMON_PUBLIC
+void *
+rclpy_common_get_type_support(PyObject * pymsg_type);
+
 /// Convert a C rcl_names_and_types_t into a Python list.
 /**
  * \param names_and_types The names and types struct to convert.
@@ -122,5 +131,14 @@ rclpy_convert_from_py(PyObject * pymessage, destroy_ros_message_signature ** des
 RCLPY_COMMON_PUBLIC
 PyObject *
 rclpy_convert_to_py(void * message, PyObject * pyclass);
+
+/// Convert a C rmw_topic_endpoint_info_array_t into a Python list.
+/**
+ * \param[in] info_array a pointer to a rmw_topic_endpoint_info_array_t
+ * \return Python list
+ */
+RCLPY_COMMON_PUBLIC
+PyObject *
+rclpy_convert_to_py_topic_endpoint_info_list(const rmw_topic_endpoint_info_array_t * info_array);
 
 #endif  // RCLPY_COMMON__COMMON_H_

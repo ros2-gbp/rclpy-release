@@ -322,8 +322,10 @@ class Executor:
 
     def _take_subscription(self, sub):
         with sub.handle as capsule:
-            msg = _rclpy.rclpy_take(capsule, sub.msg_type, sub.raw)
-        return msg
+            msg_info = _rclpy.rclpy_take(capsule, sub.msg_type, sub.raw)
+            if msg_info is not None:
+                return msg_info[0]
+        return None
 
     async def _execute_subscription(self, sub, msg):
         if msg:
@@ -334,9 +336,10 @@ class Executor:
             return _rclpy.rclpy_take_response(capsule, client.srv_type.Response)
 
     async def _execute_client(self, client, seq_and_response):
-        sequence, response = seq_and_response
-        if sequence is not None:
+        header, response = seq_and_response
+        if header is not None:
             try:
+                sequence = _rclpy.rclpy_service_info_get_sequence_number(header)
                 future = client._pending_requests[sequence]
             except KeyError:
                 # The request was cancelled
@@ -441,7 +444,7 @@ class Executor:
         timeout_timer = None
         timeout_nsec = timeout_sec_to_nsec(timeout_sec)
         if timeout_nsec > 0:
-            timeout_timer = Timer(None, None, timeout_nsec, self._clock)
+            timeout_timer = Timer(None, None, timeout_nsec, self._clock, context=self._context)
 
         yielded_work = False
         while not yielded_work and not self._is_shutdown:
@@ -532,6 +535,7 @@ class Executor:
                     except InvalidHandle:
                         entity_count.num_guard_conditions -= 1
 
+                context_capsule = context_stack.enter_context(self._context.handle)
                 _rclpy.rclpy_wait_set_init(
                     wait_set,
                     entity_count.num_subscriptions,
@@ -540,7 +544,7 @@ class Executor:
                     entity_count.num_clients,
                     entity_count.num_services,
                     entity_count.num_events,
-                    self._context.handle)
+                    context_capsule)
 
                 _rclpy.rclpy_wait_set_clear_entities(wait_set)
                 for sub_capsule in sub_capsules:
