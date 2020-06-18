@@ -30,6 +30,7 @@
 #include <rcl_yaml_param_parser/parser.h>
 #include <rcutils/allocator.h>
 #include <rcutils/format_string.h>
+#include <rcutils/macros.h>
 #include <rcutils/strdup.h>
 #include <rcutils/types.h>
 #include <rmw/error_handling.h>
@@ -1161,6 +1162,37 @@ rclpy_get_subscriptions_info_by_topic(PyObject * Py_UNUSED(self), PyObject * arg
   return _get_info_by_topic(args, "subscriptions", rcl_get_subscriptions_info_by_topic);
 }
 
+/// Return the resolved topic name of a subscription.
+/**
+ * The returned string is the resolved topic name after remappings have be applied.
+ *
+ * \param[in] pynode Capsule pointing to the node to get the namespace from.
+ * \return a string with the topic name
+ */
+static PyObject *
+rclpy_get_subscription_topic_name(PyObject * Py_UNUSED(self), PyObject * args)
+{
+  PyObject * pysubscription;
+  if (!PyArg_ParseTuple(args, "O", &pysubscription)) {
+    return NULL;
+  }
+
+  rclpy_subscription_t * sub =
+    rclpy_handle_get_pointer_from_capsule(pysubscription, "rclpy_subscription_t");
+  if (NULL == sub) {
+    return NULL;
+  }
+
+  const char * subscription_name = rcl_subscription_get_topic_name(&(sub->subscription));
+  if (NULL == subscription_name) {
+    PyErr_Format(
+      RCLError, "Failed to get subscription topic name: %s",
+      rcl_get_error_string().str);
+    rcl_reset_error();
+  }
+
+  return PyUnicode_FromString(subscription_name);
+}
 
 /// Validate a topic name and return error message and index of invalidation.
 /**
@@ -5418,7 +5450,6 @@ rclpy_service_info_get_source_timestamp(PyObject * Py_UNUSED(self), PyObject * a
   return PyLong_FromLongLong(service_info->source_timestamp);
 }
 
-
 /// Retrieves the received timestsamp number from a rmw_service_info_t capsule
 /**
  * Raises RuntimeError on failure.
@@ -5434,6 +5465,33 @@ rclpy_service_info_get_received_timestamp(PyObject * Py_UNUSED(self), PyObject *
     return NULL;
   }
   return PyLong_FromLongLong(service_info->received_timestamp);
+}
+
+/// Retrieve the topic name from a rclpy_publisher_t
+static PyObject *
+rclpy_publisher_get_topic_name(PyObject * Py_UNUSED(self), PyObject * args)
+{
+  PyObject * pyentity;
+  if (!PyArg_ParseTuple(args, "O", &pyentity)) {
+    return NULL;
+  }
+
+  rclpy_publisher_t * publisher = rclpy_handle_get_pointer_from_capsule(
+    pyentity, "rclpy_publisher_t");
+  if (!publisher) {
+    return NULL;
+  }
+
+  const char * topic_name = rcl_publisher_get_topic_name(&publisher->publisher);
+  if (!topic_name) {
+    PyErr_Format(
+      RCLError,
+      "Failed to get topic name: %s",
+      rcl_get_error_string().str);
+    rcl_reset_error();
+    return NULL;
+  }
+  return PyUnicode_FromString(topic_name);
 }
 
 /// Define the public methods of this module
@@ -5497,6 +5555,10 @@ static PyMethodDef rclpy_methods[] = {
   {
     "rclpy_get_subscriptions_info_by_topic", rclpy_get_subscriptions_info_by_topic, METH_VARARGS,
     "Get subscriptions info for a topic."
+  },
+  {
+    "rclpy_get_subscription_topic_name", rclpy_get_subscription_topic_name, METH_VARARGS,
+    "Get the topic name of a subscription."
   },
   {
     "rclpy_expand_topic_name", rclpy_expand_topic_name, METH_VARARGS,
@@ -5841,6 +5903,11 @@ static PyMethodDef rclpy_methods[] = {
     "rclpy_service_info_get_received_timestamp", rclpy_service_info_get_received_timestamp,
     METH_VARARGS,
     "Retrieve received timestamp from service_info"
+  },
+  {
+    "rclpy_publisher_get_topic_name", rclpy_publisher_get_topic_name,
+    METH_VARARGS,
+    "Get the resolved name(topic) of publisher"
   },
 
   {NULL, NULL, 0, NULL}  /* sentinel */
