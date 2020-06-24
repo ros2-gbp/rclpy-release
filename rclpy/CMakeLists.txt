@@ -229,7 +229,6 @@ if(BUILD_TESTING)
       test/test_node.py
       test/test_parameter.py
       test/test_parameters_callback.py
-      test/test_publisher.py
       test/test_qos.py
       test/test_qos_event.py
       test/test_rate.py
