@@ -1,3 +1,26 @@
+## rclpy (foxy) - 1.0.3-1
+
+The packages in the `rclpy` repository were released into the `foxy` distro by running `/usr/bin/bloom-release -r foxy -t foxy rclpy` on `Wed, 24 Jun 2020 01:09:48 -0000`
+
+The `rclpy` package was released.
+
+Version of package(s) in repository `rclpy`:
+
+- upstream repository: https://github.com/ros2/rclpy.git
+- release repository: https://github.com/ros2-gbp/rclpy-release.git
+- rosdistro version: `1.0.2-1`
+- old version: `1.0.2-1`
+- new version: `1.0.3-1`
+
+Versions of tools used:
+
+- bloom version: `0.9.7`
+- catkin_pkg version: `0.4.20`
+- rosdep version: `0.19.0`
+- rosdistro version: `0.8.2`
+- vcstools version: `0.1.42`
+
+
 ## rclpy (rolling) - 1.1.0-1
 
 The packages in the `rclpy` repository were released into the `rolling` distro by running `/usr/bin/bloom-release --rosdistro rolling --track rolling rclpy` on `Thu, 18 Jun 2020 20:56:45 -0000`
