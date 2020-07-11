@@ -55,7 +55,7 @@ class Future:
         # Yield if the task is not finished
         while not self._done:
             yield
-        return self.result()
+        return self._result
 
     def cancel(self):
         """Request cancellation of the running task if it is not done already."""
@@ -86,12 +86,8 @@ class Future:
         """
         Get the result of a done task.
 
-        :raises: Exception if one was set during the task.
-
         :return: The result set by the task
         """
-        if self._exception:
-            raise self.exception()
         return self._result
 
     def exception(self):

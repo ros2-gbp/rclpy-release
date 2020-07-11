@@ -129,9 +129,9 @@ class TimerWaitable(Waitable):
 
         self._clock = Clock(clock_type=ClockType.STEADY_TIME)
         period_nanoseconds = 10000
-        with self._clock.handle as clock_capsule, node.context.handle as context_capsule:
+        with self._clock.handle as clock_capsule:
             self.timer = _rclpy.rclpy_create_timer(
-                clock_capsule, context_capsule, period_nanoseconds)
+                clock_capsule, node.context.handle, period_nanoseconds)
         self.timer_index = None
         self.timer_is_ready = False
 
@@ -192,9 +192,7 @@ class SubscriptionWaitable(Waitable):
         """Take stuff from lower level so the wait set doesn't immediately wake again."""
         if self.subscription_is_ready:
             self.subscription_is_ready = False
-            msg_info = _rclpy.rclpy_take(self.subscription, EmptyMsg, False)
-            if msg_info is not None:
-                return msg_info[0]
+            return _rclpy.rclpy_take(self.subscription, EmptyMsg, False)
         return None
 
     async def execute(self, taken_data):
@@ -219,8 +217,7 @@ class GuardConditionWaitable(Waitable):
     def __init__(self, node):
         super().__init__(ReentrantCallbackGroup())
 
-        with node.context.handle as context_capsule:
-            self.guard_condition = _rclpy.rclpy_create_guard_condition(context_capsule)
+        self.guard_condition = _rclpy.rclpy_create_guard_condition(node.context.handle)
         self.guard_condition_index = None
         self.guard_is_ready = False
 
@@ -308,8 +305,6 @@ class TestWaitable(unittest.TestCase):
 
     def tearDown(self):
         self.node.remove_waitable(self.waitable)
-        # Ensure resources inside the waitable are destroyed before the node in tearDownClass
-        del self.waitable
 
     def test_waitable_with_client(self):
         self.waitable = ClientWaitable(self.node)

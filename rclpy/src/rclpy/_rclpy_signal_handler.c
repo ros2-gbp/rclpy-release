@@ -13,15 +13,13 @@
 // limitations under the License.
 
 #include <Python.h>
+
+#include <rcl/error_handling.h>
+#include <rcl/rcl.h>
+#include <rcutils/allocator.h>
+#include <rcutils/stdatomic_helper.h>
+
 #include <signal.h>
-
-#include "rcl/error_handling.h"
-#include "rcl/rcl.h"
-
-#include "rclpy_common/handle.h"
-
-#include "rcutils/allocator.h"
-#include "rcutils/stdatomic_helper.h"
 
 #if __APPLE__ || _POSIX_C_SOURCE >= 1 || _XOPEN_SOURCE || _POSIX_SOURCE
 
@@ -83,8 +81,8 @@ install_signal_handler(int signum, SIGNAL_HANDLER_T handler)
 
 #define is_null_signal_handler(handler) \
   (handler.sa_flags & SA_SIGINFO ? \
-  !handler.sa_sigaction : \
-  !handler.sa_handler)
+  NULL == handler.sa_sigaction : \
+  NULL == handler.sa_handler)
 
 #else
 
@@ -199,7 +197,7 @@ trigger_guard_conditions()
 {
   rcl_guard_condition_t ** guard_conditions;
   rcutils_atomic_load(&g_guard_conditions, guard_conditions);
-  if (!guard_conditions || !guard_conditions[0]) {
+  if (NULL == guard_conditions || NULL == guard_conditions[0]) {
     return false;
   }
 
@@ -238,7 +236,8 @@ rclpy_register_sigint_guard_condition(PyObject * Py_UNUSED(self), PyObject * arg
     return NULL;
   }
 
-  rcl_guard_condition_t * gc = rclpy_handle_get_pointer_from_capsule(pygc, "rcl_guard_condition_t");
+  rcl_guard_condition_t * gc = (rcl_guard_condition_t *)PyCapsule_GetPointer(
+    pygc, "rcl_guard_condition_t");
   if (!gc) {
     return NULL;
   }
@@ -301,7 +300,8 @@ rclpy_unregister_sigint_guard_condition(PyObject * Py_UNUSED(self), PyObject * a
     return NULL;
   }
 
-  rcl_guard_condition_t * gc = rclpy_handle_get_pointer_from_capsule(pygc, "rcl_guard_condition_t");
+  rcl_guard_condition_t * gc = (rcl_guard_condition_t *)PyCapsule_GetPointer(
+    pygc, "rcl_guard_condition_t");
   if (!gc) {
     return NULL;
   }
@@ -382,8 +382,8 @@ static PyMethodDef rclpy_signal_handler_methods[] = {
   {NULL, NULL, 0, NULL}  /* sentinel */
 };
 
-PyDoc_STRVAR(
-  rclpy_signal_handler__doc__, "RCLPY module for handling signals.");
+PyDoc_STRVAR(rclpy_signal_handler__doc__,
+  "RCLPY module for handling signals.");
 
 /// Define the Python module
 static struct PyModuleDef _rclpy_signal_handler_module = {

@@ -12,61 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from argparse import Namespace
 from enum import Enum
 from enum import IntEnum
+import warnings
 
 from rclpy.duration import Duration
 from rclpy.impl.implementation_singleton import rclpy_action_implementation as _rclpy_action
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 
-
-class QoSPolicyKind(IntEnum):
-    """
-    Enum for types of QoS policies that a Publisher or Subscription can set.
-
-    This enum matches the one defined in rmw/incompatible_qos_events_statuses.h
-    """
-
-    # TODO(mm3188): obtain these enum values from the rmw layer, instead of hardcoding
-    INVALID = 1 << 0
-    DURABILITY = 1 << 1
-    DEADLINE = 1 << 2
-    LIVELINESS = 1 << 3
-    RELIABILITY = 1 << 4
-    HISTORY = 1 << 5
-    LIFESPAN = 1 << 6
-
-
-def qos_policy_name_from_kind(policy_kind: QoSPolicyKind):
-    """Get QoS policy name from QoSPolicyKind enum."""
-    if policy_kind == QoSPolicyKind.DURABILITY:
-        return 'DURABILITY_QOS_POLICY'
-    elif policy_kind == QoSPolicyKind.DEADLINE:
-        return 'DEADLINE_QOS_POLICY'
-    elif policy_kind == QoSPolicyKind.LIVELINESS:
-        return 'LIVELINESS_QOS_POLICY'
-    elif policy_kind == QoSPolicyKind.RELIABILITY:
-        return 'RELIABILITY_QOS_POLICY'
-    elif policy_kind == QoSPolicyKind.HISTORY:
-        return 'HISTORY_QOS_POLICY'
-    elif policy_kind == QoSPolicyKind.LIFESPAN:
-        return 'LIFESPAN_QOS_POLICY'
-    else:
-        return 'INVALID_QOS_POLICY'
-
-
-class InvalidQoSProfileException(Exception):
-    """Raised when constructing a QoSProfile with invalid arguments."""
-
-    def __init__(self, *args):
-        Exception.__init__(self, 'Invalid QoSProfile', *args)
+# "Forward-declare" this value so that it can be used in the QoSProfile initializer.
+# It will have a value by the end of definitions, before user code runs.
+_qos_profile_default = None
 
 
 class QoSProfile:
     """Define Quality of Service policies."""
-
-    # default QoS profile not exposed to the user to encourage them to think about QoS settings
-    __qos_profile_default_dict = _rclpy.rclpy_get_rmw_qos_profile('qos_profile_default')
 
     __slots__ = [
         '_history',
@@ -84,34 +45,42 @@ class QoSProfile:
         assert all('_' + key in self.__slots__ for key in kwargs.keys()), \
             'Invalid arguments passed to constructor: %r' % kwargs.keys()
 
+        if not _qos_profile_default:
+            # It is still definition time, and all calls to this initializer are expected to be
+            # fully-defined preset profiles from the C side.
+            assert all(kwargs[slot[1:]] is not None for slot in self.__slots__)
+            # Any of the setters, upon receiving these None values, would assert
+            # if the above assertion failed.
+            from_profile = Namespace(**{slot[1:]: None for slot in self.__slots__})
+        else:
+            from_profile = _qos_profile_default
+
         if 'history' not in kwargs:
-            if 'depth' not in kwargs:
-                raise InvalidQoSProfileException('History and/or depth settings are required.')
-            kwargs['history'] = QoSHistoryPolicy.RMW_QOS_POLICY_HISTORY_KEEP_LAST
-
-        self.history = kwargs.get('history')
-
+            if 'depth' in kwargs:
+                kwargs['history'] = QoSHistoryPolicy.RMW_QOS_POLICY_HISTORY_KEEP_LAST
+            else:
+                warnings.warn(
+                    "QoSProfile needs a 'history' and/or 'depth' setting when constructed",
+                    stacklevel=2)
+        self.history = kwargs.get('history', from_profile.history)
         if (
             QoSHistoryPolicy.RMW_QOS_POLICY_HISTORY_KEEP_LAST == self.history and
             'depth' not in kwargs
         ):
-            raise InvalidQoSProfileException('History set to KEEP_LAST without a depth setting.')
+            warnings.warn(
+                'A QoSProfile with history set to KEEP_LAST needs a depth specified',
+                stacklevel=2)
 
-        self.depth = kwargs.get('depth', QoSProfile.__qos_profile_default_dict['depth'])
-        self.reliability = kwargs.get(
-            'reliability', QoSProfile.__qos_profile_default_dict['reliability'])
-        self.durability = kwargs.get(
-            'durability', QoSProfile.__qos_profile_default_dict['durability'])
-        self.lifespan = kwargs.get('lifespan', QoSProfile.__qos_profile_default_dict['lifespan'])
-        self.deadline = kwargs.get('deadline', QoSProfile.__qos_profile_default_dict['deadline'])
-        self.liveliness = kwargs.get(
-            'liveliness', QoSProfile.__qos_profile_default_dict['liveliness'])
+        self.depth = kwargs.get('depth', from_profile.depth)
+        self.reliability = kwargs.get('reliability', from_profile.reliability)
+        self.durability = kwargs.get('durability', from_profile.durability)
+        self.lifespan = kwargs.get('lifespan', from_profile.lifespan)
+        self.deadline = kwargs.get('deadline', from_profile.deadline)
+        self.liveliness = kwargs.get('liveliness', from_profile.liveliness)
         self.liveliness_lease_duration = kwargs.get(
-            'liveliness_lease_duration',
-            QoSProfile.__qos_profile_default_dict['liveliness_lease_duration'])
+            'liveliness_lease_duration', from_profile.liveliness_lease_duration)
         self.avoid_ros_namespace_conventions = kwargs.get(
-            'avoid_ros_namespace_conventions',
-            QoSProfile.__qos_profile_default_dict['avoid_ros_namespace_conventions'])
+            'avoid_ros_namespace_conventions', from_profile.avoid_ros_namespace_conventions)
 
     @property
     def history(self):
@@ -286,19 +255,8 @@ class QoSPolicyEnum(IntEnum):
         """Retrieve a policy type from a short name, case-insensitive."""
         return cls[name.upper()].value
 
-    @property
-    def short_key(self):
-        for k, v in self.__class__.__members__.items():
-            if k.startswith('RMW'):
-                continue
-            if self.value == v:
-                return k.lower()
-        raise AttributeError(
-            'failed to find value %s in %s' %
-            (self.value, self.__class__.__name__))
 
-
-class HistoryPolicy(QoSPolicyEnum):
+class QoSHistoryPolicy(QoSPolicyEnum):
     """
     Enum for QoS History settings.
 
@@ -311,15 +269,9 @@ class HistoryPolicy(QoSPolicyEnum):
     KEEP_LAST = RMW_QOS_POLICY_HISTORY_KEEP_LAST
     RMW_QOS_POLICY_HISTORY_KEEP_ALL = 2
     KEEP_ALL = RMW_QOS_POLICY_HISTORY_KEEP_ALL
-    RMW_QOS_POLICY_HISTORY_UNKNOWN = 3
-    UNKNOWN = RMW_QOS_POLICY_HISTORY_UNKNOWN
 
 
-# Alias with the old name, for retrocompatibility
-QoSHistoryPolicy = HistoryPolicy
-
-
-class ReliabilityPolicy(QoSPolicyEnum):
+class QoSReliabilityPolicy(QoSPolicyEnum):
     """
     Enum for QoS Reliability settings.
 
@@ -332,15 +284,9 @@ class ReliabilityPolicy(QoSPolicyEnum):
     RELIABLE = RMW_QOS_POLICY_RELIABILITY_RELIABLE
     RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT = 2
     BEST_EFFORT = RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT
-    RMW_QOS_POLICY_RELIABILITY_UNKNOWN = 3
-    UNKNOWN = RMW_QOS_POLICY_RELIABILITY_UNKNOWN
 
 
-# Alias with the old name, for retrocompatibility
-QoSReliabilityPolicy = ReliabilityPolicy
-
-
-class DurabilityPolicy(QoSPolicyEnum):
+class QoSDurabilityPolicy(QoSPolicyEnum):
     """
     Enum for QoS Durability settings.
 
@@ -353,15 +299,9 @@ class DurabilityPolicy(QoSPolicyEnum):
     TRANSIENT_LOCAL = RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL
     RMW_QOS_POLICY_DURABILITY_VOLATILE = 2
     VOLATILE = RMW_QOS_POLICY_DURABILITY_VOLATILE
-    RMW_QOS_POLICY_DURABILITY_UNKNOWN = 3
-    UNKNOWN = RMW_QOS_POLICY_DURABILITY_UNKNOWN
 
 
-# Alias with the old name, for retrocompatibility
-QoSDurabilityPolicy = DurabilityPolicy
-
-
-class LivelinessPolicy(QoSPolicyEnum):
+class QoSLivelinessPolicy(QoSPolicyEnum):
     """
     Enum for QoS Liveliness settings.
 
@@ -372,33 +312,46 @@ class LivelinessPolicy(QoSPolicyEnum):
     SYSTEM_DEFAULT = RMW_QOS_POLICY_LIVELINESS_SYSTEM_DEFAULT
     RMW_QOS_POLICY_LIVELINESS_AUTOMATIC = 1
     AUTOMATIC = RMW_QOS_POLICY_LIVELINESS_AUTOMATIC
+    RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_NODE = 2
+    MANUAL_BY_NODE = RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_NODE
     RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC = 3
     MANUAL_BY_TOPIC = RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC
-    RMW_QOS_POLICY_LIVELINESS_UNKNOWN = 4
-    UNKNOWN = RMW_QOS_POLICY_LIVELINESS_UNKNOWN
 
 
-# Alias with the old name, for retrocompatibility
-QoSLivelinessPolicy = LivelinessPolicy
+class DeprecatedQoSProfile(QoSProfile):
 
-qos_profile_unknown = QoSProfile(**_rclpy.rclpy_get_rmw_qos_profile(
-    'qos_profile_unknown'))
-qos_profile_system_default = QoSProfile(**_rclpy.rclpy_get_rmw_qos_profile(
-    'qos_profile_system_default'))
-qos_profile_sensor_data = QoSProfile(**_rclpy.rclpy_get_rmw_qos_profile(
-    'qos_profile_sensor_data'))
-qos_profile_services_default = QoSProfile(**_rclpy.rclpy_get_rmw_qos_profile(
-    'qos_profile_services_default'))
-qos_profile_parameters = QoSProfile(**_rclpy.rclpy_get_rmw_qos_profile(
-    'qos_profile_parameters'))
-qos_profile_parameter_events = QoSProfile(**_rclpy.rclpy_get_rmw_qos_profile(
-    'qos_profile_parameter_events'))
-qos_profile_action_status_default = QoSProfile(**_rclpy_action.rclpy_action_get_rmw_qos_profile(
-    'rcl_action_qos_profile_status_default'))
+    def __init__(self, qos_profile: QoSProfile, profile_name: str):
+        super().__init__(
+            history=qos_profile.history,
+            depth=qos_profile.depth,
+            reliability=qos_profile.reliability,
+            durability=qos_profile.durability,
+            lifespan=qos_profile.lifespan,
+            deadline=qos_profile.deadline,
+            liveliness=qos_profile.liveliness,
+            liveliness_lease_duration=qos_profile.liveliness_lease_duration,
+            avoid_ros_namespace_conventions=qos_profile.avoid_ros_namespace_conventions)
+        self.name = profile_name
+
+
+_qos_profile_default = _rclpy.rclpy_get_rmw_qos_profile(
+    'qos_profile_default')
+qos_profile_default = DeprecatedQoSProfile(_qos_profile_default, 'qos_profile_default')
+qos_profile_system_default = _rclpy.rclpy_get_rmw_qos_profile(
+    'qos_profile_system_default')
+qos_profile_sensor_data = _rclpy.rclpy_get_rmw_qos_profile(
+    'qos_profile_sensor_data')
+qos_profile_services_default = _rclpy.rclpy_get_rmw_qos_profile(
+    'qos_profile_services_default')
+qos_profile_parameters = _rclpy.rclpy_get_rmw_qos_profile(
+    'qos_profile_parameters')
+qos_profile_parameter_events = _rclpy.rclpy_get_rmw_qos_profile(
+    'qos_profile_parameter_events')
+qos_profile_action_status_default = _rclpy_action.rclpy_action_get_rmw_qos_profile(
+    'rcl_action_qos_profile_status_default')
 
 
 class QoSPresetProfiles(Enum):
-    UNKNOWN = qos_profile_unknown
     SYSTEM_DEFAULT = qos_profile_system_default
     SENSOR_DATA = qos_profile_sensor_data
     SERVICES_DEFAULT = qos_profile_services_default

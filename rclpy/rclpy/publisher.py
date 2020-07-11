@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TypeVar, Union
+from typing import TypeVar
 
 from rclpy.callback_groups import CallbackGroup
 from rclpy.handle import Handle
@@ -56,7 +56,7 @@ class Publisher:
         self.event_handlers = event_callbacks.create_event_handlers(
             callback_group, publisher_handle)
 
-    def publish(self, msg: Union[MsgType, bytes]) -> None:
+    def publish(self, msg: MsgType) -> None:
         """
         Send a message to the topic for the publisher.
 
@@ -64,23 +64,10 @@ class Publisher:
         :raises: TypeError if the type of the passed message isn't an instance
           of the provided type when the publisher was constructed.
         """
+        if not isinstance(msg, self.msg_type):
+            raise TypeError()
         with self.handle as capsule:
-            if isinstance(msg, self.msg_type):
-                _rclpy.rclpy_publish(capsule, msg)
-            elif isinstance(msg, bytes):
-                _rclpy.rclpy_publish_raw(capsule, msg)
-            else:
-                raise TypeError()
-
-    def get_subscription_count(self) -> int:
-        """Get the amount of subscribers that this publisher has."""
-        with self.handle as capsule:
-            return _rclpy.rclpy_publisher_get_subscription_count(capsule)
-
-    @property
-    def topic_name(self) -> str:
-        with self.handle as capsule:
-            return _rclpy.rclpy_publisher_get_topic_name(capsule)
+            _rclpy.rclpy_publish(capsule, msg)
 
     @property
     def handle(self):

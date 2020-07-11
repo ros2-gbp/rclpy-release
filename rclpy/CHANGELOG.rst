@@ -1,162 +1,38 @@
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-Changelog for package rclpy
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-1.0.4 (2020-07-07)
-------------------
-* Wrap lines to shorten line length (`#586 <https://github.com/ros2/rclpy/issues/586>`_)
-* Improve error message if rclpy C extensions are not found (`#580 <https://github.com/ros2/rclpy/issues/580>`_)
-* Fix moved troubleshooting URL (`#579 <https://github.com/ros2/rclpy/issues/579>`_)
-* Add resolved_name() method to publisher (`#568 <https://github.com/ros2/rclpy/issues/568>`_) (`#576 <https://github.com/ros2/rclpy/issues/576>`_)
-* Contributors: Dirk Thomas, Shane Loretz
+0.7.11 (2020-07-10)
+-------------------
+* Fix moved troubleshooting url. (`#590 <https://github.com/ros2/rclpy/issues/590>`_)
+* Improve error message if rclpy C extensions are not found. (`#592 <https://github.com/ros2/rclpy/issues/592>`_)
+* Contributors: Dirk Thomas
 
-1.0.3 (2020-06-23)
-------------------
-* Fix executor wait_for_ready_callbacks returning None on shutdown (`#574 <https://github.com/ros2/rclpy/issues/574>`_) (`#583 <https://github.com/ros2/rclpy/issues/583>`_)
-* Add ``topic_name`` property to Subscription (`#571 <https://github.com/ros2/rclpy/issues/571>`_) (`#582 <https://github.com/ros2/rclpy/issues/582>`_)
-* Doc+fix ``rclpy_handle_get_pointer_from_capsule()`` (`#569 <https://github.com/ros2/rclpy/issues/569>`_) (`#570 <https://github.com/ros2/rclpy/issues/570>`_)
-* Contributors: Audrow Nash, Shane Loretz
-
-1.0.2 (2020-06-01)
-------------------
-* Protect access to global logging calls with a mutex (`#562 <https://github.com/ros2/rclpy/issues/562>`_)
-* Ensure executors' spinning API handles shutdown properly (`#563 <https://github.com/ros2/rclpy/issues/563>`_)
-* Contributors: Michel Hidalgo, William Woodall
-
-1.0.1 (2020-05-18)
-------------------
-* Explicitly add DLL directories for Windows before importing (`#558 <https://github.com/ros2/rclpy/issues/558>`_)
+0.7.10 (2010-12-12)
+-------------------
+* Remove f-strings to restore Python 3.5 compatibility. (`#483 <https://github.com/ros2/rclpy/issues/483>`_)
+  The regression was accidentally introduced in `#475 <https://github.com/ros2/rclpy/issues/475>`_.
 * Contributors: Jacob Perron
 
-1.0.0 (2020-05-12)
+0.7.9 (2019-12-10)
 ------------------
-* Remove MANUAL_BY_NODE liveliness API (`#556 <https://github.com/ros2/rclpy/issues/556>`_)
-* Fix bug that not to get expected data because use less timeout (`#548 <https://github.com/ros2/rclpy/issues/548>`_)
-* Contributors: Barry Xu, Ivan Santiago Paunovic
+* Added guard against unexpected action responses. (`#475 <https://github.com/ros2/rclpy/issues/475>`_)
+  Fixes https://github.com/ros2/demos/issues/417
+* Future invokes done callbacks when done (`#477 <https://github.com/ros2/rclpy/issues/477>`_)
+* Added missing exec depend on rcl_interfaces. (`#472 <https://github.com/ros2/rclpy/issues/472>`_)
+* Fixed import to use builtin_interfaces.msg. (`#473 <https://github.com/ros2/rclpy/issues/473>`_)
+* Fixed sending of feedback callbacks in send_goal() of action client. (`#466 <https://github.com/ros2/rclpy/issues/466>`_)
+* Contributors: Dirk Thomas, Jacob Perron, Steven! Ragnarök
 
-0.9.1 (2020-05-08)
+0.7.8 (2019-10-11)
 ------------------
-* Fix bad rmw_time_t to nanoseconds conversion. (`#555 <https://github.com/ros2/rclpy/issues/555>`_)
-* Skip flaky timer test on windows (`#554 <https://github.com/ros2/rclpy/issues/554>`_)
-* Cleanup rmw publisher/subscription on exception (`#553 <https://github.com/ros2/rclpy/issues/553>`_)
-* Contributors: Ivan Santiago Paunovic, Miaofei Mei, Michel Hidalgo
+* Updated to accept tuples as parameter arrays. (`#442 <https://github.com/ros2/rclpy/issues/442>`_)
+* Fixed uncaught exception from user execute callback in Action Server. (`#439 <https://github.com/ros2/rclpy/issues/439>`_)
+  Fixes `#296 <https://github.com/ros2/rclpy/issues/296>`_.
+* Contributors: Christian Rauch, Jacob Perron, Steven! Ragnarök
 
-0.9.0 (2020-04-29)
+0.7.7 (2019-09-06)
 ------------------
-* Fix flaky test expecting wrong return type of rclpy_take (`#552 <https://github.com/ros2/rclpy/issues/552>`_)
-* Fix warning about pytaken_msg maybe being uninitialized (`#551 <https://github.com/ros2/rclpy/issues/551>`_)
-* Handle a failed rcl_take() call in rclpy_take() (`#550 <https://github.com/ros2/rclpy/issues/550>`_)
-* Enforce a precedence for wildcard matching in parameter overrides (`#547 <https://github.com/ros2/rclpy/issues/547>`_)
-* Feature/services timestamps (`#545 <https://github.com/ros2/rclpy/issues/545>`_)
-* Add method to take with message_info (`#542 <https://github.com/ros2/rclpy/issues/542>`_)
-* Ensure logging is initialized only once (`#518 <https://github.com/ros2/rclpy/issues/518>`_)
-* Update includes to use non-entry point headers from detail subdir (`#541 <https://github.com/ros2/rclpy/issues/541>`_)
-* Create a default warning for qos incompatibility (`#536 <https://github.com/ros2/rclpy/issues/536>`_)
-* Add enclaves introspection method in ``Node`` (`#538 <https://github.com/ros2/rclpy/issues/538>`_)
-* Rename rosidl_generator_c namespace to rosidl_runtime_c (`#540 <https://github.com/ros2/rclpy/issues/540>`_)
-* Use f-string to fix flake8 warning (`#539 <https://github.com/ros2/rclpy/issues/539>`_)
-* Don't persist node and context between tests (`#526 <https://github.com/ros2/rclpy/issues/526>`_)
-* Avoid unsigned/signed comparison (`#535 <https://github.com/ros2/rclpy/issues/535>`_)
-* Support for ON_REQUESTED_INCOMPATIBLE_QOS and ON_OFFERED_INCOMPATIBLE_QOS events (`#459 <https://github.com/ros2/rclpy/issues/459>`_)
-* Switch to slightly more generic isinstance
-* Add capability to publish serialized messages (`#509 <https://github.com/ros2/rclpy/issues/509>`_)
-* Set context when creating Timer (`#525 <https://github.com/ros2/rclpy/issues/525>`_)
-* Don't check lifespan on subscriber QoS (`#523 <https://github.com/ros2/rclpy/issues/523>`_)
-* Deprecate set_parameters_callback API (`#504 <https://github.com/ros2/rclpy/issues/504>`_)
-* Add env var to filter available RMW implementations (`#522 <https://github.com/ros2/rclpy/issues/522>`_)
-* Fix object destruction order (`#497 <https://github.com/ros2/rclpy/issues/497>`_)
-* Fixed flake8 rclpy test utilities (`#519 <https://github.com/ros2/rclpy/issues/519>`_)
-* Fixes max_jitter calculation (`#512 <https://github.com/ros2/rclpy/issues/512>`_)
-* Included get_available_rmw_implementations (`#517 <https://github.com/ros2/rclpy/issues/517>`_)
-* Embolden warning about Client.call() potentially deadlocking (`#516 <https://github.com/ros2/rclpy/issues/516>`_)
-* Enable test_get_publishers_subscriptions_info_by_topic() unit test for more rmw_implementations (`#511 <https://github.com/ros2/rclpy/issues/511>`_)
-* Change sizes to Py_ssize_t (`#514 <https://github.com/ros2/rclpy/issues/514>`_)
-* Rename rmw_topic_endpoint_info_array count to size (`#510 <https://github.com/ros2/rclpy/issues/510>`_)
-* Implement functions to get publisher and subcription informations like QoS policies from topic name (`#454 <https://github.com/ros2/rclpy/issues/454>`_)
-* Call init and shutdown thread safely (`#508 <https://github.com/ros2/rclpy/issues/508>`_)
-* Support multiple "on parameter set" callbacks (`#457 <https://github.com/ros2/rclpy/issues/457>`_)
-* Code style only: wrap after open parenthesis if not in one line (`#500 <https://github.com/ros2/rclpy/issues/500>`_)
-* Add wrappers for RMW serialize and deserialize functions (`#495 <https://github.com/ros2/rclpy/issues/495>`_)
-* Move logic for getting type support into a common function (`#492 <https://github.com/ros2/rclpy/issues/492>`_)
-* Find test dependency rosidl_generator_py (`#493 <https://github.com/ros2/rclpy/issues/493>`_)
-* Avoid reference cycle between Node and ParameterService (`#490 <https://github.com/ros2/rclpy/issues/490>`_)
-* Avoid a reference cycle between Node and TimeSource (`#488 <https://github.com/ros2/rclpy/issues/488>`_)
-* Fix typo (`#489 <https://github.com/ros2/rclpy/issues/489>`_)
-* Handle unknown global ROS arguments (`#485 <https://github.com/ros2/rclpy/issues/485>`_)
-* Fix the type annotation on get_parameters_by_prefix (`#482 <https://github.com/ros2/rclpy/issues/482>`_)
-* Replace RuntimeError with new custom exception RCLError (`#478 <https://github.com/ros2/rclpy/issues/478>`_)
-* Update constructor docstrings to use imperative mood (`#480 <https://github.com/ros2/rclpy/issues/480>`_)
-* Use absolute topic name for rosout (`#479 <https://github.com/ros2/rclpy/issues/479>`_)
-* Guard against unexpected action responses (`#474 <https://github.com/ros2/rclpy/issues/474>`_)
-* Fix test_action_client.py failures (`#471 <https://github.com/ros2/rclpy/issues/471>`_)
-* Enable/disable rosout logging in each node individually (`#469 <https://github.com/ros2/rclpy/issues/469>`_)
-* Make use of rcutils log severity defined enum instead of duplicating code (`#468 <https://github.com/ros2/rclpy/issues/468>`_)
-* Provide logging severity for string (`#458 <https://github.com/ros2/rclpy/issues/458>`_)
-* Send feedback callbacks properly in send_goal() of action client (`#451 <https://github.com/ros2/rclpy/issues/451>`_)
-* Contributors: Abhinav Singh, Alejandro Hernández Cordero, Barry Xu, Brian Marchi, Chris Lalancette, Dan Rose, Dirk Thomas, Donghee Ye, Emerson Knapp, Felix Divo, Ingo Lütkebohle, Ivan Santiago Paunovic, Jacob Perron, Jaison Titus, Miaofei Mei, Michel Hidalgo, Shane Loretz, Stephen Brawner, Steven! Ragnarök, Suyash Behera, Tully Foote, Werner Neubauer
-
-0.8.3 (2019-11-18)
-------------------
-* Future invokes done callbacks when done (`#461 <https://github.com/ros2/rclpy/issues/461>`_)
-* Make short key of a QoS policy accessible (`#463 <https://github.com/ros2/rclpy/issues/463>`_)
-* Fix new linter warnings as of flake8-comprehensions 3.1.0 (`#462 <https://github.com/ros2/rclpy/issues/462>`_)
-* Contributors: Dirk Thomas, Shane Loretz
-
-0.8.2 (2019-11-13)
-------------------
-* Explicitly destroy a node's objects before the node. (`#456 <https://github.com/ros2/rclpy/issues/456>`_)
-* Get proper parameters with prefixes without dot separator. (`#455 <https://github.com/ros2/rclpy/issues/455>`_)
-* Fix import to use builtin_interfaces.msg (`#453 <https://github.com/ros2/rclpy/issues/453>`_)
-* Add missing exec depend on rcl_interfaces (`#452 <https://github.com/ros2/rclpy/issues/452>`_)
-* Contributors: Brian Marchi, Dirk Thomas, Steven! Ragnarök
-
-0.8.1 (2019-10-23)
-------------------
-* Fix the unicode test string for opensplice rmw implementation (`#447 <https://github.com/ros2/rclpy/issues/447>`_)
-* Expand test timeout to deflake rmw_connext (`#449 <https://github.com/ros2/rclpy/issues/449>`_)
-* Support array parameter types (`#444 <https://github.com/ros2/rclpy/issues/444>`_)
-* Make use of Clock class for throttling logs (`#441 <https://github.com/ros2/rclpy/issues/441>`_)
-* Drop rclpy test_remove_ros_args_empty test case. (`#445 <https://github.com/ros2/rclpy/issues/445>`_)
-* Add Rate (`#443 <https://github.com/ros2/rclpy/issues/443>`_)
-* Action server: catch exception from user execute callback (`#437 <https://github.com/ros2/rclpy/issues/437>`_)
-* Make cppcheck happy (`#438 <https://github.com/ros2/rclpy/issues/438>`_)
-* Contributors: Brian Marchi, Jacob Perron, Michael Carroll, Michel Hidalgo, Shane Loretz
-
-0.8.0 (2019-09-26)
-------------------
-* Take parameter overrides provided through the CLI. (`#434 <https://github.com/ros2/rclpy/issues/434>`_)
-* Changelog version to master (`#410 <https://github.com/ros2/rclpy/issues/410>`_)
-* Remove deprecated QoS functionality (`#431 <https://github.com/ros2/rclpy/issues/431>`_)
-* Remove comment (`#432 <https://github.com/ros2/rclpy/issues/432>`_)
-* Provide subscription count from Publisher `#418 <https://github.com/ros2/rclpy/issues/418>`_ (`#429 <https://github.com/ros2/rclpy/issues/429>`_)
-* Raise custom error when node name is not found (`#413 <https://github.com/ros2/rclpy/issues/413>`_)
-* Timer uses ROS time by default (`#419 <https://github.com/ros2/rclpy/issues/419>`_)
-* Fix _rclpy.c formatting. (`#421 <https://github.com/ros2/rclpy/issues/421>`_)
-* Fail on invalid and unknown ROS specific arguments (`#415 <https://github.com/ros2/rclpy/issues/415>`_)
-* Force explicit --ros-args in cli args. (`#416 <https://github.com/ros2/rclpy/issues/416>`_)
-* Make Future result() and __await_\_ raise exceptions (`#412 <https://github.com/ros2/rclpy/issues/412>`_)
-* Use of -r/--remap flags where appropriate. (`#411 <https://github.com/ros2/rclpy/issues/411>`_)
-* Awake waitables on shutdown, check if context is valid (`#403 <https://github.com/ros2/rclpy/issues/403>`_)
-* Accept tuples as parameter arrays (`#389 <https://github.com/ros2/rclpy/issues/389>`_)
-* Adapt to '--ros-args ... [--]'-based ROS args extraction (`#405 <https://github.com/ros2/rclpy/issues/405>`_)
-* Replace 'NULL == ' with ! (`#404 <https://github.com/ros2/rclpy/issues/404>`_)
-* Declaring 'use_sim_time' when attaching node to time source. (`#396 <https://github.com/ros2/rclpy/issues/396>`_)
-* Adding ignore_override parameter to declare_parameter(s). (`#392 <https://github.com/ros2/rclpy/issues/392>`_)
-* fix missing 'raise'
-* Adding get_parameters_by_prefix method to Node. (`#386 <https://github.com/ros2/rclpy/issues/386>`_)
-* remove whitespace (`#385 <https://github.com/ros2/rclpy/issues/385>`_)
-* Added clients by node implementation from rcl (`#383 <https://github.com/ros2/rclpy/issues/383>`_)
-* Fix time conversion for a big nanoseconds value (`#384 <https://github.com/ros2/rclpy/issues/384>`_)
-* Allowing parameter declaration without a given value. (`#382 <https://github.com/ros2/rclpy/issues/382>`_)
-* Make flake8 happy on windows (`#381 <https://github.com/ros2/rclpy/issues/381>`_)
-* Rename QoS*Policy enum's to ``*Policy`` (`#379 <https://github.com/ros2/rclpy/issues/379>`_)
-* Fixing namespace expansion for declare_parameters. (`#377 <https://github.com/ros2/rclpy/issues/377>`_)
-* Use params from node ``'/**'`` from parameter YAML file (`#370 <https://github.com/ros2/rclpy/issues/370>`_)
-* [executors] don't convert a timeout_sec to nsecs (`#372 <https://github.com/ros2/rclpy/issues/372>`_)
-* Fix API documentation related to ROS graph methods (`#366 <https://github.com/ros2/rclpy/issues/366>`_)
-* Treat warnings as test failures and fix warnings (`#365 <https://github.com/ros2/rclpy/issues/365>`_)
-* Refactored _rclpy.rclpy_get_rmw_qos_profile to return dictionary instead of QoSProfile (`#364 <https://github.com/ros2/rclpy/issues/364>`_)
-* Contributors: Brian Marchi, Christian Rauch, Daniel Stonier, Daniel Wang, Geno117, Jacob Perron, Juan Ignacio Ubeira, Michel Hidalgo, Scott K Logan, Shane Loretz, Siddharth Kucheria, Vinnam Kim, William Woodall, ivanpauno, suab321321
+* Fixed Python 3.5 compatibility by removing unsupported type hints. (`#414 <https://github.com/ros2/rclpy/issues/414>`_)
+* Contributors: Steven! Ragnarök
 
 0.7.6 (2019-08-28)
 ------------------
@@ -166,7 +42,7 @@ Changelog for package rclpy
 
 0.7.5 (2019-08-01)
 ------------------
-* Updated to use params from node ``'/**'`` from parameter YAML file. (`#399 <https://github.com/ros2/rclpy/issues/399>`_)
+* Updated to use params from node '/**' from parameter YAML file. (`#399 <https://github.com/ros2/rclpy/issues/399>`_)
 * Updated to declare 'use_sim_time' when attaching node to time source. (`#401 <https://github.com/ros2/rclpy/issues/401>`_)
 * Fixed an errant conversion to nsecs in executors timeout.` (`#397 <https://github.com/ros2/rclpy/issues/397>`_)
 * Fixed parameter handling issues. (`#394 <https://github.com/ros2/rclpy/issues/394>`_)
@@ -222,7 +98,7 @@ Changelog for package rclpy
 * Ignore ValueError in SignalHandlerGuardCondition.__del_\_ (`#334 <https://github.com/ros2/rclpy/issues/334>`_)
 * Use new test interface definitions (`#332 <https://github.com/ros2/rclpy/issues/332>`_)
 * Thread safe node.destroy\_* (`#319 <https://github.com/ros2/rclpy/issues/319>`_)
-* Make ``destroy_node`` thread safe (`#330 <https://github.com/ros2/rclpy/issues/330>`_)
+* Make `destroy_node` thread safe (`#330 <https://github.com/ros2/rclpy/issues/330>`_)
 * Remove most of the timing checks in test_executor (`#329 <https://github.com/ros2/rclpy/issues/329>`_)
 * Prevent rcutils_log from accessing invalid memory (`#326 <https://github.com/ros2/rclpy/issues/326>`_)
 * Wait set uses pointers to rcl types not rcl->impl types (`#324 <https://github.com/ros2/rclpy/issues/324>`_)
