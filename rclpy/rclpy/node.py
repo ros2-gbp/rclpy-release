@@ -92,14 +92,17 @@ NodeNameNonExistentError = _rclpy.NodeNameNonExistentError
 
 
 class Node:
-
-    PARAM_REL_TOL = 1e-6
-
     """
     A Node in the ROS graph.
 
     A Node is the primary entrypoint in a ROS system for communication.
     It can be used to create ROS entities such as publishers, subscribers, services, etc.
+    """
+
+    PARAM_REL_TOL = 1e-6
+    """
+    Relative tolerance for floating point parameter values' comparison.
+    See `math.isclose` documentation.
     """
 
     def __init__(
@@ -186,7 +189,7 @@ class Node:
         self.__executor_weakref = None
 
         self._parameter_event_publisher = self.create_publisher(
-            ParameterEvent, 'parameter_events', qos_profile_parameter_events)
+            ParameterEvent, '/parameter_events', qos_profile_parameter_events)
 
         with self.handle as capsule:
             self._parameter_overrides = _rclpy.rclpy_get_node_parameters(Parameter, capsule)
@@ -1392,6 +1395,8 @@ class Node:
         """
         if publisher in self.__publishers:
             self.__publishers.remove(publisher)
+            for event_handler in publisher.event_handlers:
+                self.__waitables.remove(event_handler)
             try:
                 publisher.destroy()
             except InvalidHandle:
@@ -1408,6 +1413,8 @@ class Node:
         """
         if subscription in self.__subscriptions:
             self.__subscriptions.remove(subscription)
+            for event_handler in subscription.event_handlers:
+                self.__waitables.remove(event_handler)
             try:
                 subscription.destroy()
             except InvalidHandle:
@@ -1659,6 +1666,15 @@ class Node:
         """
         with self.handle as capsule:
             return _rclpy.rclpy_get_node_names_and_namespaces_with_enclaves(capsule)
+
+    def get_fully_qualified_name(self) -> str:
+        """
+        Get the node's fully qualified name.
+
+        :return: Fully qualified node name.
+        """
+        with self.handle as capsule:
+            return _rclpy.rclpy_node_get_fully_qualified_name(capsule)
 
     def _count_publishers_or_subscribers(self, topic_name, func):
         fq_topic_name = expand_topic_name(topic_name, self.get_name(), self.get_namespace())

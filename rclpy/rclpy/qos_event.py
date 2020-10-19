@@ -188,7 +188,9 @@ class QoSEventHandler(Waitable):
         """Add entites to wait set."""
         with self._event_handle as event_capsule:
             self._event_index = _rclpy.rclpy_wait_set_add_entity('event', wait_set, event_capsule)
-    # End Waitable API
+
+    def destroy(self):
+        self._event_handle.destroy()
 
 
 class SubscriptionEventCallbacks:
@@ -223,7 +225,7 @@ class SubscriptionEventCallbacks:
         self.use_default_callbacks = use_default_callbacks
 
     def create_event_handlers(
-        self, callback_group: CallbackGroup, subscription_handle: Handle,
+        self, callback_group: CallbackGroup, subscription_handle: Handle, topic_name: str,
     ) -> List[QoSEventHandler]:
         with subscription_handle as subscription_capsule:
             logger = get_logger(_rclpy.rclpy_get_subscription_logger_name(subscription_capsule))
@@ -242,6 +244,25 @@ class SubscriptionEventCallbacks:
                 callback=self.incompatible_qos,
                 event_type=QoSSubscriptionEventType.RCL_SUBSCRIPTION_REQUESTED_INCOMPATIBLE_QOS,
                 parent_handle=subscription_handle))
+        elif self.use_default_callbacks:
+            # Register default callback when not specified
+            try:
+                def _default_incompatible_qos_callback(event):
+                    policy_name = qos_policy_name_from_kind(event.last_policy_kind)
+                    logger.warn(
+                        "New publisher discovered on topic '{}', offering incompatible QoS. "
+                        'No messages will be received from it. '
+                        'Last incompatible policy: {}'.format(topic_name, policy_name))
+
+                event_type = QoSSubscriptionEventType.RCL_SUBSCRIPTION_REQUESTED_INCOMPATIBLE_QOS
+                event_handlers.append(QoSEventHandler(
+                    callback_group=callback_group,
+                    callback=_default_incompatible_qos_callback,
+                    event_type=event_type,
+                    parent_handle=subscription_handle))
+
+            except UnsupportedEventTypeError:
+                pass
 
         if self.liveliness:
             event_handlers.append(QoSEventHandler(
@@ -256,25 +277,6 @@ class SubscriptionEventCallbacks:
                 callback=self.message_lost,
                 event_type=QoSSubscriptionEventType.RCL_SUBSCRIPTION_MESSAGE_LOST,
                 parent_handle=subscription_handle))
-        elif self.use_default_callbacks:
-            # Register default callback when not specified
-            try:
-                def _default_incompatible_qos_callback(event):
-                    policy_name = qos_policy_name_from_kind(event.last_policy_kind)
-                    logger.warn(
-                        'New publisher discovered on this topic, offering incompatible QoS. '
-                        'No messages will be received from it. '
-                        'Last incompatible policy: {}'.format(policy_name))
-
-                event_type = QoSSubscriptionEventType.RCL_SUBSCRIPTION_REQUESTED_INCOMPATIBLE_QOS
-                event_handlers.append(QoSEventHandler(
-                    callback_group=callback_group,
-                    callback=_default_incompatible_qos_callback,
-                    event_type=event_type,
-                    parent_handle=subscription_handle))
-
-            except UnsupportedEventTypeError:
-                pass
 
         return event_handlers
 
@@ -308,7 +310,7 @@ class PublisherEventCallbacks:
         self.use_default_callbacks = use_default_callbacks
 
     def create_event_handlers(
-        self, callback_group: CallbackGroup, publisher_handle: Handle,
+        self, callback_group: CallbackGroup, publisher_handle: Handle, topic_name: str,
     ) -> List[QoSEventHandler]:
         with publisher_handle as publisher_capsule:
             logger = get_logger(_rclpy.rclpy_get_publisher_logger_name(publisher_capsule))
@@ -340,9 +342,9 @@ class PublisherEventCallbacks:
                 def _default_incompatible_qos_callback(event):
                     policy_name = qos_policy_name_from_kind(event.last_policy_kind)
                     logger.warn(
-                        'New subscription discovered on this topic, requesting incompatible QoS. '
+                        "New subscription discovered on topic '{}', requesting incompatible QoS. "
                         'No messages will be sent to it. '
-                        'Last incompatible policy: {}'.format(policy_name))
+                        'Last incompatible policy: {}'.format(topic_name, policy_name))
 
                 event_handlers.append(QoSEventHandler(
                     callback_group=callback_group,

@@ -19,6 +19,7 @@ from rclpy.callback_groups import CallbackGroup
 from rclpy.handle import Handle
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.qos import QoSProfile
+from rclpy.qos_event import QoSEventHandler
 from rclpy.qos_event import SubscriptionEventCallbacks
 
 
@@ -67,14 +68,16 @@ class Subscription:
         self.qos_profile = qos_profile
         self.raw = raw
 
-        self.event_handlers = event_callbacks.create_event_handlers(
-            callback_group, subscription_handle)
+        self.event_handlers: QoSEventHandler = event_callbacks.create_event_handlers(
+            callback_group, subscription_handle, topic)
 
     @property
     def handle(self):
         return self.__handle
 
     def destroy(self):
+        for handler in self.event_handlers:
+            handler.destroy()
         self.handle.destroy()
 
     @property
