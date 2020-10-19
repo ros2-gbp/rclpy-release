@@ -40,8 +40,8 @@ all ROS nodes associated with the context), the :func:`shutdown` function should
 This will invalidate all entities derived from the context.
 """
 
-import sys
 from typing import List
+from typing import Optional
 from typing import TYPE_CHECKING
 
 from rclpy.context import Context
@@ -59,7 +59,12 @@ if TYPE_CHECKING:
     from rclpy.node import Node  # noqa: F401
 
 
-def init(*, args: List[str] = None, context: Context = None) -> None:
+def init(
+    *,
+    args: Optional[List[str]] = None,
+    context: Context = None,
+    domain_id: Optional[int] = None
+) -> None:
     """
     Initialize ROS communications for a given context.
 
@@ -68,9 +73,7 @@ def init(*, args: List[str] = None, context: Context = None) -> None:
         (see :func:`.get_default_context`).
     """
     context = get_default_context() if context is None else context
-    # imported locally to avoid loading extensions on module import
-    from rclpy.impl.implementation_singleton import rclpy_implementation
-    return rclpy_implementation.rclpy_init(args if args is not None else sys.argv, context.handle)
+    return context.init(args, domain_id=domain_id)
 
 
 # The global spin functions need an executor to do the work
@@ -110,6 +113,7 @@ def create_node(
     cli_args: List[str] = None,
     namespace: str = None,
     use_global_arguments: bool = True,
+    enable_rosout: bool = True,
     start_parameter_services: bool = True,
     parameter_overrides: List[Parameter] = None,
     allow_undeclared_parameters: bool = False,
@@ -121,11 +125,13 @@ def create_node(
     :param node_name: A name to give to the node.
     :param context: The context to associated with the node, or ``None`` for the default global
         context.
-    :param cli_args: Command line arguments to be used by the node.
+    :param cli_args: Command line arguments to be used by the node. Being specific to a ROS node,
+        an implicit `--ros-args` scope flag always precedes these arguments.
     :param namespace: The namespace prefix to apply to entities associated with the node
         (node name, topics, etc).
     :param use_global_arguments: ``False`` if the node should ignore process-wide command line
         arguments.
+    :param enable_rosout: ``False`` if the node should ignore rosout logging.
     :param start_parameter_services: ``False`` if the node should not create parameter services.
     :param parameter_overrides: A list of :class:`.Parameter` which are used to override the
         initial values of parameters declared on this node.
@@ -140,6 +146,7 @@ def create_node(
     return Node(
         node_name, context=context, cli_args=cli_args, namespace=namespace,
         use_global_arguments=use_global_arguments,
+        enable_rosout=enable_rosout,
         start_parameter_services=start_parameter_services,
         parameter_overrides=parameter_overrides,
         allow_undeclared_parameters=allow_undeclared_parameters,

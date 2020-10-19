@@ -35,7 +35,7 @@ rclpy_pycapsule_name(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  if (NULL == name) {
+  if (!name) {
     Py_RETURN_NONE;
   }
   return PyUnicode_FromString(name);
@@ -93,7 +93,7 @@ rclpy_pycapsule_destroy(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  if (NULL == destructor) {
+  if (!destructor) {
     PyErr_Format(PyExc_ValueError, "PyCapsule does not have a destructor.");
   }
 
@@ -125,7 +125,8 @@ static PyMethodDef rclpy_pycapsule_methods[] = {
   {NULL, NULL, 0, NULL}  /* sentinel */
 };
 
-PyDoc_STRVAR(rclpy_pycapsule__doc__,
+PyDoc_STRVAR(
+  rclpy_pycapsule__doc__,
   "rclpy module for working with PyCapsule objects.");
 
 /// Define the Python module

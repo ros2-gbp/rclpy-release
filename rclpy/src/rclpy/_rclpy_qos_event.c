@@ -12,15 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <rcl/event.h>
+#include "rcl/event.h"
+#include "rclpy_common/handle.h"
+#include "rmw/incompatible_qos_events_statuses.h"
 
 typedef union _qos_event_callback_data {
   // Subscription events
   rmw_requested_deadline_missed_status_t requested_deadline_missed;
   rmw_liveliness_changed_status_t liveliness_changed;
+  rmw_message_lost_status_t message_lost;
+  rmw_requested_qos_incompatible_event_status_t requested_incompatible_qos;
   // Publisher events
   rmw_offered_deadline_missed_status_t offered_deadline_missed;
   rmw_liveliness_lost_status_t liveliness_lost;
+  rmw_offered_qos_incompatible_event_status_t offered_incompatible_qos;
 } _qos_event_callback_data_t;
 
 typedef PyObject * (* _qos_event_data_filler_function)(_qos_event_callback_data_t *);
@@ -29,20 +34,22 @@ static
 bool
 _check_rcl_return(rcl_ret_t ret, const char * error_msg)
 {
-  if (RCL_RET_OK != ret) {
-    PyErr_Format(PyExc_RuntimeError,
-      "%s: %s", error_msg, rcl_get_error_string().str);
-    rcl_reset_error();
-    return false;
+  if (RCL_RET_OK == ret) {
+    return true;
   }
-  return true;
+
+  PyObject * exception = (RCL_RET_UNSUPPORTED == ret) ? UnsupportedEventTypeError : RCLError;
+  PyErr_Format(exception, "%s: %s", error_msg, rcl_get_error_string().str);
+  rcl_reset_error();
+
+  return false;
 }
 
 static
 void
-_destroy_event_capsule(PyObject * pycapsule)
+_destroy_event_capsule(void * p)
 {
-  rcl_event_t * event = (rcl_event_t *)PyCapsule_GetPointer(pycapsule, "rcl_event_t");
+  rcl_event_t * event = p;
   if (!event) {
     PyErr_Clear();
     int stack_level = 1;
@@ -76,7 +83,7 @@ static
 rcl_event_t *
 _pycapsule_to_rcl_event(PyObject * pycapsule)
 {
-  return (rcl_event_t *)PyCapsule_GetPointer(pycapsule, "rcl_event_t");
+  return rclpy_handle_get_pointer_from_capsule(pycapsule, "rcl_event_t");
 }
 
 static
@@ -159,6 +166,37 @@ _liveliness_changed_to_py_object(_qos_event_callback_data_t * data)
 
 static
 PyObject *
+_message_lost_to_py_object(_qos_event_callback_data_t * data)
+{
+  rmw_message_lost_status_t * actual_data = &data->message_lost;
+  PyObject * args = Py_BuildValue(
+    "ii",
+    actual_data->total_count,
+    actual_data->total_count_change);
+  if (!args) {
+    return NULL;
+  }
+  return _create_py_qos_event("QoSMessageLostInfo", args);
+}
+
+static
+PyObject *
+_requested_incompatible_qos_to_py_object(_qos_event_callback_data_t * data)
+{
+  rmw_requested_qos_incompatible_event_status_t * actual_data = &data->requested_incompatible_qos;
+  PyObject * args = Py_BuildValue(
+    "iii",
+    actual_data->total_count,
+    actual_data->total_count_change,
+    actual_data->last_policy_kind);
+  if (!args) {
+    return NULL;
+  }
+  return _create_py_qos_event("QoSRequestedIncompatibleQoSInfo", args);
+}
+
+static
+PyObject *
 _offered_deadline_missed_to_py_object(_qos_event_callback_data_t * data)
 {
   rmw_offered_deadline_missed_status_t * actual_data = &data->offered_deadline_missed;
@@ -188,6 +226,22 @@ _liveliness_lost_to_py_object(_qos_event_callback_data_t * data)
 }
 
 static
+PyObject *
+_offered_incompatible_qos_to_py_object(_qos_event_callback_data_t * data)
+{
+  rmw_offered_qos_incompatible_event_status_t * actual_data = &data->offered_incompatible_qos;
+  PyObject * args = Py_BuildValue(
+    "iii",
+    actual_data->total_count,
+    actual_data->total_count_change,
+    actual_data->last_policy_kind);
+  if (!args) {
+    return NULL;
+  }
+  return _create_py_qos_event("QoSOfferedIncompatibleQoSInfo", args);
+}
+
+static
 _qos_event_data_filler_function
 _get_qos_event_data_filler_function_for(PyObject * pyparent, unsigned PY_LONG_LONG event_type)
 {
@@ -197,8 +251,13 @@ _get_qos_event_data_filler_function_for(PyObject * pyparent, unsigned PY_LONG_LO
         return &_requested_deadline_missed_to_py_object;
       case RCL_SUBSCRIPTION_LIVELINESS_CHANGED:
         return &_liveliness_changed_to_py_object;
+      case RCL_SUBSCRIPTION_MESSAGE_LOST:
+        return &_message_lost_to_py_object;
+      case RCL_SUBSCRIPTION_REQUESTED_INCOMPATIBLE_QOS:
+        return &_requested_incompatible_qos_to_py_object;
       default:
-        PyErr_Format(PyExc_ValueError,
+        PyErr_Format(
+          PyExc_ValueError,
           "Event type %llu for Subscriptions not understood by rclpy.", event_type);
     }
   } else if (_is_pycapsule_rcl_publisher(pyparent)) {
@@ -207,12 +266,16 @@ _get_qos_event_data_filler_function_for(PyObject * pyparent, unsigned PY_LONG_LO
         return &_offered_deadline_missed_to_py_object;
       case RCL_PUBLISHER_LIVELINESS_LOST:
         return &_liveliness_lost_to_py_object;
+      case RCL_PUBLISHER_OFFERED_INCOMPATIBLE_QOS:
+        return &_offered_incompatible_qos_to_py_object;
       default:
-        PyErr_Format(PyExc_ValueError,
+        PyErr_Format(
+          PyExc_ValueError,
           "Event type %llu for Publishers not understood by rclpy.", event_type);
     }
   } else {
-    PyErr_Format(PyExc_TypeError,
+    PyErr_Format(
+      PyExc_TypeError,
       "Parent handle was not a valid Publisher or Subscription.");
   }
   return NULL;
@@ -243,19 +306,16 @@ rclpy_create_event(PyObject * Py_UNUSED(self), PyObject * args)
   rcl_publisher_t * publisher = NULL;
   rcl_event_t * event = NULL;
 
-  PyObject * pyevent = NULL;
-
   if (!PyArg_ParseTuple(args, "KO", &event_type, &pyparent)) {
     return NULL;
   }
 
+  rclpy_handle_t * parent_handle = PyCapsule_GetPointer(pyparent, PyCapsule_GetName(pyparent));
   if (_is_pycapsule_rcl_subscription(pyparent)) {
-    rclpy_subscription_t * py_subscription =
-      (rclpy_subscription_t *)PyCapsule_GetPointer(pyparent, "rclpy_subscription_t");
+    rclpy_subscription_t * py_subscription = _rclpy_handle_get_pointer(parent_handle);
     subscription = py_subscription ? &py_subscription->subscription : NULL;
   } else if (_is_pycapsule_rcl_publisher(pyparent)) {
-    rclpy_publisher_t * py_publisher =
-      (rclpy_publisher_t *)PyCapsule_GetPointer(pyparent, "rclpy_publisher_t");
+    rclpy_publisher_t * py_publisher = _rclpy_handle_get_pointer(parent_handle);
     publisher = py_publisher ? &py_publisher->publisher : NULL;
   } else {
     PyErr_Format(PyExc_TypeError, "Event parent was not a valid Publisher or Subscription.");
@@ -277,15 +337,24 @@ rclpy_create_event(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  pyevent = PyCapsule_New(event, "rcl_event_t", _destroy_event_capsule);
-  if (!pyevent) {
+  rclpy_handle_t * event_handle = _rclpy_create_handle(event, _destroy_event_capsule);
+  if (!event_handle) {
     ret = rcl_event_fini(event);
     PyMem_Free(event);
     _check_rcl_return(ret, "Failed to fini 'rcl_event_t'");
     return NULL;
   }
-
-  return pyevent;
+  _rclpy_handle_add_dependency(event_handle, parent_handle);
+  if (PyErr_Occurred()) {
+    _rclpy_handle_dec_ref(event_handle);
+    return NULL;
+  }
+  PyObject * event_capsule = _rclpy_create_handle_capsule(event_handle, "rcl_event_t");
+  if (!event_capsule) {
+    _rclpy_handle_dec_ref(event_handle);
+    return NULL;
+  }
+  return event_capsule;
 }
 
 /// Get a pending QoS event's data.
@@ -333,7 +402,8 @@ rclpy_take_event(PyObject * Py_UNUSED(self), PyObject * args)
 
   ret = rcl_take_event(event, &event_data);
   if (RCL_RET_UNSUPPORTED == ret) {
-    PyErr_Format(PyExc_NotImplementedError,
+    PyErr_Format(
+      PyExc_NotImplementedError,
       "Take event is not implemented in the current RMW implementation: %s",
       rcl_get_error_string().str);
     rcl_reset_error();

@@ -12,13 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TypeVar
+from typing import TypeVar, Union
 
 from rclpy.callback_groups import CallbackGroup
 from rclpy.handle import Handle
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.qos import QoSProfile
 from rclpy.qos_event import PublisherEventCallbacks
+from rclpy.qos_event import QoSEventHandler
 
 MsgType = TypeVar('MsgType')
 
@@ -53,10 +54,10 @@ class Publisher:
         self.topic = topic
         self.qos_profile = qos_profile
 
-        self.event_handlers = event_callbacks.create_event_handlers(
-            callback_group, publisher_handle)
+        self.event_handlers: QoSEventHandler = event_callbacks.create_event_handlers(
+            callback_group, publisher_handle, topic)
 
-    def publish(self, msg: MsgType) -> None:
+    def publish(self, msg: Union[MsgType, bytes]) -> None:
         """
         Send a message to the topic for the publisher.
 
@@ -64,16 +65,31 @@ class Publisher:
         :raises: TypeError if the type of the passed message isn't an instance
           of the provided type when the publisher was constructed.
         """
-        if not isinstance(msg, self.msg_type):
-            raise TypeError()
         with self.handle as capsule:
-            _rclpy.rclpy_publish(capsule, msg)
+            if isinstance(msg, self.msg_type):
+                _rclpy.rclpy_publish(capsule, msg)
+            elif isinstance(msg, bytes):
+                _rclpy.rclpy_publish_raw(capsule, msg)
+            else:
+                raise TypeError('Expected {}, got {}'.format(self.msg_type, type(msg)))
+
+    def get_subscription_count(self) -> int:
+        """Get the amount of subscribers that this publisher has."""
+        with self.handle as capsule:
+            return _rclpy.rclpy_publisher_get_subscription_count(capsule)
+
+    @property
+    def topic_name(self) -> str:
+        with self.handle as capsule:
+            return _rclpy.rclpy_publisher_get_topic_name(capsule)
 
     @property
     def handle(self):
         return self.__handle
 
     def destroy(self):
+        for handler in self.event_handlers:
+            handler.destroy()
         self.handle.destroy()
 
     def assert_liveliness(self) -> None:

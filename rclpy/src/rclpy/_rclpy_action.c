@@ -18,6 +18,7 @@
 #include <rcl_action/rcl_action.h>
 
 #include "rclpy_common/common.h"
+#include "rclpy_common/handle.h"
 
 /// Destroy an rcl_action entity.
 /**
@@ -36,7 +37,7 @@ rclpy_action_destroy_entity(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
+  rcl_node_t * node = rclpy_handle_get_pointer_from_capsule(pynode, "rcl_node_t");
   if (!node) {
     return NULL;
   }
@@ -62,7 +63,8 @@ rclpy_action_destroy_entity(PyObject * Py_UNUSED(self), PyObject * args)
   }
 
   if (ret != RCL_RET_OK) {
-    PyErr_Format(PyExc_RuntimeError,
+    PyErr_Format(
+      PyExc_RuntimeError,
       "Failed to fini '%s': %s", PyCapsule_GetName(pyentity), rcl_get_error_string().str);
     rcl_reset_error();
     return NULL;
@@ -119,10 +121,11 @@ rclpy_action_get_rmw_qos_profile(PyObject * Py_UNUSED(self), PyObject * args)
 
   PyObject * pyqos_profile = NULL;
   if (0 == strcmp(rmw_profile, "rcl_action_qos_profile_status_default")) {
-    pyqos_profile = rclpy_common_convert_to_py_qos_policy(&rcl_action_qos_profile_status_default);
+    pyqos_profile = rclpy_common_convert_to_qos_dict(&rcl_action_qos_profile_status_default);
   } else {
-    return PyErr_Format(PyExc_RuntimeError,
-             "Requested unknown rmw_qos_profile: '%s'", rmw_profile);
+    return PyErr_Format(
+      PyExc_RuntimeError,
+      "Requested unknown rmw_qos_profile: '%s'", rmw_profile);
   }
   return pyqos_profile;
 }
@@ -169,7 +172,8 @@ rclpy_action_wait_set_add(PyObject * Py_UNUSED(self), PyObject * args)
   }
 
   if (RCL_RET_OK != ret) {
-    PyErr_Format(PyExc_RuntimeError, "Failed to add '%s' to wait set: %s",
+    PyErr_Format(
+      PyExc_RuntimeError, "Failed to add '%s' to wait set: %s",
       PyCapsule_GetName(pyentity), rcl_get_error_string().str);
     rcl_reset_error();
     return NULL;
@@ -237,10 +241,9 @@ rclpy_action_wait_set_get_num_entities(PyObject * Py_UNUSED(self), PyObject * ar
   }
 
   if (RCL_RET_OK != ret) {
-    PyErr_Format(PyExc_RuntimeError,
-      "Failed to get number of entities for '%s': %s",
-      PyCapsule_GetName(pyentity),
-      rcl_get_error_string().str);
+    PyErr_Format(
+      PyExc_RuntimeError, "Failed to get number of entities for '%s': %s",
+      PyCapsule_GetName(pyentity), rcl_get_error_string().str);
     rcl_reset_error();
     return NULL;
   }
@@ -319,7 +322,8 @@ rclpy_action_wait_set_is_ready(PyObject * Py_UNUSED(self), PyObject * args)
       &is_cancel_response_ready,
       &is_result_response_ready);
     if (RCL_RET_OK != ret) {
-      PyErr_Format(PyExc_RuntimeError,
+      PyErr_Format(
+        PyExc_RuntimeError,
         "Failed to get number of ready entities for action client: %s",
         rcl_get_error_string().str);
       rcl_reset_error();
@@ -358,7 +362,8 @@ rclpy_action_wait_set_is_ready(PyObject * Py_UNUSED(self), PyObject * args)
       &is_result_request_ready,
       &is_goal_expired);
     if (RCL_RET_OK != ret) {
-      PyErr_Format(PyExc_RuntimeError,
+      PyErr_Format(
+        PyExc_RuntimeError,
         "Failed to get number of ready entities for action server: %s",
         rcl_get_error_string().str);
       rcl_reset_error();
@@ -467,25 +472,13 @@ rclpy_action_create_client(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
+  rcl_node_t * node = rclpy_handle_get_pointer_from_capsule(pynode, "rcl_node_t");
   if (!node) {
     return NULL;
   }
 
-  PyObject * pymetaclass = PyObject_GetAttrString(pyaction_type, "__class__");
-  if (!pymetaclass) {
-    return NULL;
-  }
-
-  PyObject * pyts = PyObject_GetAttrString(pymetaclass, "_TYPE_SUPPORT");
-  Py_DECREF(pymetaclass);
-  if (!pyts) {
-    return NULL;
-  }
-
   rosidl_action_type_support_t * ts =
-    (rosidl_action_type_support_t *)PyCapsule_GetPointer(pyts, NULL);
-  Py_DECREF(pyts);
+    (rosidl_action_type_support_t *)rclpy_common_get_type_support(pyaction_type);
   if (!ts) {
     return NULL;
   }
@@ -512,11 +505,13 @@ rclpy_action_create_client(PyObject * Py_UNUSED(self), PyObject * args)
     &action_client_ops);
   if (ret != RCL_RET_OK) {
     if (ret == RCL_RET_ACTION_NAME_INVALID) {
-      PyErr_Format(PyExc_ValueError,
+      PyErr_Format(
+        PyExc_ValueError,
         "Failed to create action client due to invalid topic name '%s': %s",
         action_name, rcl_get_error_string().str);
     } else {
-      PyErr_Format(PyExc_RuntimeError,
+      PyErr_Format(
+        PyExc_RuntimeError,
         "Failed to create action client: %s", rcl_get_error_string().str);
     }
     PyMem_Free(action_client);
@@ -594,30 +589,18 @@ rclpy_action_create_server(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
+  rcl_node_t * node = rclpy_handle_get_pointer_from_capsule(pynode, "rcl_node_t");
   if (!node) {
     return NULL;
   }
 
-  rcl_clock_t * clock = (rcl_clock_t *) PyCapsule_GetPointer(pyclock, "rcl_clock_t");
+  rcl_clock_t * clock = rclpy_handle_get_pointer_from_capsule(pyclock, "rcl_clock_t");
   if (!clock) {
     return NULL;
   }
 
-  PyObject * pymetaclass = PyObject_GetAttrString(pyaction_type, "__class__");
-  if (!pymetaclass) {
-    return NULL;
-  }
-
-  PyObject * pyts = PyObject_GetAttrString(pymetaclass, "_TYPE_SUPPORT");
-  Py_DECREF(pymetaclass);
-  if (!pyts) {
-    return NULL;
-  }
-
   rosidl_action_type_support_t * ts =
-    (rosidl_action_type_support_t *)PyCapsule_GetPointer(pyts, NULL);
-  Py_DECREF(pyts);
+    (rosidl_action_type_support_t *)rclpy_common_get_type_support(pyaction_type);
   if (!ts) {
     return NULL;
   }
@@ -646,11 +629,13 @@ rclpy_action_create_server(PyObject * Py_UNUSED(self), PyObject * args)
     &action_server_ops);
   if (ret != RCL_RET_OK) {
     if (ret == RCL_RET_ACTION_NAME_INVALID) {
-      PyErr_Format(PyExc_ValueError,
+      PyErr_Format(
+        PyExc_ValueError,
         "Failed to create action server due to invalid topic name '%s': %s",
         action_name, rcl_get_error_string().str);
     } else {
-      PyErr_Format(PyExc_RuntimeError,
+      PyErr_Format(
+        PyExc_RuntimeError,
         "Failed to create action server: %s", rcl_get_error_string().str);
     }
     PyMem_Free(action_server);
@@ -680,7 +665,7 @@ rclpy_action_server_is_available(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
+  rcl_node_t * node = rclpy_handle_get_pointer_from_capsule(pynode, "rcl_node_t");
   if (!node) {
     return NULL;
   }
@@ -693,8 +678,9 @@ rclpy_action_server_is_available(PyObject * Py_UNUSED(self), PyObject * args)
   bool is_available = false;
   rcl_ret_t ret = rcl_action_server_is_available(node, action_client, &is_available);
   if (RCL_RET_OK != ret) {
-    return PyErr_Format(PyExc_RuntimeError,
-             "Failed to check if action server is available: %s", rcl_get_error_string().str);
+    return PyErr_Format(
+      PyExc_RuntimeError,
+      "Failed to check if action server is available: %s", rcl_get_error_string().str);
   }
 
   if (is_available) {
@@ -724,7 +710,8 @@ rclpy_action_server_is_available(PyObject * Py_UNUSED(self), PyObject * args)
     action_client, raw_ros_request, & sequence_number); \
   destroy_ros_message(raw_ros_request); \
   if (ret != RCL_RET_OK) { \
-    PyErr_Format(PyExc_RuntimeError, \
+    PyErr_Format( \
+      PyExc_RuntimeError, \
       "Failed to send " #Type " request: %s", rcl_get_error_string().str); \
     rcl_reset_error(); \
     return NULL; \
@@ -756,7 +743,8 @@ rclpy_action_server_is_available(PyObject * Py_UNUSED(self), PyObject * args)
   rcl_ret_t ret = rcl_action_send_ ## Type ## _response(action_server, header, raw_ros_response); \
   destroy_ros_message(raw_ros_response); \
   if (ret != RCL_RET_OK) { \
-    PyErr_Format(PyExc_RuntimeError, \
+    PyErr_Format( \
+      PyExc_RuntimeError, \
       "Failed to send " #Type " response: %s", rcl_get_error_string().str); \
     rcl_reset_error(); \
     return NULL; \
@@ -801,7 +789,8 @@ rclpy_action_server_is_available(PyObject * Py_UNUSED(self), PyObject * args)
     destroy_ros_message(taken_msg); \
     PyMem_Free(header); \
     if (ret != RCL_RET_ACTION_CLIENT_TAKE_FAILED && ret != RCL_RET_ACTION_SERVER_TAKE_FAILED) { \
-      PyErr_Format(PyExc_RuntimeError, \
+      PyErr_Format( \
+        PyExc_RuntimeError, \
         "Failed to take " #Type ": %s", rcl_get_error_string().str); \
       rcl_reset_error(); \
       return NULL; \
@@ -863,7 +852,8 @@ rclpy_action_server_is_available(PyObject * Py_UNUSED(self), PyObject * args)
     PyTuple_SET_ITEM(pytuple, 1, Py_None); \
     destroy_ros_message(taken_msg); \
     if (ret != RCL_RET_ACTION_CLIENT_TAKE_FAILED && ret != RCL_RET_ACTION_SERVER_TAKE_FAILED) { \
-      PyErr_Format(PyExc_RuntimeError, \
+      PyErr_Format( \
+        PyExc_RuntimeError, \
         "Failed to take " #Type ": %s", rcl_get_error_string().str); \
       rcl_reset_error(); \
       return NULL; \
@@ -1110,7 +1100,8 @@ rclpy_action_take_cancel_response(PyObject * Py_UNUSED(self), PyObject * args)
   rcl_ret_t ret = rcl_action_publish_ ## Type(action_server, raw_ros_message); \
   destroy_ros_message(raw_ros_message); \
   if (ret != RCL_RET_OK) { \
-    PyErr_Format(PyExc_RuntimeError, \
+    PyErr_Format( \
+      PyExc_RuntimeError, \
       "Failed to publish " #Type " with an action server: %s", rcl_get_error_string().str); \
     rcl_reset_error(); \
     return NULL; \
@@ -1140,7 +1131,8 @@ rclpy_action_take_cancel_response(PyObject * Py_UNUSED(self), PyObject * args)
       /* if take failed, just do nothing */ \
       Py_RETURN_NONE; \
     } \
-    PyErr_Format(PyExc_RuntimeError, \
+    PyErr_Format( \
+      PyExc_RuntimeError, \
       "Failed to take " #Type " with an action client: %s", rcl_get_error_string().str); \
     rcl_reset_error(); \
     return NULL; \
@@ -1587,7 +1579,8 @@ rclpy_action_process_cancel_request(PyObject * Py_UNUSED(self), PyObject * args)
   destroy_cancel_request(cancel_request);
   if (RCL_RET_OK != ret) {
     ret = rcl_action_cancel_response_fini(&cancel_response);
-    PyErr_Format(PyExc_RuntimeError,
+    PyErr_Format(
+      PyExc_RuntimeError,
       "Failed to process cancel request: %s",
       rcl_get_error_string().str);
     rcl_reset_error();
@@ -1600,7 +1593,8 @@ rclpy_action_process_cancel_request(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
   if (RCL_RET_OK != ret) {
-    PyErr_Format(PyExc_RuntimeError,
+    PyErr_Format(
+      PyExc_RuntimeError,
       "Failed to finalize cancel response: %s",
       rcl_get_error_string().str);
     rcl_reset_error();
@@ -1694,7 +1688,7 @@ rclpy_action_get_client_names_and_types_by_node(PyObject * Py_UNUSED(self), PyOb
     return NULL;
   }
 
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
+  rcl_node_t * node = rclpy_handle_get_pointer_from_capsule(pynode, "rcl_node_t");
   if (!node) {
     return NULL;
   }
@@ -1734,7 +1728,7 @@ rclpy_action_get_server_names_and_types_by_node(PyObject * Py_UNUSED(self), PyOb
     return NULL;
   }
 
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
+  rcl_node_t * node = rclpy_handle_get_pointer_from_capsule(pynode, "rcl_node_t");
   if (!node) {
     return NULL;
   }
@@ -1772,7 +1766,7 @@ rclpy_action_get_names_and_types(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
+  rcl_node_t * node = rclpy_handle_get_pointer_from_capsule(pynode, "rcl_node_t");
   if (!node) {
     return NULL;
   }
@@ -1954,8 +1948,7 @@ static PyMethodDef rclpy_action_methods[] = {
   {NULL, NULL, 0, NULL}  /* sentinel */
 };
 
-PyDoc_STRVAR(rclpy_action__doc__,
-  "ROS 2 Python Action library.");
+PyDoc_STRVAR(rclpy_action__doc__, "ROS 2 Python Action library.");
 
 /// Define the Python module
 static struct PyModuleDef _rclpy_action_module = {

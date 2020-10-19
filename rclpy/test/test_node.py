@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import pathlib
+import time
 import unittest
 from unittest.mock import Mock
-import warnings
 
 from rcl_interfaces.msg import FloatingPointRange
 from rcl_interfaces.msg import IntegerRange
@@ -25,6 +26,7 @@ from rcl_interfaces.msg import SetParametersResult
 from rcl_interfaces.srv import GetParameters
 import rclpy
 from rclpy.clock import ClockType
+from rclpy.duration import Duration
 from rclpy.exceptions import InvalidParameterException
 from rclpy.exceptions import InvalidParameterValueException
 from rclpy.exceptions import InvalidServiceNameException
@@ -33,14 +35,22 @@ from rclpy.exceptions import ParameterAlreadyDeclaredException
 from rclpy.exceptions import ParameterImmutableException
 from rclpy.exceptions import ParameterNotDeclaredException
 from rclpy.executors import SingleThreadedExecutor
+from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.parameter import Parameter
-from rclpy.qos import qos_profile_default
 from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import QoSDurabilityPolicy
+from rclpy.qos import QoSHistoryPolicy
+from rclpy.qos import QoSLivelinessPolicy
+from rclpy.qos import QoSProfile
+from rclpy.qos import QoSReliabilityPolicy
 from rclpy.time_source import USE_SIM_TIME_NAME
+from rclpy.utilities import get_rmw_implementation_identifier
 from test_msgs.msg import BasicTypes
 
 TEST_NODE = 'my_node'
 TEST_NAMESPACE = '/my_ns'
+
+TEST_RESOURCES_DIR = pathlib.Path(__file__).resolve().parent / 'resources' / 'test_node'
 
 
 class TestNodeAllowUndeclaredParameters(unittest.TestCase):
@@ -127,6 +137,33 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
 
         executor.shutdown()
 
+    def dummy_cb(self, msg):
+        pass
+
+    # https://github.com/ros2/rmw_connext/issues/405
+    @unittest.skipIf(
+        get_rmw_implementation_identifier() == 'rmw_connext_cpp',
+        reason='Source timestamp not implemented for Connext')
+    def test_take(self):
+        basic_types_pub = self.node.create_publisher(BasicTypes, 'take_test', 1)
+        sub = self.node.create_subscription(
+            BasicTypes,
+            'take_test',
+            self.dummy_cb,
+            1)
+        basic_types_msg = BasicTypes()
+        basic_types_pub.publish(basic_types_msg)
+        cycle_count = 0
+        while cycle_count < 5:
+            with sub.handle as capsule:
+                result = _rclpy.rclpy_take(capsule, sub.msg_type, False)
+            if result is not None:
+                msg, info = result
+                self.assertNotEqual(0, info['source_timestamp'])
+                return
+            else:
+                time.sleep(0.1)
+
     def test_create_client(self):
         self.node.create_client(GetParameters, 'get/parameters')
         with self.assertRaisesRegex(InvalidServiceNameException, 'must not contain characters'):
@@ -145,37 +182,17 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'unknown substitution'):
             self.node.create_service(GetParameters, 'foo/{bad_sub}', lambda req: None)
 
-    def test_deprecation_warnings(self):
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter('always')
-            self.node.create_publisher(BasicTypes, 'chatter')
-            assert len(w) == 1
-            assert issubclass(w[0].category, UserWarning)
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter('always')
-            self.node.create_publisher(BasicTypes, 'chatter', qos_profile_default)
-            assert len(w) == 1
-            assert issubclass(w[0].category, UserWarning)
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter('always')
-            self.node.create_subscription(BasicTypes, 'chatter', lambda msg: print(msg))
-            assert len(w) == 1
-            assert issubclass(w[0].category, UserWarning)
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter('always')
-            self.node.create_subscription(
-                BasicTypes, 'chatter', lambda msg: print(msg), qos_profile_default)
-            assert len(w) == 1
-            assert issubclass(w[0].category, UserWarning)
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter('always')
-            self.node.create_subscription(BasicTypes, 'chatter', lambda msg: print(msg), raw=True)
-            assert len(w) == 1
-            assert issubclass(w[0].category, UserWarning)
-
     def test_service_names_and_types(self):
         # test that it doesn't raise
         self.node.get_service_names_and_types()
+
+    def test_service_names_and_types_by_node(self):
+        # test that it doesnt raise
+        self.node.get_service_names_and_types_by_node(TEST_NODE, TEST_NAMESPACE)
+
+    def test_client_names_and_types_by_node(self):
+        # test that it doesnt raise
+        self.node.get_client_names_and_types_by_node(TEST_NODE, TEST_NAMESPACE)
 
     def test_topic_names_and_types(self):
         # test that it doesn't raise
@@ -190,6 +207,102 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
         # test that it doesn't raise
         self.node.get_node_names_and_namespaces()
 
+    def test_node_names_and_namespaces_with_enclaves(self):
+        # test that it doesn't raise
+        self.node.get_node_names_and_namespaces_with_enclaves()
+
+    def assert_qos_equal(self, expected_qos_profile, actual_qos_profile, *, is_publisher):
+        # Depth and history are skipped because they are not retrieved.
+        self.assertEqual(
+            expected_qos_profile.durability,
+            actual_qos_profile.durability,
+            'Durability is unequal')
+        self.assertEqual(
+            expected_qos_profile.reliability,
+            actual_qos_profile.reliability,
+            'Reliability is unequal')
+        if is_publisher:
+            self.assertEqual(
+                expected_qos_profile.lifespan,
+                actual_qos_profile.lifespan,
+                'lifespan is unequal')
+        self.assertEqual(
+            expected_qos_profile.deadline,
+            actual_qos_profile.deadline,
+            'Deadline is unequal')
+        self.assertEqual(
+            expected_qos_profile.liveliness,
+            actual_qos_profile.liveliness,
+            'liveliness is unequal')
+        self.assertEqual(
+            expected_qos_profile.liveliness_lease_duration,
+            actual_qos_profile.liveliness_lease_duration,
+            'liveliness_lease_duration is unequal')
+
+    def test_get_publishers_subscriptions_info_by_topic(self):
+        topic_name = 'test_topic_endpoint_info'
+        fq_topic_name = '{namespace}/{name}'.format(namespace=TEST_NAMESPACE, name=topic_name)
+        # Lists should be empty
+        self.assertFalse(self.node.get_publishers_info_by_topic(fq_topic_name))
+        self.assertFalse(self.node.get_subscriptions_info_by_topic(fq_topic_name))
+
+        # Add a publisher
+        qos_profile = QoSProfile(
+            depth=10,
+            history=QoSHistoryPolicy.RMW_QOS_POLICY_HISTORY_KEEP_ALL,
+            deadline=Duration(seconds=1, nanoseconds=12345),
+            lifespan=Duration(seconds=20, nanoseconds=9887665),
+            reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT,
+            durability=QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL,
+            liveliness_lease_duration=Duration(seconds=5, nanoseconds=23456),
+            liveliness=QoSLivelinessPolicy.MANUAL_BY_TOPIC)
+        self.node.create_publisher(BasicTypes, topic_name, qos_profile)
+        # List should have one item
+        publisher_list = self.node.get_publishers_info_by_topic(fq_topic_name)
+        self.assertEqual(1, len(publisher_list))
+        # Subscription list should be empty
+        self.assertFalse(self.node.get_subscriptions_info_by_topic(fq_topic_name))
+        # Verify publisher list has the right data
+        self.assertEqual(self.node.get_name(), publisher_list[0].node_name)
+        self.assertEqual(self.node.get_namespace(), publisher_list[0].node_namespace)
+        self.assertEqual('test_msgs/msg/BasicTypes', publisher_list[0].topic_type)
+        actual_qos_profile = publisher_list[0].qos_profile
+        self.assert_qos_equal(qos_profile, actual_qos_profile, is_publisher=True)
+
+        # Add a subscription
+        qos_profile2 = QoSProfile(
+            depth=0,
+            history=QoSHistoryPolicy.RMW_QOS_POLICY_HISTORY_KEEP_LAST,
+            deadline=Duration(seconds=15, nanoseconds=1678),
+            lifespan=Duration(seconds=29, nanoseconds=2345),
+            reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_RELIABLE,
+            durability=QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_VOLATILE,
+            liveliness_lease_duration=Duration(seconds=5, nanoseconds=23456),
+            liveliness=QoSLivelinessPolicy.AUTOMATIC)
+        self.node.create_subscription(BasicTypes, topic_name, lambda msg: print(msg), qos_profile2)
+        # Both lists should have one item
+        publisher_list = self.node.get_publishers_info_by_topic(fq_topic_name)
+        subscription_list = self.node.get_subscriptions_info_by_topic(fq_topic_name)
+        self.assertEqual(1, len(publisher_list))
+        self.assertEqual(1, len(subscription_list))
+        # Verify subscription list has the right data
+        self.assertEqual(self.node.get_name(), publisher_list[0].node_name)
+        self.assertEqual(self.node.get_namespace(), publisher_list[0].node_namespace)
+        self.assertEqual('test_msgs/msg/BasicTypes', publisher_list[0].topic_type)
+        self.assertEqual('test_msgs/msg/BasicTypes', subscription_list[0].topic_type)
+        publisher_qos_profile = publisher_list[0].qos_profile
+        subscription_qos_profile = subscription_list[0].qos_profile
+        self.assert_qos_equal(qos_profile, publisher_qos_profile, is_publisher=True)
+        self.assert_qos_equal(qos_profile2, subscription_qos_profile, is_publisher=False)
+
+        # Error cases
+        with self.assertRaisesRegex(TypeError, 'bad argument type for built-in operation'):
+            self.node.get_subscriptions_info_by_topic(1)
+            self.node.get_publishers_info_by_topic(1)
+        with self.assertRaisesRegex(ValueError, 'is invalid'):
+            self.node.get_subscriptions_info_by_topic('13')
+            self.node.get_publishers_info_by_topic('13')
+
     def test_count_publishers_subscribers(self):
         short_topic_name = 'chatter'
         fq_topic_name = '%s/%s' % (TEST_NAMESPACE, short_topic_name)
@@ -197,17 +310,20 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
         self.assertEqual(0, self.node.count_publishers(fq_topic_name))
         self.assertEqual(0, self.node.count_subscribers(fq_topic_name))
 
-        self.node.create_publisher(BasicTypes, short_topic_name, 1)
+        short_topic_publisher = self.node.create_publisher(BasicTypes, short_topic_name, 1)
         self.assertEqual(1, self.node.count_publishers(short_topic_name))
         self.assertEqual(1, self.node.count_publishers(fq_topic_name))
+        self.assertEqual(0, short_topic_publisher.get_subscription_count())
 
         self.node.create_subscription(BasicTypes, short_topic_name, lambda msg: print(msg), 1)
         self.assertEqual(1, self.node.count_subscribers(short_topic_name))
         self.assertEqual(1, self.node.count_subscribers(fq_topic_name))
+        self.assertEqual(1, short_topic_publisher.get_subscription_count())
 
         self.node.create_subscription(BasicTypes, short_topic_name, lambda msg: print(msg), 1)
         self.assertEqual(2, self.node.count_subscribers(short_topic_name))
         self.assertEqual(2, self.node.count_subscribers(fq_topic_name))
+        self.assertEqual(2, short_topic_publisher.get_subscription_count())
 
         # error cases
         with self.assertRaisesRegex(TypeError, 'bad argument type for built-in operation'):
@@ -367,6 +483,11 @@ class TestNode(unittest.TestCase):
                 Parameter('initial_bar', Parameter.Type.STRING, 'init_param'),
                 Parameter('initial_baz', Parameter.Type.DOUBLE, 3.14)
             ],
+            cli_args=[
+                '--ros-args', '-p', 'initial_fizz:=buzz',
+                '--params-file', str(TEST_RESOURCES_DIR / 'test_parameters.yaml'),
+                '-p', 'initial_buzz:=1.'
+            ],
             automatically_declare_parameters_from_overrides=False
         )
 
@@ -378,6 +499,17 @@ class TestNode(unittest.TestCase):
     def test_declare_parameter(self):
         result_initial_foo = self.node.declare_parameter(
             'initial_foo', ParameterValue(), ParameterDescriptor())
+        result_initial_bar = self.node.declare_parameter(
+            'initial_bar', 'ignoring_override', ParameterDescriptor(), ignore_override=True)
+        result_initial_fizz = self.node.declare_parameter(
+            'initial_fizz', 'default', ParameterDescriptor())
+        result_initial_baz = self.node.declare_parameter(
+            'initial_baz', ParameterValue(), ParameterDescriptor())
+        result_initial_buzz = self.node.declare_parameter(
+            'initial_buzz', ParameterValue(), ParameterDescriptor())
+        result_initial_foobar = self.node.declare_parameter(
+            'initial_foobar', ParameterValue(), ParameterDescriptor())
+
         result_foo = self.node.declare_parameter(
             'foo', 42, ParameterDescriptor())
         result_bar = self.node.declare_parameter(
@@ -388,16 +520,30 @@ class TestNode(unittest.TestCase):
 
         # OK cases.
         self.assertIsInstance(result_initial_foo, Parameter)
+        self.assertIsInstance(result_initial_bar, Parameter)
+        self.assertIsInstance(result_initial_fizz, Parameter)
+        self.assertIsInstance(result_initial_baz, Parameter)
         self.assertIsInstance(result_foo, Parameter)
         self.assertIsInstance(result_bar, Parameter)
         self.assertIsInstance(result_baz, Parameter)
         self.assertIsInstance(result_value_not_set, Parameter)
+        # initial_foo and initial_fizz get override values; initial_bar does not.
         self.assertEqual(result_initial_foo.value, 4321)
+        self.assertEqual(result_initial_bar.value, 'ignoring_override')
+        self.assertEqual(result_initial_fizz.value, 23)  # provided by CLI, overridden by file
+        self.assertEqual(result_initial_baz.value, 3.14)  # provided by file, overridden manually
+        self.assertEqual(result_initial_buzz.value, 1)  # provided by CLI
+        self.assertEqual(result_initial_foobar.value, False)  # provided by file
         self.assertEqual(result_foo.value, 42)
         self.assertEqual(result_bar.value, 'hello')
         self.assertEqual(result_baz.value, 2.41)
         self.assertIsNone(result_value_not_set.value)
         self.assertEqual(self.node.get_parameter('initial_foo').value, 4321)
+        self.assertEqual(self.node.get_parameter('initial_bar').value, 'ignoring_override')
+        self.assertEqual(self.node.get_parameter('initial_fizz').value, 23)
+        self.assertEqual(self.node.get_parameter('initial_baz').value, 3.14)
+        self.assertEqual(self.node.get_parameter('initial_buzz').value, 1)
+        self.assertEqual(self.node.get_parameter('initial_foobar').value, False)
         self.assertEqual(self.node.get_parameter('foo').value, 42)
         self.assertEqual(self.node.get_parameter('bar').value, 'hello')
         self.assertEqual(self.node.get_parameter('baz').value, 2.41)
@@ -417,7 +563,7 @@ class TestNode(unittest.TestCase):
             self.node.declare_parameter(
                 '', 'raise', ParameterDescriptor())
 
-        self.node.set_parameters_callback(self.reject_parameter_callback)
+        self.node.add_on_set_parameters_callback(self.reject_parameter_callback)
         with self.assertRaises(InvalidParameterValueException):
             self.node.declare_parameter(
                 'reject_me', 'raise', ParameterDescriptor())
@@ -438,6 +584,7 @@ class TestNode(unittest.TestCase):
 
     def test_declare_parameters(self):
         parameters = [
+            ('initial_foo', 0, ParameterDescriptor()),
             ('foo', 42, ParameterDescriptor()),
             ('bar', 'hello', ParameterDescriptor()),
             ('baz', 2.41),
@@ -446,16 +593,20 @@ class TestNode(unittest.TestCase):
 
         result = self.node.declare_parameters('', parameters)
 
-        # OK cases.
+        # OK cases - using overrides.
         self.assertIsInstance(result, list)
+        self.assertEqual(len(result), len(parameters))
         self.assertIsInstance(result[0], Parameter)
         self.assertIsInstance(result[1], Parameter)
         self.assertIsInstance(result[2], Parameter)
         self.assertIsInstance(result[3], Parameter)
-        self.assertEqual(result[0].value, 42)
-        self.assertEqual(result[1].value, 'hello')
-        self.assertEqual(result[2].value, 2.41)
-        self.assertIsNone(result[3].value)
+        self.assertIsInstance(result[4], Parameter)
+        self.assertEqual(result[0].value, 4321)
+        self.assertEqual(result[1].value, 42)
+        self.assertEqual(result[2].value, 'hello')
+        self.assertEqual(result[3].value, 2.41)
+        self.assertIsNone(result[4].value)
+        self.assertEqual(self.node.get_parameter('initial_foo').value, 4321)
         self.assertEqual(self.node.get_parameter('foo').value, 42)
         self.assertEqual(self.node.get_parameter('bar').value, 'hello')
         self.assertEqual(self.node.get_parameter('baz').value, 2.41)
@@ -466,19 +617,40 @@ class TestNode(unittest.TestCase):
 
         # OK cases.
         self.assertIsInstance(result, list)
+        self.assertEqual(len(result), len(parameters))
         self.assertIsInstance(result[0], Parameter)
         self.assertIsInstance(result[1], Parameter)
         self.assertIsInstance(result[2], Parameter)
         self.assertIsInstance(result[3], Parameter)
-        self.assertEqual(result[0].value, 42)
-        self.assertEqual(result[1].value, 'hello')
-        self.assertEqual(result[2].value, 2.41)
-        self.assertIsNone(result[3].value)
+        self.assertIsInstance(result[4], Parameter)
+        self.assertEqual(result[0].value, 4321)
+        self.assertEqual(result[1].value, 42)
+        self.assertEqual(result[2].value, 'hello')
+        self.assertEqual(result[3].value, 2.41)
+        self.assertIsNone(result[4].value)
+        self.assertEqual(self.node.get_parameter('namespace.initial_foo').value, 4321)
         self.assertEqual(self.node.get_parameter('namespace.foo').value, 42)
         self.assertEqual(self.node.get_parameter('namespace.bar').value, 'hello')
         self.assertEqual(self.node.get_parameter('namespace.baz').value, 2.41)
         self.assertIsNone(self.node.get_parameter('namespace.value_not_set').value)
         self.assertTrue(self.node.has_parameter('namespace.value_not_set'))
+
+        parameters = [
+            ('initial_bar', 'ignoring_override', ParameterDescriptor()),
+            ('initial_baz', 'ignoring_override_again', ParameterDescriptor()),
+        ]
+
+        result = self.node.declare_parameters('', parameters, ignore_override=True)
+
+        # OK cases - ignoring overrides.
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), len(parameters))
+        self.assertIsInstance(result[0], Parameter)
+        self.assertIsInstance(result[1], Parameter)
+        self.assertEqual(result[0].value, 'ignoring_override')
+        self.assertEqual(result[1].value, 'ignoring_override_again')
+        self.assertEqual(self.node.get_parameter('initial_bar').value, 'ignoring_override')
+        self.assertEqual(self.node.get_parameter('initial_baz').value, 'ignoring_override_again')
 
         # Error cases.
         with self.assertRaises(ParameterAlreadyDeclaredException):
@@ -509,7 +681,7 @@ class TestNode(unittest.TestCase):
             ('im_also_ok', 'world', ParameterDescriptor()),
             ('reject_me', 2.41, ParameterDescriptor()),
         ]
-        self.node.set_parameters_callback(self.reject_parameter_callback)
+        self.node.add_on_set_parameters_callback(self.reject_parameter_callback)
         with self.assertRaises(InvalidParameterValueException):
             self.node.declare_parameters('', parameters)
 
@@ -545,6 +717,11 @@ class TestNode(unittest.TestCase):
 
     def reject_parameter_callback(self, parameter_list):
         rejected_parameters = (param for param in parameter_list if 'reject' in param.name)
+        return SetParametersResult(successful=(not any(rejected_parameters)))
+
+    def reject_parameter_callback_1(self, parameter_list):
+        rejected_parameters = (
+            param for param in parameter_list if 'refuse' in param.name)
         return SetParametersResult(successful=(not any(rejected_parameters)))
 
     def test_use_sim_time(self):
@@ -622,6 +799,61 @@ class TestNode(unittest.TestCase):
             'initial_foo', Parameter('foo', Parameter.Type.INTEGER, 152))
         self.assertEqual(result.name, 'foo')
         self.assertEqual(result.value, 152)
+
+    def test_node_get_parameters_by_prefix(self):
+        parameters = [
+            ('foo_prefix.foo', 43),
+            ('foo_prefix.bar', 'hello'),
+            ('foo_prefix.baz', 2.41),
+            ('bar_prefix.foo', 1),
+            ('bar_prefix.bar', 12.3),
+            ('bar_prefix.baz', 'world'),
+        ]
+        self.node.declare_parameters('', parameters)
+
+        parameters = self.node.get_parameters_by_prefix('foo_prefix')
+        self.assertIsInstance(parameters, dict)
+        self.assertEqual(len(parameters), 3)
+        self.assertDictEqual(
+            parameters,
+            {
+                'foo': self.node.get_parameter('foo_prefix.foo'),
+                'bar': self.node.get_parameter('foo_prefix.bar'),
+                'baz': self.node.get_parameter('foo_prefix.baz')
+            }
+        )
+
+        parameters = self.node.get_parameters_by_prefix('bar_prefix')
+        self.assertIsInstance(parameters, dict)
+        self.assertEqual(len(parameters), 3)
+        self.assertDictEqual(
+            parameters,
+            {
+                'foo': self.node.get_parameter('bar_prefix.foo'),
+                'bar': self.node.get_parameter('bar_prefix.bar'),
+                'baz': self.node.get_parameter('bar_prefix.baz')
+            }
+        )
+
+        parameters = self.node.get_parameters_by_prefix('')
+        self.assertIsInstance(parameters, dict)
+        # use_sim_time is automatically declared.
+        self.assertDictEqual(
+            parameters,
+            {
+                'foo_prefix.foo': self.node.get_parameter('foo_prefix.foo'),
+                'foo_prefix.bar': self.node.get_parameter('foo_prefix.bar'),
+                'foo_prefix.baz': self.node.get_parameter('foo_prefix.baz'),
+                'bar_prefix.foo': self.node.get_parameter('bar_prefix.foo'),
+                'bar_prefix.bar': self.node.get_parameter('bar_prefix.bar'),
+                'bar_prefix.baz': self.node.get_parameter('bar_prefix.baz'),
+                USE_SIM_TIME_NAME: self.node.get_parameter(USE_SIM_TIME_NAME)
+            }
+        )
+
+        parameters = self.node.get_parameters_by_prefix('baz')
+        self.assertFalse(parameters)
+        self.assertIsInstance(parameters, dict)
 
     def test_node_set_parameters(self):
         integer_value = 42
@@ -728,9 +960,8 @@ class TestNode(unittest.TestCase):
             True,
             ParameterDescriptor()
         )
-
         self.node.declare_parameter(*reject_parameter_tuple)
-        self.node.set_parameters_callback(self.reject_parameter_callback)
+        self.node.add_on_set_parameters_callback(self.reject_parameter_callback)
         result = self.node.set_parameters(
             [
                 Parameter(
@@ -742,6 +973,130 @@ class TestNode(unittest.TestCase):
         self.assertIsInstance(result, list)
         self.assertIsInstance(result[0], SetParametersResult)
         self.assertFalse(result[0].successful)
+
+    def test_node_set_parameters_rejection_list(self):
+        # Declare a new parameters and set a list of callbacks so that it's rejected when set.
+        reject_list_parameter_tuple = [
+            ('reject', True, ParameterDescriptor()),
+            ('accept', True, ParameterDescriptor()),
+            ('accept', True, ParameterDescriptor())
+        ]
+        self.node.declare_parameters('', reject_list_parameter_tuple)
+        self.node.add_on_set_parameters_callback(self.reject_parameter_callback)
+        self.node.add_on_set_parameters_callback(self.reject_parameter_callback_1)
+
+        result = self.node.set_parameters(
+            [
+                Parameter(
+                    name=reject_list_parameter_tuple[0][0],
+                    value=reject_list_parameter_tuple[0][1]
+                ),
+                Parameter(
+                    name=reject_list_parameter_tuple[1][0],
+                    value=reject_list_parameter_tuple[1][1]
+                ),
+                Parameter(
+                    name=reject_list_parameter_tuple[2][0],
+                    value=reject_list_parameter_tuple[2][1]
+                )
+            ]
+        )
+        self.assertEqual(3, len(result))
+        self.assertIsInstance(result, list)
+        self.assertIsInstance(result[0], SetParametersResult)
+        self.assertFalse(result[0].successful)
+        self.assertIsInstance(result[1], SetParametersResult)
+        self.assertTrue(result[1].successful)
+        self.assertIsInstance(result[2], SetParametersResult)
+        self.assertTrue(result[2].successful)
+
+    def test_node_add_on_set_parameter_callback(self):
+        # Add callbacks to the list of callbacks.
+        callbacks = [
+            self.reject_parameter_callback,
+            self.reject_parameter_callback_1
+        ]
+        for callback in callbacks:
+            self.node.add_on_set_parameters_callback(callback)
+        for callback in callbacks:
+            self.assertTrue(callback in self.node._parameters_callbacks)
+        for callback in callbacks:
+            self.node.remove_on_set_parameters_callback(callback)
+
+        # Adding the parameters which will be accepted without any rejections.
+        non_reject_parameter_tuple = [
+            ('accept_1', True, ParameterDescriptor()),
+            ('accept_2', True, ParameterDescriptor())
+        ]
+        self.node.declare_parameters('', non_reject_parameter_tuple)
+
+        for callback in callbacks:
+            self.node.add_on_set_parameters_callback(callback)
+
+        result = self.node.set_parameters(
+            [
+                Parameter(
+                    name=non_reject_parameter_tuple[0][0],
+                    value=non_reject_parameter_tuple[0][1]
+                ),
+                Parameter(
+                    name=non_reject_parameter_tuple[1][0],
+                    value=non_reject_parameter_tuple[1][1]
+                )
+            ]
+        )
+        self.assertEqual(2, len(result))
+        self.assertIsInstance(result, list)
+        self.assertIsInstance(result[0], SetParametersResult)
+        self.assertTrue(result[0].successful)
+        self.assertIsInstance(result[1], SetParametersResult)
+        self.assertTrue(result[1].successful)
+
+    def test_node_remove_from_set_callback(self):
+        # Remove callbacks from list of callbacks.
+        parameter_tuple = (
+            'refuse', True, ParameterDescriptor()
+        )
+        self.node.declare_parameter(*parameter_tuple)
+
+        callbacks = [
+            self.reject_parameter_callback_1,
+        ]
+        # Checking if the callbacks are not already present.
+        for callback in callbacks:
+            self.assertFalse(callback in self.node._parameters_callbacks)
+
+        for callback in callbacks:
+            self.node.add_on_set_parameters_callback(callback)
+
+        result = self.node.set_parameters(
+            [
+                Parameter(
+                    name=parameter_tuple[0],
+                    value=parameter_tuple[1]
+                )
+            ]
+        )
+        self.assertEqual(1, len(result))
+        self.assertIsInstance(result, list)
+        self.assertIsInstance(result[0], SetParametersResult)
+        self.assertFalse(result[0].successful)
+        # Removing the callback which is causing the rejection.
+        self.node.remove_on_set_parameters_callback(self.reject_parameter_callback_1)
+        self.assertFalse(self.reject_parameter_callback_1 in self.node._parameters_callbacks)
+        # Now the setting its value again.
+        result = self.node.set_parameters(
+            [
+                Parameter(
+                    name=parameter_tuple[0],
+                    value=parameter_tuple[1]
+                )
+            ]
+        )
+        self.assertEqual(1, len(result))
+        self.assertIsInstance(result, list)
+        self.assertIsInstance(result[0], SetParametersResult)
+        self.assertTrue(result[0].successful)
 
     def test_node_set_parameters_read_only(self):
         integer_value = 42
@@ -954,7 +1309,7 @@ class TestNode(unittest.TestCase):
         )
 
         self.node.declare_parameter(*reject_parameter_tuple)
-        self.node.set_parameters_callback(self.reject_parameter_callback)
+        self.node.add_on_set_parameters_callback(self.reject_parameter_callback)
         result = self.node.set_parameters_atomically(
             [
                 Parameter(
@@ -1434,7 +1789,10 @@ class TestCreateNode(unittest.TestCase):
 
     def test_use_global_arguments(self):
         context = rclpy.context.Context()
-        rclpy.init(args=['process_name', '__node:=global_node_name'], context=context)
+        rclpy.init(
+            args=['process_name', '--ros-args', '-r', '__node:=global_node_name'],
+            context=context
+        )
         try:
             node1 = rclpy.create_node(
                 'my_node', namespace='/my_ns', use_global_arguments=True, context=context)
@@ -1452,11 +1810,114 @@ class TestCreateNode(unittest.TestCase):
         rclpy.init(context=context)
         try:
             node = rclpy.create_node(
-                'my_node', namespace='/my_ns', cli_args=['__ns:=/foo/bar'], context=context)
+                'my_node',
+                namespace='/my_ns',
+                cli_args=['--ros-args', '-r', '__ns:=/foo/bar'],
+                context=context
+            )
             self.assertEqual('/foo/bar', node.get_namespace())
             node.destroy_node()
         finally:
             rclpy.shutdown(context=context)
+
+    def test_bad_node_arguments(self):
+        context = rclpy.context.Context()
+        rclpy.init(context=context)
+
+        from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
+
+        invalid_ros_args_error_pattern = r'Failed to parse ROS arguments:.*not-a-remap.*'
+        with self.assertRaisesRegex(_rclpy.RCLInvalidROSArgsError, invalid_ros_args_error_pattern):
+            rclpy.create_node(
+                'my_node',
+                namespace='/my_ns',
+                cli_args=['--ros-args', '-r', 'not-a-remap'],
+                context=context)
+
+        unknown_ros_args_error_pattern = r'Found unknown ROS arguments:.*\[\'--my-custom-flag\'\]'
+        with self.assertRaisesRegex(_rclpy.UnknownROSArgsError, unknown_ros_args_error_pattern):
+            rclpy.create_node(
+                'my_node',
+                namespace='/my_ns',
+                cli_args=['--ros-args', '--my-custom-flag'],
+                context=context)
+
+        rclpy.shutdown(context=context)
+
+    def test_node_get_fully_qualified_name(self):
+        context = rclpy.context.Context()
+        rclpy.init(context=context)
+
+        ns = '/my_ns'
+        name = 'my_node'
+        node = rclpy.create_node(name, namespace=ns, context=context)
+        assert node.get_fully_qualified_name() == '{}/{}'.format(ns, name)
+        node.destroy_node()
+
+        # When ns is not specified, a leading / should be added
+        node_without_ns = rclpy.create_node(name, context=context)
+        assert node_without_ns.get_fully_qualified_name() == '/' + name
+        node_without_ns.destroy_node()
+
+        remapped_ns = '/another_ns'
+        remapped_name = 'another_node'
+        node_with_remapped_ns = rclpy.create_node(
+            name,
+            namespace=ns,
+            context=context,
+            cli_args=['--ros-args', '-r', '__ns:=' + remapped_ns]
+        )
+        expected_name = '{}/{}'.format(remapped_ns, name)
+        assert node_with_remapped_ns.get_fully_qualified_name() == expected_name
+        node_with_remapped_ns.destroy_node()
+
+        node_with_remapped_name = rclpy.create_node(
+            name,
+            namespace=ns,
+            context=context,
+            cli_args=['--ros-args', '-r', '__node:=' + remapped_name]
+        )
+        expected_name = '{}/{}'.format(ns, remapped_name)
+        assert node_with_remapped_name.get_fully_qualified_name() == expected_name
+        node_with_remapped_name.destroy_node()
+
+        node_with_remapped_ns_name = rclpy.create_node(
+            name,
+            namespace=ns,
+            context=context,
+            cli_args=['--ros-args', '-r', '__node:=' + remapped_name, '-r', '__ns:=' + remapped_ns]
+        )
+        expected_name = '{}/{}'.format(remapped_ns, remapped_name)
+        assert node_with_remapped_ns_name.get_fully_qualified_name() == expected_name
+        node_with_remapped_ns_name.destroy_node()
+
+        rclpy.shutdown(context=context)
+
+        g_context = rclpy.context.Context()
+        global_remap_name = 'global_node_name'
+        rclpy.init(
+            args=['--ros-args', '-r', '__node:=' + global_remap_name],
+            context=g_context,
+        )
+        node_with_global_arguments = rclpy.create_node(
+            name,
+            namespace=ns,
+            context=g_context,
+        )
+        expected_name = '{}/{}'.format(ns, global_remap_name)
+        assert node_with_global_arguments.get_fully_qualified_name() == expected_name
+        node_with_global_arguments.destroy_node()
+
+        node_skip_global_params = rclpy.create_node(
+            name,
+            namespace=ns,
+            context=g_context,
+            use_global_arguments=False
+        )
+        assert node_skip_global_params.get_fully_qualified_name() == '{}/{}'.format(ns, name)
+        node_skip_global_params.destroy_node()
+
+        rclpy.shutdown(context=g_context)
 
 
 if __name__ == '__main__':
