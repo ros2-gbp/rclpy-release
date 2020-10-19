@@ -19,6 +19,7 @@ from rclpy.handle import Handle
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.qos import QoSProfile
 from rclpy.qos_event import PublisherEventCallbacks
+from rclpy.qos_event import QoSEventHandler
 
 MsgType = TypeVar('MsgType')
 
@@ -53,8 +54,8 @@ class Publisher:
         self.topic = topic
         self.qos_profile = qos_profile
 
-        self.event_handlers = event_callbacks.create_event_handlers(
-            callback_group, publisher_handle)
+        self.event_handlers: QoSEventHandler = event_callbacks.create_event_handlers(
+            callback_group, publisher_handle, topic)
 
     def publish(self, msg: Union[MsgType, bytes]) -> None:
         """
@@ -70,7 +71,7 @@ class Publisher:
             elif isinstance(msg, bytes):
                 _rclpy.rclpy_publish_raw(capsule, msg)
             else:
-                raise TypeError()
+                raise TypeError('Expected {}, got {}'.format(self.msg_type, type(msg)))
 
     def get_subscription_count(self) -> int:
         """Get the amount of subscribers that this publisher has."""
@@ -87,6 +88,8 @@ class Publisher:
         return self.__handle
 
     def destroy(self):
+        for handler in self.event_handlers:
+            handler.destroy()
         self.handle.destroy()
 
     def assert_liveliness(self) -> None:
