@@ -4254,7 +4254,7 @@ cleanup:
     PyErr_Format(
       RCLError,
       "Failed to destroy service_names_and_types: %s", rcl_get_error_string().str);
-    Py_DECREF(pyservice_names_and_types);
+    Py_XDECREF(pyservice_names_and_types);
     rcl_reset_error();
     return NULL;
   }
@@ -4421,8 +4421,8 @@ rclpy_get_rmw_qos_profile(PyObject * Py_UNUSED(self), PyObject * args)
 
 /// Manually assert that an entity is alive.
 /**
-  * When using RMW_QOS_POLICY_MANUAL_BY_TOPIC, the application must call this function at least as
-  * often as the qos policy liveliness_lease_duration.
+  * When using RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC, the application must call this function
+  * at least as often as the qos policy liveliness_lease_duration.
   * The passed entity can be a Publisher.
   *
   * Raises RuntimeError on failure to assert liveliness
