@@ -24,7 +24,6 @@ from typing import Tuple
 from typing import TypeVar
 from typing import Union
 
-import warnings
 import weakref
 
 from rcl_interfaces.msg import FloatingPointRange
@@ -1054,26 +1053,6 @@ class Node:
         self._descriptors[name] = descriptor
         return self.get_parameter(name).get_parameter_value()
 
-    def set_parameters_callback(
-        self,
-        callback: Callable[[List[Parameter]], SetParametersResult]
-    ) -> None:
-        """
-        Register a set parameters callback.
-
-        .. deprecated:: Foxy
-           Use :func:`add_on_set_parameters_callback()` instead.
-
-        Calling this function will add a callback to the self._parameter_callbacks list.
-
-        :param callback: The function that is called whenever parameters are set for the node.
-        """
-        warnings.warn(
-            'set_parameters_callback() is deprecated. '
-            'Use add_on_set_parameters_callback() instead'
-        )
-        self._parameters_callbacks = [callback]
-
     def _validate_topic_or_service_name(self, topic_or_service_name, *, is_service=False):
         name = self.get_name()
         namespace = self.get_namespace()
@@ -1128,7 +1107,7 @@ class Node:
         :param topic: The name of the topic the publisher will publish to.
         :param qos_profile: A QoSProfile or a history depth to apply to the publisher.
           In the case that a history depth is provided, the QoS history is set to
-          RMW_QOS_POLICY_HISTORY_KEEP_LAST, the QoS history depth is set to the value
+          KEEP_LAST, the QoS history depth is set to the value
           of the parameter, and all other QoS settings are set to their default values.
         :param callback_group: The callback group for the publisher's event handlers.
             If ``None``, then the node's default callback group is used.
@@ -1188,7 +1167,7 @@ class Node:
             received by the subscription.
         :param qos_profile: A QoSProfile or a history depth to apply to the subscription.
           In the case that a history depth is provided, the QoS history is set to
-          RMW_QOS_POLICY_HISTORY_KEEP_LAST, the QoS history depth is set to the value
+          KEEP_LAST, the QoS history depth is set to the value
           of the parameter, and all other QoS settings are set to their default values.
         :param callback_group: The callback group for the subscription. If ``None``, then the
             nodes default callback group is used.
