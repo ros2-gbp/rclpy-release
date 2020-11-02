@@ -2,6 +2,12 @@
 Changelog for package rclpy
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+1.3.0 (2020-11-02)
+------------------
+* qos_policy_name_from_kind() should accept either a QoSPolicyKind or an int (`#637 <https://github.com/ros2/rclpy/issues/637>`_)
+* Add method in Node to resolve a topic or service name (`#636 <https://github.com/ros2/rclpy/issues/636>`_)
+* Contributors: Ivan Santiago Paunovic
+
 1.2.1 (2020-10-28)
 ------------------
 * Deprecate verbose qos policy value names (`#634 <https://github.com/ros2/rclpy/issues/634>`_)
