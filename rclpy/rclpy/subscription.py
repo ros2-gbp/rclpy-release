@@ -17,9 +17,7 @@ from typing import TypeVar
 
 from rclpy.callback_groups import CallbackGroup
 from rclpy.handle import Handle
-from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.qos import QoSProfile
-from rclpy.qos_event import QoSEventHandler
 from rclpy.qos_event import SubscriptionEventCallbacks
 
 
@@ -43,7 +41,7 @@ class Subscription:
         """
         Create a container for a ROS subscription.
 
-        .. warning:: Users should not create a subscription with this constructor, instead they
+        .. warning:: Users should not create a subscription with this constuctor, instead they
            should call :meth:`.Node.create_subscription`.
 
         :param subscription_handle: :class:`Handle` wrapping the underlying ``rcl_subscription_t``
@@ -68,19 +66,12 @@ class Subscription:
         self.qos_profile = qos_profile
         self.raw = raw
 
-        self.event_handlers: QoSEventHandler = event_callbacks.create_event_handlers(
-            callback_group, subscription_handle, topic)
+        self.event_handlers = event_callbacks.create_event_handlers(
+            callback_group, subscription_handle)
 
     @property
     def handle(self):
         return self.__handle
 
     def destroy(self):
-        for handler in self.event_handlers:
-            handler.destroy()
         self.handle.destroy()
-
-    @property
-    def topic_name(self):
-        with self.handle as h:
-            return _rclpy.rclpy_get_subscription_topic_name(h)

@@ -12,14 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TypeVar, Union
+from typing import TypeVar
 
 from rclpy.callback_groups import CallbackGroup
 from rclpy.handle import Handle
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.qos import QoSProfile
 from rclpy.qos_event import PublisherEventCallbacks
-from rclpy.qos_event import QoSEventHandler
 
 MsgType = TypeVar('MsgType')
 
@@ -54,10 +53,10 @@ class Publisher:
         self.topic = topic
         self.qos_profile = qos_profile
 
-        self.event_handlers: QoSEventHandler = event_callbacks.create_event_handlers(
-            callback_group, publisher_handle, topic)
+        self.event_handlers = event_callbacks.create_event_handlers(
+            callback_group, publisher_handle)
 
-    def publish(self, msg: Union[MsgType, bytes]) -> None:
+    def publish(self, msg: MsgType) -> None:
         """
         Send a message to the topic for the publisher.
 
@@ -65,13 +64,10 @@ class Publisher:
         :raises: TypeError if the type of the passed message isn't an instance
           of the provided type when the publisher was constructed.
         """
+        if not isinstance(msg, self.msg_type):
+            raise TypeError()
         with self.handle as capsule:
-            if isinstance(msg, self.msg_type):
-                _rclpy.rclpy_publish(capsule, msg)
-            elif isinstance(msg, bytes):
-                _rclpy.rclpy_publish_raw(capsule, msg)
-            else:
-                raise TypeError('Expected {}, got {}'.format(self.msg_type, type(msg)))
+            _rclpy.rclpy_publish(capsule, msg)
 
     def get_subscription_count(self) -> int:
         """Get the amount of subscribers that this publisher has."""
@@ -79,24 +75,17 @@ class Publisher:
             return _rclpy.rclpy_publisher_get_subscription_count(capsule)
 
     @property
-    def topic_name(self) -> str:
-        with self.handle as capsule:
-            return _rclpy.rclpy_publisher_get_topic_name(capsule)
-
-    @property
     def handle(self):
         return self.__handle
 
     def destroy(self):
-        for handler in self.event_handlers:
-            handler.destroy()
         self.handle.destroy()
 
     def assert_liveliness(self) -> None:
         """
         Manually assert that this Publisher is alive.
 
-        If the QoS Liveliness policy is set to MANUAL_BY_TOPIC, the
+        If the QoS Liveliness policy is set to RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC, the
         application must call this at least as often as ``QoSProfile.liveliness_lease_duration``.
         """
         with self.handle as capsule:

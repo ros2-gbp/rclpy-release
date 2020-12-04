@@ -16,7 +16,6 @@ import unittest
 
 import rclpy
 
-from rclpy.serialization import serialize_message
 from test_msgs.msg import BasicTypes, Strings
 
 
@@ -60,11 +59,4 @@ class TestMessages(unittest.TestCase):
             BasicTypes, 'chatter_different_message_type', 1)
         with self.assertRaises(TypeError):
             pub.publish('different message type')
-        self.node.destroy_publisher(pub)
-
-    def test_serialized_publish(self):
-        msg = Strings()
-        msg.string_value = 'ñu'
-        pub = self.node.create_publisher(BasicTypes, 'chatter', 1)
-        pub.publish(serialize_message(msg))
         self.node.destroy_publisher(pub)

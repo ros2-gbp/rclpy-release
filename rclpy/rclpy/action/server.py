@@ -210,7 +210,7 @@ class ActionServer(Waitable):
         result_timeout=900
     ):
         """
-        Create an ActionServer.
+        Constructor.
 
         :param node: The ROS node to add the action server to.
         :param action_type: Type of the action.

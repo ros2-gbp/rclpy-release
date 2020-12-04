@@ -125,7 +125,7 @@ class ActionClient(Waitable):
         status_sub_qos_profile=qos_profile_action_status_default
     ):
         """
-        Create an ActionClient.
+        Constructor.
 
         :param node: The ROS node to add the action client to.
         :param action_type: Type of the action.
@@ -567,7 +567,6 @@ class ActionClient(Waitable):
         Wait for an action sever to be ready.
 
         Returns as soon as an action server is ready for this client.
-
         :param timeout_sec: Number of seconds to wait until an action server is available.
             If None, then wait indefinitely.
         :return: True if an action server is available, False if the timeout is exceeded.

@@ -22,8 +22,7 @@ from rclpy.executors import SingleThreadedExecutor
 # Hz
 FREQ = 10.0
 PERIOD = 1.0 / FREQ
-PASS_MAX_AVERAGE_JITTER = PERIOD * 0.1
-PASS_MAX_SINGLE_JITTER = PERIOD * 0.25
+PASS_MAX_JITTER = PERIOD * 0.1
 
 
 class RateRunner:
@@ -31,8 +30,6 @@ class RateRunner:
     def __init__(self, rate):
         self.avg_period = None
         self.max_jitter = None
-        self.min_period = None
-        self.max_period = None
         self.done = False
 
         self._num_measurements = 10
@@ -40,8 +37,7 @@ class RateRunner:
         self._thread.start()
 
     def __str__(self):
-        return 'avg period: {} max jitter: {} min: {} max: {} '.format(
-            self.avg_period, self.max_jitter, self.min_period, self.max_period)
+        return 'avg period: {} max jitter: {}'.format(self.avg_period, self.max_jitter)
 
     def _run(self, rate):
         try:
@@ -57,9 +53,7 @@ class RateRunner:
                 last_wake_time = now
 
             self.avg_period = sum(measurements) / len(measurements)
-            self.max_jitter = max([abs(m - self.avg_period) for m in measurements])  # noqa: C407
-            self.min_period = min(measurements)
-            self.max_period = max(measurements)
+            self.max_jitter = max([abs(m) - self.avg_period for m in measurements])  # noqa: C407
         finally:
             self.done = True
 
@@ -85,8 +79,8 @@ class TestRate:
         while not runner.done:
             self.executor.spin_once()
 
-        assert runner.max_jitter <= PASS_MAX_SINGLE_JITTER, str(runner)
-        assert abs(runner.avg_period - PERIOD) <= PASS_MAX_AVERAGE_JITTER, str(runner)
+        assert runner.max_jitter <= PASS_MAX_JITTER, str(runner)
+        assert abs(runner.avg_period - PERIOD) <= PASS_MAX_JITTER, str(runner)
 
     def test_rate_invalid_period(self):
         with pytest.raises(TypeError):

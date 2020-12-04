@@ -14,7 +14,6 @@
 
 #include <Python.h>
 
-#include <rcutils/allocator.h>
 #include <rcutils/error_handling.h>
 #include <rcutils/logging.h>
 #include <rcutils/time.h>
@@ -29,8 +28,7 @@ rclpy_logging_initialize(PyObject * Py_UNUSED(self), PyObject * Py_UNUSED(args))
 {
   rcutils_ret_t ret = rcutils_logging_initialize();
   if (ret != RCUTILS_RET_OK) {
-    PyErr_Format(
-      PyExc_RuntimeError,
+    PyErr_Format(PyExc_RuntimeError,
       "Failed to initialize logging system, return code: %d\n", ret);
     rcutils_reset_error();
     return NULL;
@@ -49,8 +47,7 @@ rclpy_logging_shutdown(PyObject * Py_UNUSED(self), PyObject * Py_UNUSED(args))
   // TODO(dhood): error checking
   rcutils_ret_t ret = rcutils_logging_shutdown();
   if (ret != RCUTILS_RET_OK) {
-    PyErr_Format(
-      PyExc_RuntimeError,
+    PyErr_Format(PyExc_RuntimeError,
       "Failed to shutdown logging system, return code: %d\n", ret);
     rcutils_reset_error();
     return NULL;
@@ -77,8 +74,7 @@ rclpy_logging_set_logger_level(PyObject * Py_UNUSED(self), PyObject * args)
 
   rcutils_ret_t ret = rcutils_logging_set_logger_level(name, level);
   if (ret != RCUTILS_RET_OK) {
-    PyErr_Format(
-      PyExc_RuntimeError,
+    PyErr_Format(PyExc_RuntimeError,
       "Failed to set level \"%d\" for logger \"%s\", return code: %d\n",
       level, name, ret);
     rcutils_reset_error();
@@ -107,8 +103,7 @@ rclpy_logging_get_logger_effective_level(PyObject * Py_UNUSED(self), PyObject * 
   int logger_level = rcutils_logging_get_logger_effective_level(name);
 
   if (logger_level < 0) {
-    PyErr_Format(
-      PyExc_RuntimeError,
+    PyErr_Format(PyExc_RuntimeError,
       "Failed to get effective level for logger \"%s\", return code: %d\n",
       name, logger_level);
     rcutils_reset_error();
@@ -162,96 +157,16 @@ rclpy_logging_rcutils_log(PyObject * Py_UNUSED(self), PyObject * args)
   const char * function_name;
   const char * file_name;
   unsigned PY_LONG_LONG line_number;
-  if (
-    !PyArg_ParseTuple(
-      args, "issssK", &severity, &name, &message, &function_name, &file_name,
-      &line_number))
+  if (!PyArg_ParseTuple(args, "issssK",
+    &severity, &name, &message, &function_name, &file_name, &line_number))
   {
     return NULL;
   }
 
-  RCUTILS_LOGGING_AUTOINIT;
+  RCUTILS_LOGGING_AUTOINIT
   rcutils_log_location_t logging_location = {function_name, file_name, line_number};
   rcutils_log(&logging_location, severity, name, "%s", message);
   Py_RETURN_NONE;
-}
-
-/// Get the log severity based on the log level string representation
-/**
- * Raises RuntimeError if an invalid log level name is given.
- * Raises ValueError if log level is not a string.
- *
- * \param[in] log_level Name of the log level.
- * \return NULL on failure
-           Log level associated with the string representation
- */
-static PyObject *
-rclpy_logging_severity_level_from_string(PyObject * Py_UNUSED(self), PyObject * args)
-{
-  int severity;
-  const char * log_level = NULL;
-  if (!PyArg_ParseTuple(args, "s", &log_level)) {
-    return NULL;
-  }
-  rcutils_allocator_t allocator = rcutils_get_default_allocator();
-  rcutils_ret_t ret = rcutils_logging_severity_level_from_string(log_level, allocator, &severity);
-  if (ret != RCUTILS_RET_OK) {
-    PyErr_Format(
-      PyExc_RuntimeError,
-      "Failed to get log severity from name \"%s\", return code: %d\n",
-      log_level, ret);
-    rcutils_reset_error();
-    return NULL;
-  }
-  return PyLong_FromLongLong(severity);
-}
-
-/// Get log unset severity level as int from rcutils.
-/// \return RCUTILS_LOG_SEVERITY_UNSET as a PyLong.
-static PyObject *
-rclpy_get_unset_logging_severity(PyObject * Py_UNUSED(self), PyObject * Py_UNUSED(args))
-{
-  return PyLong_FromLongLong(RCUTILS_LOG_SEVERITY_UNSET);
-}
-
-/// Get log debug severity level as int from rcutils.
-/// \return RCUTILS_LOG_SEVERITY_DEBUG as a PyLong.
-static PyObject *
-rclpy_get_debug_logging_severity(PyObject * Py_UNUSED(self), PyObject * Py_UNUSED(args))
-{
-  return PyLong_FromLongLong(RCUTILS_LOG_SEVERITY_DEBUG);
-}
-
-/// Get log info severity level as int from rcutils.
-/// \return RCUTILS_LOG_SEVERITY_INFO as a PyLong.
-static PyObject *
-rclpy_get_info_logging_severity(PyObject * Py_UNUSED(self), PyObject * Py_UNUSED(args))
-{
-  return PyLong_FromLongLong(RCUTILS_LOG_SEVERITY_INFO);
-}
-
-/// Get log warn severity level as int from rcutils
-/// \return RCUTILS_LOG_SEVERITY_WARN as a PyLong.
-static PyObject *
-rclpy_get_warn_logging_severity(PyObject * Py_UNUSED(self), PyObject * Py_UNUSED(args))
-{
-  return PyLong_FromLongLong(RCUTILS_LOG_SEVERITY_WARN);
-}
-
-/// Get log error severity level as int from rcutils
-/// \return RCUTILS_LOG_SEVERITY_ERROR as a PyLong.
-static PyObject *
-rclpy_get_error_logging_severity(PyObject * Py_UNUSED(self), PyObject * Py_UNUSED(args))
-{
-  return PyLong_FromLongLong(RCUTILS_LOG_SEVERITY_ERROR);
-}
-
-/// Get log fatal severity level as int from rcutils.
-/// \return RCUTILS_LOG_SEVERITY_FATAL as a PyLong.
-static PyObject *
-rclpy_get_fatal_logging_severity(PyObject * Py_UNUSED(self), PyObject * Py_UNUSED(args))
-{
-  return PyLong_FromLongLong(RCUTILS_LOG_SEVERITY_FATAL);
 }
 
 /// Define the public methods of this module
@@ -281,39 +196,12 @@ static PyMethodDef rclpy_logging_methods[] = {
     "rclpy_logging_rcutils_log", rclpy_logging_rcutils_log, METH_VARARGS,
     "Log a message with the specified severity"
   },
-  {
-    "rclpy_logging_severity_level_from_string", rclpy_logging_severity_level_from_string,
-    METH_VARARGS, "Determine log level from string"
-  },
-  {
-    "rclpy_get_unset_logging_severity", rclpy_get_unset_logging_severity,
-    METH_VARARGS, "Get log unset severity level as int from rcutils"
-  },
-  {
-    "rclpy_get_debug_logging_severity", rclpy_get_debug_logging_severity,
-    METH_VARARGS, "Get log debug severity level as int from rcutils"
-  },
-  {
-    "rclpy_get_info_logging_severity", rclpy_get_info_logging_severity,
-    METH_VARARGS, "Get log info severity level as int from rcutils"
-  },
-  {
-    "rclpy_get_warn_logging_severity", rclpy_get_warn_logging_severity,
-    METH_VARARGS, "Get log warn severity level as int from rcutils"
-  },
-  {
-    "rclpy_get_error_logging_severity", rclpy_get_error_logging_severity,
-    METH_VARARGS, "Get log error severity level as int from rcutils"
-  },
-  {
-    "rclpy_get_fatal_logging_severity", rclpy_get_fatal_logging_severity,
-    METH_VARARGS, "Get log fatal severity level as int from rcutils"
-  },
 
   {NULL, NULL, 0, NULL}  /* sentinel */
 };
 
-PyDoc_STRVAR(rclpy_logging__doc__, "RCLPY module for logging.");
+PyDoc_STRVAR(rclpy_logging__doc__,
+  "RCLPY module for logging.");
 
 /// Define the Python module
 static struct PyModuleDef _rclpy_logging_module = {
