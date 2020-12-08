@@ -20,6 +20,7 @@ from typing import Dict
 from typing import Iterator
 from typing import List
 from typing import Optional
+from typing import Sequence
 from typing import Tuple
 from typing import TypeVar
 from typing import Union
@@ -43,6 +44,7 @@ from rclpy.clock import ROSClock
 from rclpy.constants import S_TO_NS
 from rclpy.context import Context
 from rclpy.exceptions import InvalidParameterValueException
+from rclpy.exceptions import InvalidTopicNameException
 from rclpy.exceptions import NotInitializedException
 from rclpy.exceptions import ParameterAlreadyDeclaredException
 from rclpy.exceptions import ParameterImmutableException
@@ -62,11 +64,14 @@ from rclpy.qos import qos_profile_services_default
 from rclpy.qos import QoSProfile
 from rclpy.qos_event import PublisherEventCallbacks
 from rclpy.qos_event import SubscriptionEventCallbacks
+from rclpy.qos_overriding_options import _declare_qos_parameters
+from rclpy.qos_overriding_options import QoSOverridingOptions
 from rclpy.service import Service
 from rclpy.subscription import Subscription
 from rclpy.time_source import TimeSource
 from rclpy.timer import Rate
 from rclpy.timer import Timer
+from rclpy.topic_endpoint_info import TopicEndpointInfo
 from rclpy.type_support import check_for_type_support
 from rclpy.utilities import get_default_context
 from rclpy.validate_full_topic_name import validate_full_topic_name
@@ -90,14 +95,17 @@ NodeNameNonExistentError = _rclpy.NodeNameNonExistentError
 
 
 class Node:
-
-    PARAM_REL_TOL = 1e-6
-
     """
     A Node in the ROS graph.
 
     A Node is the primary entrypoint in a ROS system for communication.
     It can be used to create ROS entities such as publishers, subscribers, services, etc.
+    """
+
+    PARAM_REL_TOL = 1e-6
+    """
+    Relative tolerance for floating point parameter values' comparison.
+    See `math.isclose` documentation.
     """
 
     def __init__(
@@ -108,13 +116,14 @@ class Node:
         cli_args: List[str] = None,
         namespace: str = None,
         use_global_arguments: bool = True,
+        enable_rosout: bool = True,
         start_parameter_services: bool = True,
         parameter_overrides: List[Parameter] = None,
         allow_undeclared_parameters: bool = False,
         automatically_declare_parameters_from_overrides: bool = False
     ) -> None:
         """
-        Constructor.
+        Create a Node.
 
         :param node_name: A name to give to this node. Validated by :func:`validate_node_name`.
         :param context: The context to be associated with, or ``None`` for the default global
@@ -126,6 +135,7 @@ class Node:
             Validated by :func:`validate_namespace`.
         :param use_global_arguments: ``False`` if the node should ignore process-wide command line
             args.
+        :param enable_rosout: ``False`` if the node should ignore rosout logging.
         :param start_parameter_services: ``False`` if the node should not create parameter
             services.
         :param parameter_overrides: A list of overrides for initial values for parameters declared
@@ -146,8 +156,8 @@ class Node:
         self.__guards: List[GuardCondition] = []
         self.__waitables: List[Waitable] = []
         self._default_callback_group = MutuallyExclusiveCallbackGroup()
+        self._parameters_callbacks: List[Callable[[List[Parameter]], SetParametersResult]] = []
         self._rate_group = ReentrantCallbackGroup()
-        self._parameters_callback = None
         self._allow_undeclared_parameters = allow_undeclared_parameters
         self._parameter_overrides = {}
         self._descriptors = {}
@@ -155,28 +165,34 @@ class Node:
         namespace = namespace or ''
         if not self._context.ok():
             raise NotInitializedException('cannot create node')
-        try:
-            self.__handle = Handle(_rclpy.rclpy_create_node(
-                node_name, namespace, self._context.handle, cli_args, use_global_arguments
-            ))
-        except ValueError:
-            # these will raise more specific errors if the name or namespace is bad
-            validate_node_name(node_name)
-            # emulate what rcl_node_init() does to accept '' and relative namespaces
-            if not namespace:
-                namespace = '/'
-            if not namespace.startswith('/'):
-                namespace = '/' + namespace
-            validate_namespace(namespace)
-            # Should not get to this point
-            raise RuntimeError('rclpy_create_node failed for unknown reason')
+        with self._context.handle as capsule:
+            try:
+                self.__handle = Handle(_rclpy.rclpy_create_node(
+                    node_name,
+                    namespace,
+                    capsule,
+                    cli_args,
+                    use_global_arguments,
+                    enable_rosout
+                ))
+            except ValueError:
+                # these will raise more specific errors if the name or namespace is bad
+                validate_node_name(node_name)
+                # emulate what rcl_node_init() does to accept '' and relative namespaces
+                if not namespace:
+                    namespace = '/'
+                if not namespace.startswith('/'):
+                    namespace = '/' + namespace
+                validate_namespace(namespace)
+                # Should not get to this point
+                raise RuntimeError('rclpy_create_node failed for unknown reason')
         with self.handle as capsule:
             self._logger = get_logger(_rclpy.rclpy_get_node_logger_name(capsule))
 
         self.__executor_weakref = None
 
         self._parameter_event_publisher = self.create_publisher(
-            ParameterEvent, 'parameter_events', qos_profile_parameter_events)
+            ParameterEvent, '/parameter_events', qos_profile_parameter_events)
 
         with self.handle as capsule:
             self._parameter_overrides = _rclpy.rclpy_get_node_parameters(Parameter, capsule)
@@ -319,7 +335,7 @@ class Node:
         Declare and initialize a parameter.
 
         This method, if successful, will result in any callback registered with
-        :func:`set_parameters_callback` to be called.
+        :func:`add_on_set_parameters_callback` to be called.
 
         :param name: Fully-qualified name of the parameter, including its namespace.
         :param value: Value of the parameter to declare.
@@ -361,7 +377,7 @@ class Node:
         This allows you to declare several parameters at once without a namespace.
 
         This method, if successful, will result in any callback registered with
-        :func:`set_parameters_callback` to be called once for each parameter.
+        :func:`add_on_set_parameters_callback` to be called once for each parameter.
         If one of those calls fail, an exception will be raised and the remaining parameters will
         not be declared.
         Parameters declared up to that point will not be undeclared.
@@ -373,7 +389,7 @@ class Node:
         :raises: ParameterAlreadyDeclaredException if the parameter had already been declared.
         :raises: InvalidParameterException if the parameter name is invalid.
         :raises: InvalidParameterValueException if the registered callback rejects any parameter.
-        :raises: TypeError if any tuple in :param:`parameters` does not match the annotated type.
+        :raises: TypeError if any tuple in **parameters** does not match the annotated type.
         """
         parameter_list = []
         descriptors = {}
@@ -449,7 +465,7 @@ class Node:
         Undeclare a previously declared parameter.
 
         This method will not cause a callback registered with
-        :func:`set_parameters_callback` to be called.
+        :func:`add_on_set_parameters_callback` to be called.
 
         :param name: Fully-qualified name of the parameter, including its namespace.
         :raises: ParameterNotDeclaredException if parameter had not been declared before.
@@ -518,7 +534,10 @@ class Node:
 
         return self._parameters.get(name, alternative_value)
 
-    def get_parameters_by_prefix(self, prefix: str) -> List[Parameter]:
+    def get_parameters_by_prefix(self, prefix: str) -> Dict[str, Optional[Union[
+        bool, int, float, str, bytes,
+        Sequence[bool], Sequence[int], Sequence[float], Sequence[str]
+    ]]]:
         """
         Get parameters that have a given prefix in their names as a dictionary.
 
@@ -535,16 +554,14 @@ class Node:
         :param prefix: The prefix of the parameters to get.
         :return: Dict of parameters with the given prefix.
         """
-        parameters_with_prefix = {}
         if prefix:
             prefix = prefix + PARAMETER_SEPARATOR_STRING
         prefix_len = len(prefix)
-        for parameter_name in self._parameters:
-            if parameter_name.startswith(prefix):
-                parameters_with_prefix.update(
-                    {parameter_name[prefix_len:]: self._parameters.get(parameter_name)})
-
-        return parameters_with_prefix
+        return {
+            param_name[prefix_len:]: param_value
+            for param_name, param_value in self._parameters.items()
+            if param_name.startswith(prefix)
+        }
 
     def set_parameters(self, parameter_list: List[Parameter]) -> List[SetParametersResult]:
         """
@@ -562,8 +579,8 @@ class Node:
         declared before being set even if they were not declared beforehand.
         Parameter overrides are ignored by this method.
 
-        If a callback was registered previously with :func:`set_parameters_callback`, it will be
-        called prior to setting the parameters for the node, once for each parameter.
+        If a callback was registered previously with :func:`add_on_set_parameters_callback`, it
+        will be called prior to setting the parameters for the node, once for each parameter.
         If the callback prevents a parameter from being set, then it will be reflected in the
         returned result; no exceptions will be raised in this case.
         For each successfully set parameter, a :class:`ParameterEvent` message is
@@ -593,8 +610,8 @@ class Node:
         By default it checks if the parameters were declared, raising an exception if at least
         one of them was not.
 
-        If a callback was registered previously with :func:`set_parameters_callback`, it will be
-        called prior to setting the parameters for the node, once for each parameter.
+        If a callback was registered previously with :func:`add_on_set_parameters_callback`, it
+        will be called prior to setting the parameters for the node, once for each parameter.
         If the callback doesn't succeed for a given parameter, it won't be set and either an
         unsuccessful result will be returned for that parameter, or an exception will be raised
         according to `raise_on_failure` flag.
@@ -644,8 +661,8 @@ class Node:
         If undeclared parameters are allowed for the node, then all the parameters will be
         implicitly declared before being set even if they were not declared beforehand.
 
-        If a callback was registered previously with :func:`set_parameters_callback`, it will be
-        called prior to setting the parameters for the node only once for all parameters.
+        If a callback was registered previously with :func:`add_on_set_parameters_callback`, it
+        will be called prior to setting the parameters for the node only once for all parameters.
         If the callback prevents the parameters from being set, then it will be reflected in the
         returned result; no exceptions will be raised in this case.
         For each successfully set parameter, a :class:`ParameterEvent` message is published.
@@ -689,8 +706,8 @@ class Node:
         This internal method does not reject undeclared parameters.
         If :param:`allow_not_set_type` is False, a parameter with type NOT_SET will be undeclared.
 
-        If a callback was registered previously with :func:`set_parameters_callback`, it will be
-        called prior to setting the parameters for the node only once for all parameters.
+        If a callback was registered previously with :func:`add_on_set_parameters_callback`, it
+        will be called prior to setting the parameters for the node only once for all parameters.
         If the callback prevents the parameters from being set, then it will be reflected in the
         returned result; no exceptions will be raised in this case.
         For each successfully set parameter, a :class:`ParameterEvent` message is
@@ -714,10 +731,12 @@ class Node:
 
         if not result.successful:
             return result
-        elif self._parameters_callback:
-            result = self._parameters_callback(parameter_list)
-        else:
-            result = SetParametersResult(successful=True)
+        elif self._parameters_callbacks:
+            for callback in self._parameters_callbacks:
+                result = callback(parameter_list)
+                if not result.successful:
+                    return result
+        result = SetParametersResult(successful=True)
 
         if result.successful:
             parameter_event = ParameterEvent()
@@ -760,6 +779,33 @@ class Node:
             self._parameter_event_publisher.publish(parameter_event)
 
         return result
+
+    def add_on_set_parameters_callback(
+        self,
+        callback: Callable[[List[Parameter]], SetParametersResult]
+    ) -> None:
+        """
+        Add a callback in front to the list of callbacks.
+
+        Calling this function will add a callback in self._parameter_callbacks list.
+
+        :param callback: The function that is called whenever parameters are set for the node.
+        """
+        self._parameters_callbacks.insert(0, callback)
+
+    def remove_on_set_parameters_callback(
+        self,
+        callback: Callable[[List[Parameter]], SetParametersResult]
+    ) -> None:
+        """
+        Remove a callback from list of callbacks.
+
+        Calling this function will remove the callback from self._parameter_callbacks list.
+
+        :param callback: The function that is called whenever parameters are set for the node.
+        :raises: ValueError if a callback is not present in the list of callbacks.
+        """
+        self._parameters_callbacks.remove(callback)
 
     def _apply_descriptors(
         self,
@@ -967,7 +1013,7 @@ class Node:
         """
         Set a new descriptor for a given parameter.
 
-        The name in the descriptor is ignored and set to :param:`name`.
+        The name in the descriptor is ignored and set to **name**.
 
         :param name: Fully-qualified name of the parameter to set the descriptor to.
         :param descriptor: New descriptor to apply to the parameter.
@@ -1012,19 +1058,6 @@ class Node:
         self._descriptors[name] = descriptor
         return self.get_parameter(name).get_parameter_value()
 
-    def set_parameters_callback(
-        self,
-        callback: Callable[[List[Parameter]], SetParametersResult]
-    ) -> None:
-        """
-        Register a set parameters callback.
-
-        Calling this function with override any previously registered callback.
-
-        :param callback: The function that is called whenever parameters are set for the node.
-        """
-        self._parameters_callback = callback
-
     def _validate_topic_or_service_name(self, topic_or_service_name, *, is_service=False):
         name = self.get_name()
         namespace = self.get_namespace()
@@ -1063,6 +1096,32 @@ class Node:
         self.__waitables.remove(waitable)
         self._wake_executor()
 
+    def resolve_topic_name(self, topic: str, *, only_expand: bool = False) -> str:
+        """
+        Return a topic name expanded and remapped.
+
+        :param topic: topic name to be expanded and remapped.
+        :param only_expand: if `True`, remapping rules won't be applied.
+        :return: a fully qualified topic name,
+            result of applying expansion and remapping to the given `topic`.
+        """
+        with self.handle as capsule:
+            return _rclpy.rclpy_resolve_name(capsule, topic, only_expand, False)
+
+    def resolve_service_name(
+        self, service: str, *, only_expand: bool = False
+    ) -> str:
+        """
+        Return a service name expanded and remapped.
+
+        :param service: service name to be expanded and remapped.
+        :param only_expand: if `True`, remapping rules won't be applied.
+        :return: a fully qualified service name,
+            result of applying expansion and remapping to the given `service`.
+        """
+        with self.handle as capsule:
+            return _rclpy.rclpy_resolve_name(capsule, service, only_expand, True)
+
     def create_publisher(
         self,
         msg_type,
@@ -1071,6 +1130,7 @@ class Node:
         *,
         callback_group: Optional[CallbackGroup] = None,
         event_callbacks: Optional[PublisherEventCallbacks] = None,
+        qos_overriding_options: Optional[QoSOverridingOptions] = None,
     ) -> Publisher:
         """
         Create a new publisher.
@@ -1079,7 +1139,7 @@ class Node:
         :param topic: The name of the topic the publisher will publish to.
         :param qos_profile: A QoSProfile or a history depth to apply to the publisher.
           In the case that a history depth is provided, the QoS history is set to
-          RMW_QOS_POLICY_HISTORY_KEEP_LAST, the QoS history depth is set to the value
+          KEEP_LAST, the QoS history depth is set to the value
           of the parameter, and all other QoS settings are set to their default values.
         :param callback_group: The callback group for the publisher's event handlers.
             If ``None``, then the node's default callback group is used.
@@ -1090,9 +1150,26 @@ class Node:
 
         callback_group = callback_group or self.default_callback_group
 
-        # this line imports the typesupport for the message module if not already done
-        check_for_type_support(msg_type)
         failed = False
+        try:
+            final_topic = self.resolve_topic_name(topic)
+        except RuntimeError:
+            # if it's name validation error, raise a more appropriate exception.
+            try:
+                self._validate_topic_or_service_name(topic)
+            except InvalidTopicNameException as ex:
+                raise ex from None
+            # else reraise the previous exception
+            raise
+
+        if qos_overriding_options is None:
+            qos_overriding_options = QoSOverridingOptions([])
+        _declare_qos_parameters(
+            Publisher, self, final_topic, qos_profile, qos_overriding_options)
+
+        # this line imports the typesupport for the message module if not already done
+        failed = False
+        check_for_type_support(msg_type)
         try:
             with self.handle as node_capsule:
                 publisher_capsule = _rclpy.rclpy_create_publisher(
@@ -1103,12 +1180,14 @@ class Node:
             self._validate_topic_or_service_name(topic)
 
         publisher_handle = Handle(publisher_capsule)
-        publisher_handle.requires(self.handle)
-
-        publisher = Publisher(
-            publisher_handle, msg_type, topic, qos_profile,
-            event_callbacks=event_callbacks or PublisherEventCallbacks(),
-            callback_group=callback_group)
+        try:
+            publisher = Publisher(
+                publisher_handle, msg_type, topic, qos_profile,
+                event_callbacks=event_callbacks or PublisherEventCallbacks(),
+                callback_group=callback_group)
+        except Exception:
+            publisher_handle.destroy()
+            raise
         self.__publishers.append(publisher)
         self._wake_executor()
 
@@ -1126,6 +1205,7 @@ class Node:
         *,
         callback_group: Optional[CallbackGroup] = None,
         event_callbacks: Optional[SubscriptionEventCallbacks] = None,
+        qos_overriding_options: Optional[QoSOverridingOptions] = None,
         raw: bool = False
     ) -> Subscription:
         """
@@ -1137,7 +1217,7 @@ class Node:
             received by the subscription.
         :param qos_profile: A QoSProfile or a history depth to apply to the subscription.
           In the case that a history depth is provided, the QoS history is set to
-          RMW_QOS_POLICY_HISTORY_KEEP_LAST, the QoS history depth is set to the value
+          KEEP_LAST, the QoS history depth is set to the value
           of the parameter, and all other QoS settings are set to their default values.
         :param callback_group: The callback group for the subscription. If ``None``, then the
             nodes default callback group is used.
@@ -1149,9 +1229,25 @@ class Node:
 
         callback_group = callback_group or self.default_callback_group
 
+        try:
+            final_topic = self.resolve_topic_name(topic)
+        except RuntimeError:
+            # if it's name validation error, raise a more appropriate exception.
+            try:
+                self._validate_topic_or_service_name(topic)
+            except InvalidTopicNameException as ex:
+                raise ex from None
+            # else reraise the previous exception
+            raise
+
+        if qos_overriding_options is None:
+            qos_overriding_options = QoSOverridingOptions([])
+        _declare_qos_parameters(
+            Subscription, self, final_topic, qos_profile, qos_overriding_options)
+
         # this line imports the typesupport for the message module if not already done
-        check_for_type_support(msg_type)
         failed = False
+        check_for_type_support(msg_type)
         try:
             with self.handle as capsule:
                 subscription_capsule = _rclpy.rclpy_create_subscription(
@@ -1162,12 +1258,14 @@ class Node:
             self._validate_topic_or_service_name(topic)
 
         subscription_handle = Handle(subscription_capsule)
-        subscription_handle.requires(self.handle)
-
-        subscription = Subscription(
-            subscription_handle, msg_type,
-            topic, callback, callback_group, qos_profile, raw,
-            event_callbacks=event_callbacks or SubscriptionEventCallbacks())
+        try:
+            subscription = Subscription(
+                subscription_handle, msg_type,
+                topic, callback, callback_group, qos_profile, raw,
+                event_callbacks=event_callbacks or SubscriptionEventCallbacks())
+        except Exception:
+            subscription_handle.destroy()
+            raise
         self.__subscriptions.append(subscription)
         callback_group.add_entity(subscription)
 
@@ -1210,7 +1308,6 @@ class Node:
             self._validate_topic_or_service_name(srv_name, is_service=True)
 
         client_handle = Handle(client_capsule)
-        client_handle.requires(self.handle)
 
         client = Client(
             self.context,
@@ -1258,7 +1355,6 @@ class Node:
             self._validate_topic_or_service_name(srv_name, is_service=True)
 
         service_handle = Handle(service_capsule)
-        service_handle.requires(self.handle)
 
         service = Service(
             service_handle,
@@ -1293,7 +1389,6 @@ class Node:
         if clock is None:
             clock = self._clock
         timer = Timer(callback, callback_group, timer_period_nsec, clock, context=self.context)
-        timer.handle.requires(self.handle)
 
         self.__timers.append(timer)
         callback_group.add_entity(timer)
@@ -1309,7 +1404,6 @@ class Node:
         if callback_group is None:
             callback_group = self.default_callback_group
         guard = GuardCondition(callback, callback_group, context=self.context)
-        guard.handle.requires(self.handle)
 
         self.__guards.append(guard)
         callback_group.add_entity(guard)
@@ -1346,6 +1440,8 @@ class Node:
         """
         if publisher in self.__publishers:
             self.__publishers.remove(publisher)
+            for event_handler in publisher.event_handlers:
+                self.__waitables.remove(event_handler)
             try:
                 publisher.destroy()
             except InvalidHandle:
@@ -1362,6 +1458,8 @@ class Node:
         """
         if subscription in self.__subscriptions:
             self.__subscriptions.remove(subscription)
+            for event_handler in subscription.event_handlers:
+                self.__waitables.remove(event_handler)
             try:
                 subscription.destroy()
             except InvalidHandle:
@@ -1604,9 +1702,28 @@ class Node:
         with self.handle as capsule:
             return _rclpy.rclpy_get_node_names_and_namespaces(capsule)
 
+    def get_node_names_and_namespaces_with_enclaves(self) -> List[Tuple[str, str, str]]:
+        """
+        Get a list of names, namespaces and enclaves for discovered nodes.
+
+        :return: List of tuples containing three strings: the node name, node namespace
+            and enclave.
+        """
+        with self.handle as capsule:
+            return _rclpy.rclpy_get_node_names_and_namespaces_with_enclaves(capsule)
+
+    def get_fully_qualified_name(self) -> str:
+        """
+        Get the node's fully qualified name.
+
+        :return: Fully qualified node name.
+        """
+        with self.handle as capsule:
+            return _rclpy.rclpy_node_get_fully_qualified_name(capsule)
+
     def _count_publishers_or_subscribers(self, topic_name, func):
         fq_topic_name = expand_topic_name(topic_name, self.get_name(), self.get_namespace())
-        validate_topic_name(fq_topic_name)
+        validate_full_topic_name(fq_topic_name)
         with self.handle as node_capsule:
             return func(node_capsule, fq_topic_name)
 
@@ -1636,12 +1753,81 @@ class Node:
         """
         return self._count_publishers_or_subscribers(topic_name, _rclpy.rclpy_count_subscribers)
 
-    def assert_liveliness(self) -> None:
-        """
-        Manually assert that this Node is alive.
+    def _get_info_by_topic(
+        self,
+        topic_name: str,
+        no_mangle: bool,
+        func: Callable[[object, str, bool], List[Dict]]
+    ) -> List[TopicEndpointInfo]:
+        with self.handle as node_capsule:
+            if no_mangle:
+                fq_topic_name = topic_name
+            else:
+                fq_topic_name = expand_topic_name(
+                    topic_name, self.get_name(), self.get_namespace())
+                validate_full_topic_name(fq_topic_name)
+                fq_topic_name = _rclpy.rclpy_remap_topic_name(node_capsule, fq_topic_name)
 
-        If the QoS Liveliness policy is set to RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_NODE, the
-        application must call this at least as often as ``QoSProfile.liveliness_lease_duration``.
+            info_dicts = func(node_capsule, fq_topic_name, no_mangle)
+            infos = [TopicEndpointInfo(**x) for x in info_dicts]
+            return infos
+
+    def get_publishers_info_by_topic(
+        self,
+        topic_name: str,
+        no_mangle: bool = False
+    ) -> List[TopicEndpointInfo]:
         """
-        with self.handle as capsule:
-            _rclpy.rclpy_assert_liveliness(capsule)
+        Return a list of publishers on a given topic.
+
+        The returned parameter is a list of TopicEndpointInfo objects, where each will contain
+        the node name, node namespace, topic type, topic endpoint's GID, and its QoS profile.
+
+        When the `no_mangle` parameter is `true`, the provided `topic_name` should be a valid topic
+        name for the middleware (useful when combining ROS with native middleware (e.g. DDS) apps).
+        When the `no_mangle` parameter is `false`, the provided `topic_name` should follow
+        ROS topic name conventions.
+
+        `topic_name` may be a relative, private, or fully qualified topic name.
+        A relative or private topic will be expanded using this node's namespace and name.
+        The queried `topic_name` is not remapped.
+
+        :param topic_name: the topic_name on which to find the publishers.
+        :param no_mangle: no_mangle if `true`, `topic_name` needs to be a valid middleware topic
+            name, otherwise it should be a valid ROS topic name. Defaults to `false`.
+        :return: a list of TopicEndpointInfo for all the publishers on this topic.
+        """
+        return self._get_info_by_topic(
+            topic_name,
+            no_mangle,
+            _rclpy.rclpy_get_publishers_info_by_topic)
+
+    def get_subscriptions_info_by_topic(
+        self,
+        topic_name: str,
+        no_mangle: bool = False
+    ) -> List[TopicEndpointInfo]:
+        """
+        Return a list of subscriptions on a given topic.
+
+        The returned parameter is a list of TopicEndpointInfo objects, where each will contain
+        the node name, node namespace, topic type, topic endpoint's GID, and its QoS profile.
+
+        When the `no_mangle` parameter is `true`, the provided `topic_name` should be a valid topic
+        name for the middleware (useful when combining ROS with native middleware (e.g. DDS) apps).
+        When the `no_mangle` parameter is `false`, the provided `topic_name` should follow
+        ROS topic name conventions.
+
+        `topic_name` may be a relative, private, or fully qualified topic name.
+        A relative or private topic will be expanded using this node's namespace and name.
+        The queried `topic_name` is not remapped.
+
+        :param topic_name: the topic_name on which to find the subscriptions.
+        :param no_mangle: no_mangle if `true`, `topic_name` needs to be a valid middleware topic
+            name, otherwise it should be a valid ROS topic name. Defaults to `false`.
+        :return: a list of TopicEndpointInfo for all the subscriptions on this topic.
+        """
+        return self._get_info_by_topic(
+            topic_name,
+            no_mangle,
+            _rclpy.rclpy_get_subscriptions_info_by_topic)

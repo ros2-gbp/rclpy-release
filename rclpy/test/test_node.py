@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import pathlib
+import time
 import unittest
 from unittest.mock import Mock
 
@@ -25,6 +26,7 @@ from rcl_interfaces.msg import SetParametersResult
 from rcl_interfaces.srv import GetParameters
 import rclpy
 from rclpy.clock import ClockType
+from rclpy.duration import Duration
 from rclpy.exceptions import InvalidParameterException
 from rclpy.exceptions import InvalidParameterValueException
 from rclpy.exceptions import InvalidServiceNameException
@@ -33,9 +35,16 @@ from rclpy.exceptions import ParameterAlreadyDeclaredException
 from rclpy.exceptions import ParameterImmutableException
 from rclpy.exceptions import ParameterNotDeclaredException
 from rclpy.executors import SingleThreadedExecutor
+from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.parameter import Parameter
 from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import QoSDurabilityPolicy
+from rclpy.qos import QoSHistoryPolicy
+from rclpy.qos import QoSLivelinessPolicy
+from rclpy.qos import QoSProfile
+from rclpy.qos import QoSReliabilityPolicy
 from rclpy.time_source import USE_SIM_TIME_NAME
+from rclpy.utilities import get_rmw_implementation_identifier
 from test_msgs.msg import BasicTypes
 
 TEST_NODE = 'my_node'
@@ -128,6 +137,33 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
 
         executor.shutdown()
 
+    def dummy_cb(self, msg):
+        pass
+
+    # https://github.com/ros2/rmw_connext/issues/405
+    @unittest.skipIf(
+        get_rmw_implementation_identifier() == 'rmw_connext_cpp',
+        reason='Source timestamp not implemented for Connext')
+    def test_take(self):
+        basic_types_pub = self.node.create_publisher(BasicTypes, 'take_test', 1)
+        sub = self.node.create_subscription(
+            BasicTypes,
+            'take_test',
+            self.dummy_cb,
+            1)
+        basic_types_msg = BasicTypes()
+        basic_types_pub.publish(basic_types_msg)
+        cycle_count = 0
+        while cycle_count < 5:
+            with sub.handle as capsule:
+                result = _rclpy.rclpy_take(capsule, sub.msg_type, False)
+            if result is not None:
+                msg, info = result
+                self.assertNotEqual(0, info['source_timestamp'])
+                return
+            else:
+                time.sleep(0.1)
+
     def test_create_client(self):
         self.node.create_client(GetParameters, 'get/parameters')
         with self.assertRaisesRegex(InvalidServiceNameException, 'must not contain characters'):
@@ -170,6 +206,102 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
     def test_node_names_and_namespaces(self):
         # test that it doesn't raise
         self.node.get_node_names_and_namespaces()
+
+    def test_node_names_and_namespaces_with_enclaves(self):
+        # test that it doesn't raise
+        self.node.get_node_names_and_namespaces_with_enclaves()
+
+    def assert_qos_equal(self, expected_qos_profile, actual_qos_profile, *, is_publisher):
+        # Depth and history are skipped because they are not retrieved.
+        self.assertEqual(
+            expected_qos_profile.durability,
+            actual_qos_profile.durability,
+            'Durability is unequal')
+        self.assertEqual(
+            expected_qos_profile.reliability,
+            actual_qos_profile.reliability,
+            'Reliability is unequal')
+        if is_publisher:
+            self.assertEqual(
+                expected_qos_profile.lifespan,
+                actual_qos_profile.lifespan,
+                'lifespan is unequal')
+        self.assertEqual(
+            expected_qos_profile.deadline,
+            actual_qos_profile.deadline,
+            'Deadline is unequal')
+        self.assertEqual(
+            expected_qos_profile.liveliness,
+            actual_qos_profile.liveliness,
+            'liveliness is unequal')
+        self.assertEqual(
+            expected_qos_profile.liveliness_lease_duration,
+            actual_qos_profile.liveliness_lease_duration,
+            'liveliness_lease_duration is unequal')
+
+    def test_get_publishers_subscriptions_info_by_topic(self):
+        topic_name = 'test_topic_endpoint_info'
+        fq_topic_name = '{namespace}/{name}'.format(namespace=TEST_NAMESPACE, name=topic_name)
+        # Lists should be empty
+        self.assertFalse(self.node.get_publishers_info_by_topic(fq_topic_name))
+        self.assertFalse(self.node.get_subscriptions_info_by_topic(fq_topic_name))
+
+        # Add a publisher
+        qos_profile = QoSProfile(
+            depth=10,
+            history=QoSHistoryPolicy.KEEP_ALL,
+            deadline=Duration(seconds=1, nanoseconds=12345),
+            lifespan=Duration(seconds=20, nanoseconds=9887665),
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            liveliness_lease_duration=Duration(seconds=5, nanoseconds=23456),
+            liveliness=QoSLivelinessPolicy.MANUAL_BY_TOPIC)
+        self.node.create_publisher(BasicTypes, topic_name, qos_profile)
+        # List should have one item
+        publisher_list = self.node.get_publishers_info_by_topic(fq_topic_name)
+        self.assertEqual(1, len(publisher_list))
+        # Subscription list should be empty
+        self.assertFalse(self.node.get_subscriptions_info_by_topic(fq_topic_name))
+        # Verify publisher list has the right data
+        self.assertEqual(self.node.get_name(), publisher_list[0].node_name)
+        self.assertEqual(self.node.get_namespace(), publisher_list[0].node_namespace)
+        self.assertEqual('test_msgs/msg/BasicTypes', publisher_list[0].topic_type)
+        actual_qos_profile = publisher_list[0].qos_profile
+        self.assert_qos_equal(qos_profile, actual_qos_profile, is_publisher=True)
+
+        # Add a subscription
+        qos_profile2 = QoSProfile(
+            depth=0,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            deadline=Duration(seconds=15, nanoseconds=1678),
+            lifespan=Duration(seconds=29, nanoseconds=2345),
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.VOLATILE,
+            liveliness_lease_duration=Duration(seconds=5, nanoseconds=23456),
+            liveliness=QoSLivelinessPolicy.AUTOMATIC)
+        self.node.create_subscription(BasicTypes, topic_name, lambda msg: print(msg), qos_profile2)
+        # Both lists should have one item
+        publisher_list = self.node.get_publishers_info_by_topic(fq_topic_name)
+        subscription_list = self.node.get_subscriptions_info_by_topic(fq_topic_name)
+        self.assertEqual(1, len(publisher_list))
+        self.assertEqual(1, len(subscription_list))
+        # Verify subscription list has the right data
+        self.assertEqual(self.node.get_name(), publisher_list[0].node_name)
+        self.assertEqual(self.node.get_namespace(), publisher_list[0].node_namespace)
+        self.assertEqual('test_msgs/msg/BasicTypes', publisher_list[0].topic_type)
+        self.assertEqual('test_msgs/msg/BasicTypes', subscription_list[0].topic_type)
+        publisher_qos_profile = publisher_list[0].qos_profile
+        subscription_qos_profile = subscription_list[0].qos_profile
+        self.assert_qos_equal(qos_profile, publisher_qos_profile, is_publisher=True)
+        self.assert_qos_equal(qos_profile2, subscription_qos_profile, is_publisher=False)
+
+        # Error cases
+        with self.assertRaisesRegex(TypeError, 'bad argument type for built-in operation'):
+            self.node.get_subscriptions_info_by_topic(1)
+            self.node.get_publishers_info_by_topic(1)
+        with self.assertRaisesRegex(ValueError, 'is invalid'):
+            self.node.get_subscriptions_info_by_topic('13')
+            self.node.get_publishers_info_by_topic('13')
 
     def test_count_publishers_subscribers(self):
         short_topic_name = 'chatter'
@@ -431,7 +563,7 @@ class TestNode(unittest.TestCase):
             self.node.declare_parameter(
                 '', 'raise', ParameterDescriptor())
 
-        self.node.set_parameters_callback(self.reject_parameter_callback)
+        self.node.add_on_set_parameters_callback(self.reject_parameter_callback)
         with self.assertRaises(InvalidParameterValueException):
             self.node.declare_parameter(
                 'reject_me', 'raise', ParameterDescriptor())
@@ -549,7 +681,7 @@ class TestNode(unittest.TestCase):
             ('im_also_ok', 'world', ParameterDescriptor()),
             ('reject_me', 2.41, ParameterDescriptor()),
         ]
-        self.node.set_parameters_callback(self.reject_parameter_callback)
+        self.node.add_on_set_parameters_callback(self.reject_parameter_callback)
         with self.assertRaises(InvalidParameterValueException):
             self.node.declare_parameters('', parameters)
 
@@ -585,6 +717,11 @@ class TestNode(unittest.TestCase):
 
     def reject_parameter_callback(self, parameter_list):
         rejected_parameters = (param for param in parameter_list if 'reject' in param.name)
+        return SetParametersResult(successful=(not any(rejected_parameters)))
+
+    def reject_parameter_callback_1(self, parameter_list):
+        rejected_parameters = (
+            param for param in parameter_list if 'refuse' in param.name)
         return SetParametersResult(successful=(not any(rejected_parameters)))
 
     def test_use_sim_time(self):
@@ -823,9 +960,8 @@ class TestNode(unittest.TestCase):
             True,
             ParameterDescriptor()
         )
-
         self.node.declare_parameter(*reject_parameter_tuple)
-        self.node.set_parameters_callback(self.reject_parameter_callback)
+        self.node.add_on_set_parameters_callback(self.reject_parameter_callback)
         result = self.node.set_parameters(
             [
                 Parameter(
@@ -837,6 +973,130 @@ class TestNode(unittest.TestCase):
         self.assertIsInstance(result, list)
         self.assertIsInstance(result[0], SetParametersResult)
         self.assertFalse(result[0].successful)
+
+    def test_node_set_parameters_rejection_list(self):
+        # Declare a new parameters and set a list of callbacks so that it's rejected when set.
+        reject_list_parameter_tuple = [
+            ('reject', True, ParameterDescriptor()),
+            ('accept', True, ParameterDescriptor()),
+            ('accept', True, ParameterDescriptor())
+        ]
+        self.node.declare_parameters('', reject_list_parameter_tuple)
+        self.node.add_on_set_parameters_callback(self.reject_parameter_callback)
+        self.node.add_on_set_parameters_callback(self.reject_parameter_callback_1)
+
+        result = self.node.set_parameters(
+            [
+                Parameter(
+                    name=reject_list_parameter_tuple[0][0],
+                    value=reject_list_parameter_tuple[0][1]
+                ),
+                Parameter(
+                    name=reject_list_parameter_tuple[1][0],
+                    value=reject_list_parameter_tuple[1][1]
+                ),
+                Parameter(
+                    name=reject_list_parameter_tuple[2][0],
+                    value=reject_list_parameter_tuple[2][1]
+                )
+            ]
+        )
+        self.assertEqual(3, len(result))
+        self.assertIsInstance(result, list)
+        self.assertIsInstance(result[0], SetParametersResult)
+        self.assertFalse(result[0].successful)
+        self.assertIsInstance(result[1], SetParametersResult)
+        self.assertTrue(result[1].successful)
+        self.assertIsInstance(result[2], SetParametersResult)
+        self.assertTrue(result[2].successful)
+
+    def test_node_add_on_set_parameter_callback(self):
+        # Add callbacks to the list of callbacks.
+        callbacks = [
+            self.reject_parameter_callback,
+            self.reject_parameter_callback_1
+        ]
+        for callback in callbacks:
+            self.node.add_on_set_parameters_callback(callback)
+        for callback in callbacks:
+            self.assertTrue(callback in self.node._parameters_callbacks)
+        for callback in callbacks:
+            self.node.remove_on_set_parameters_callback(callback)
+
+        # Adding the parameters which will be accepted without any rejections.
+        non_reject_parameter_tuple = [
+            ('accept_1', True, ParameterDescriptor()),
+            ('accept_2', True, ParameterDescriptor())
+        ]
+        self.node.declare_parameters('', non_reject_parameter_tuple)
+
+        for callback in callbacks:
+            self.node.add_on_set_parameters_callback(callback)
+
+        result = self.node.set_parameters(
+            [
+                Parameter(
+                    name=non_reject_parameter_tuple[0][0],
+                    value=non_reject_parameter_tuple[0][1]
+                ),
+                Parameter(
+                    name=non_reject_parameter_tuple[1][0],
+                    value=non_reject_parameter_tuple[1][1]
+                )
+            ]
+        )
+        self.assertEqual(2, len(result))
+        self.assertIsInstance(result, list)
+        self.assertIsInstance(result[0], SetParametersResult)
+        self.assertTrue(result[0].successful)
+        self.assertIsInstance(result[1], SetParametersResult)
+        self.assertTrue(result[1].successful)
+
+    def test_node_remove_from_set_callback(self):
+        # Remove callbacks from list of callbacks.
+        parameter_tuple = (
+            'refuse', True, ParameterDescriptor()
+        )
+        self.node.declare_parameter(*parameter_tuple)
+
+        callbacks = [
+            self.reject_parameter_callback_1,
+        ]
+        # Checking if the callbacks are not already present.
+        for callback in callbacks:
+            self.assertFalse(callback in self.node._parameters_callbacks)
+
+        for callback in callbacks:
+            self.node.add_on_set_parameters_callback(callback)
+
+        result = self.node.set_parameters(
+            [
+                Parameter(
+                    name=parameter_tuple[0],
+                    value=parameter_tuple[1]
+                )
+            ]
+        )
+        self.assertEqual(1, len(result))
+        self.assertIsInstance(result, list)
+        self.assertIsInstance(result[0], SetParametersResult)
+        self.assertFalse(result[0].successful)
+        # Removing the callback which is causing the rejection.
+        self.node.remove_on_set_parameters_callback(self.reject_parameter_callback_1)
+        self.assertFalse(self.reject_parameter_callback_1 in self.node._parameters_callbacks)
+        # Now the setting its value again.
+        result = self.node.set_parameters(
+            [
+                Parameter(
+                    name=parameter_tuple[0],
+                    value=parameter_tuple[1]
+                )
+            ]
+        )
+        self.assertEqual(1, len(result))
+        self.assertIsInstance(result, list)
+        self.assertIsInstance(result[0], SetParametersResult)
+        self.assertTrue(result[0].successful)
 
     def test_node_set_parameters_read_only(self):
         integer_value = 42
@@ -1049,7 +1309,7 @@ class TestNode(unittest.TestCase):
         )
 
         self.node.declare_parameter(*reject_parameter_tuple)
-        self.node.set_parameters_callback(self.reject_parameter_callback)
+        self.node.add_on_set_parameters_callback(self.reject_parameter_callback)
         result = self.node.set_parameters_atomically(
             [
                 Parameter(
@@ -1583,6 +1843,97 @@ class TestCreateNode(unittest.TestCase):
                 context=context)
 
         rclpy.shutdown(context=context)
+
+    def test_node_get_fully_qualified_name(self):
+        context = rclpy.context.Context()
+        rclpy.init(context=context)
+
+        ns = '/my_ns'
+        name = 'my_node'
+        node = rclpy.create_node(name, namespace=ns, context=context)
+        assert node.get_fully_qualified_name() == '{}/{}'.format(ns, name)
+        node.destroy_node()
+
+        # When ns is not specified, a leading / should be added
+        node_without_ns = rclpy.create_node(name, context=context)
+        assert node_without_ns.get_fully_qualified_name() == '/' + name
+        node_without_ns.destroy_node()
+
+        remapped_ns = '/another_ns'
+        remapped_name = 'another_node'
+        node_with_remapped_ns = rclpy.create_node(
+            name,
+            namespace=ns,
+            context=context,
+            cli_args=['--ros-args', '-r', '__ns:=' + remapped_ns]
+        )
+        expected_name = '{}/{}'.format(remapped_ns, name)
+        assert node_with_remapped_ns.get_fully_qualified_name() == expected_name
+        node_with_remapped_ns.destroy_node()
+
+        node_with_remapped_name = rclpy.create_node(
+            name,
+            namespace=ns,
+            context=context,
+            cli_args=['--ros-args', '-r', '__node:=' + remapped_name]
+        )
+        expected_name = '{}/{}'.format(ns, remapped_name)
+        assert node_with_remapped_name.get_fully_qualified_name() == expected_name
+        node_with_remapped_name.destroy_node()
+
+        node_with_remapped_ns_name = rclpy.create_node(
+            name,
+            namespace=ns,
+            context=context,
+            cli_args=['--ros-args', '-r', '__node:=' + remapped_name, '-r', '__ns:=' + remapped_ns]
+        )
+        expected_name = '{}/{}'.format(remapped_ns, remapped_name)
+        assert node_with_remapped_ns_name.get_fully_qualified_name() == expected_name
+        node_with_remapped_ns_name.destroy_node()
+
+        rclpy.shutdown(context=context)
+
+        g_context = rclpy.context.Context()
+        global_remap_name = 'global_node_name'
+        rclpy.init(
+            args=['--ros-args', '-r', '__node:=' + global_remap_name],
+            context=g_context,
+        )
+        node_with_global_arguments = rclpy.create_node(
+            name,
+            namespace=ns,
+            context=g_context,
+        )
+        expected_name = '{}/{}'.format(ns, global_remap_name)
+        assert node_with_global_arguments.get_fully_qualified_name() == expected_name
+        node_with_global_arguments.destroy_node()
+
+        node_skip_global_params = rclpy.create_node(
+            name,
+            namespace=ns,
+            context=g_context,
+            use_global_arguments=False
+        )
+        assert node_skip_global_params.get_fully_qualified_name() == '{}/{}'.format(ns, name)
+        node_skip_global_params.destroy_node()
+
+        rclpy.shutdown(context=g_context)
+
+
+def test_node_resolve_name():
+    context = rclpy.Context()
+    rclpy.init(
+        args=['--ros-args', '-r', 'foo:=bar'],
+        context=context,
+    )
+    node = rclpy.create_node('test_rclpy_node_resolve_name', namespace='/my_ns', context=context)
+    assert node.resolve_topic_name('foo') == '/my_ns/bar'
+    assert node.resolve_topic_name('/abs') == '/abs'
+    assert node.resolve_topic_name('foo', only_expand=True) == '/my_ns/foo'
+    assert node.resolve_service_name('foo') == '/my_ns/bar'
+    assert node.resolve_service_name('/abs') == '/abs'
+    assert node.resolve_service_name('foo', only_expand=True) == '/my_ns/foo'
+    rclpy.shutdown(context=context)
 
 
 if __name__ == '__main__':
