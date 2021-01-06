@@ -46,11 +46,7 @@ class Context:
     def handle(self):
         return self._handle
 
-    def init(self,
-             args: Optional[List[str]] = None,
-             *,
-             initialize_logging: bool = True,
-             domain_id: Optional[int] = None):
+    def init(self, args: Optional[List[str]] = None, *, initialize_logging: bool = True):
         """
         Initialize ROS communications for a given context.
 
@@ -58,17 +54,9 @@ class Context:
         """
         # imported locally to avoid loading extensions on module import
         from rclpy.impl.implementation_singleton import rclpy_implementation
-
         global g_logging_ref_count
         with self._handle as capsule, self._lock:
-            if domain_id is not None and domain_id < 0:
-                raise RuntimeError(
-                    'Domain id ({}) should not be lower than zero.'
-                    .format(domain_id))
-            rclpy_implementation.rclpy_init(
-                args if args is not None else sys.argv,
-                capsule,
-                domain_id)
+            rclpy_implementation.rclpy_init(args if args is not None else sys.argv, capsule)
             if initialize_logging and not self._logging_initialized:
                 with g_logging_configure_lock:
                     g_logging_ref_count += 1
@@ -134,9 +122,3 @@ class Context:
                         raise RuntimeError(
                             'Unexpected error: logger ref count should never be lower that zero')
                 self._logging_initialized = False
-
-    def get_domain_id(self):
-        """Get domain id of context."""
-        from rclpy.impl.implementation_singleton import rclpy_implementation
-        with self._handle as capsule, self._lock:
-            return rclpy_implementation.rclpy_context_get_domain_id(capsule)

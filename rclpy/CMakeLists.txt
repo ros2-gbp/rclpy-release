@@ -186,8 +186,6 @@ endif()
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
-  # Give cppcheck hints about macro definitions coming from outside this package
-  get_target_property(ament_cmake_cppcheck_ADDITIONAL_INCLUDE_DIRS rcutils::rcutils INTERFACE_INCLUDE_DIRECTORIES)
   ament_lint_auto_find_test_dependencies()
 
   find_package(ament_cmake_pytest REQUIRED)
@@ -230,10 +228,10 @@ if(BUILD_TESTING)
       test/test_messages.py
       test/test_node.py
       test/test_parameter.py
+      test/test_parameters_callback.py
       test/test_publisher.py
       test/test_qos.py
       test/test_qos_event.py
-      test/test_qos_overriding_options.py
       test/test_rate.py
       test/test_serialization.py
       test/test_subscription.py

@@ -17,13 +17,13 @@ import time
 
 import pytest
 import rclpy
+from rclpy.exceptions import ROSInterruptException
 from rclpy.executors import SingleThreadedExecutor
 
 # Hz
 FREQ = 10.0
 PERIOD = 1.0 / FREQ
-PASS_MAX_AVERAGE_JITTER = PERIOD * 0.1
-PASS_MAX_SINGLE_JITTER = PERIOD * 0.25
+PASS_MAX_JITTER = PERIOD * 0.1
 
 
 class RateRunner:
@@ -85,8 +85,8 @@ class TestRate:
         while not runner.done:
             self.executor.spin_once()
 
-        assert runner.max_jitter <= PASS_MAX_SINGLE_JITTER, str(runner)
-        assert abs(runner.avg_period - PERIOD) <= PASS_MAX_AVERAGE_JITTER, str(runner)
+        assert runner.max_jitter <= PASS_MAX_JITTER, str(runner)
+        assert abs(runner.avg_period - PERIOD) <= PASS_MAX_JITTER, str(runner)
 
     def test_rate_invalid_period(self):
         with pytest.raises(TypeError):
@@ -111,6 +111,15 @@ class TestRate:
         self._thread.join()
 
 
+def sleep_check_exception(rate):
+    try:
+        rate.sleep()
+    except ROSInterruptException:
+        # rate.sleep() can raise ROSInterruptException if the context is
+        # shutdown while it is sleeping.  Just ignore it here.
+        pass
+
+
 def test_shutdown_wakes_rate():
     context = rclpy.context.Context()
     rclpy.init(context=context)
@@ -120,7 +129,7 @@ def test_shutdown_wakes_rate():
 
     rate = node.create_rate(0.0000001)
 
-    _thread = threading.Thread(target=rate.sleep, daemon=True)
+    _thread = threading.Thread(target=sleep_check_exception, args=(rate,), daemon=True)
     _thread.start()
     executor.shutdown()
     node.destroy_node()

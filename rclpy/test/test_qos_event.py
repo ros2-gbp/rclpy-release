@@ -170,12 +170,12 @@ class TestQoSEvent(unittest.TestCase):
         rclpy.logging._root_logger = MockLogger()
 
         qos_profile_publisher = QoSProfile(
-            depth=10, durability=QoSDurabilityPolicy.VOLATILE)
+            depth=10, durability=QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_VOLATILE)
         self.node.create_publisher(EmptyMsg, self.topic_name, qos_profile_publisher)
 
         message_callback = Mock()
         qos_profile_subscription = QoSProfile(
-            depth=10, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
+            depth=10, durability=QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL)
         self.node.create_subscription(
             EmptyMsg, self.topic_name, message_callback, qos_profile_subscription)
 
@@ -185,14 +185,14 @@ class TestQoSEvent(unittest.TestCase):
         if not self.is_fastrtps:
             self.assertEqual(
                 pub_log_msg,
-                "New subscription discovered on topic '{}', requesting incompatible QoS. "
+                'New subscription discovered on this topic, requesting incompatible QoS. '
                 'No messages will be sent to it. '
-                'Last incompatible policy: DURABILITY'.format(self.topic_name))
+                'Last incompatible policy: DURABILITY_QOS_POLICY')
             self.assertEqual(
                 sub_log_msg,
-                "New publisher discovered on topic '{}', offering incompatible QoS. "
+                'New publisher discovered on this topic, offering incompatible QoS. '
                 'No messages will be received from it. '
-                'Last incompatible policy: DURABILITY'.format(self.topic_name))
+                'Last incompatible policy: DURABILITY_QOS_POLICY')
 
         rclpy.logging._root_logger = original_logger
 

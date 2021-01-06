@@ -69,7 +69,7 @@ class Subscription:
         self.raw = raw
 
         self.event_handlers: QoSEventHandler = event_callbacks.create_event_handlers(
-            callback_group, subscription_handle, topic)
+            callback_group, subscription_handle)
 
     @property
     def handle(self):

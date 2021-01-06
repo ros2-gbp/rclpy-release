@@ -55,7 +55,7 @@ class Publisher:
         self.qos_profile = qos_profile
 
         self.event_handlers: QoSEventHandler = event_callbacks.create_event_handlers(
-            callback_group, publisher_handle, topic)
+            callback_group, publisher_handle)
 
     def publish(self, msg: Union[MsgType, bytes]) -> None:
         """
@@ -71,7 +71,7 @@ class Publisher:
             elif isinstance(msg, bytes):
                 _rclpy.rclpy_publish_raw(capsule, msg)
             else:
-                raise TypeError('Expected {}, got {}'.format(self.msg_type, type(msg)))
+                raise TypeError()
 
     def get_subscription_count(self) -> int:
         """Get the amount of subscribers that this publisher has."""
@@ -96,7 +96,7 @@ class Publisher:
         """
         Manually assert that this Publisher is alive.
 
-        If the QoS Liveliness policy is set to MANUAL_BY_TOPIC, the
+        If the QoS Liveliness policy is set to RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC, the
         application must call this at least as often as ``QoSProfile.liveliness_lease_duration``.
         """
         with self.handle as capsule:
