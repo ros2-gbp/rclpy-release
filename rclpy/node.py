@@ -186,7 +186,7 @@ class Node:
         self.__executor_weakref = None
 
         self._parameter_event_publisher = self.create_publisher(
-            ParameterEvent, 'parameter_events', qos_profile_parameter_events)
+            ParameterEvent, '/parameter_events', qos_profile_parameter_events)
 
         with self.handle as capsule:
             self._parameter_overrides = _rclpy.rclpy_get_node_parameters(Parameter, capsule)
@@ -1392,6 +1392,8 @@ class Node:
         """
         if publisher in self.__publishers:
             self.__publishers.remove(publisher)
+            for event_handler in publisher.event_handlers:
+                self.__waitables.remove(event_handler)
             try:
                 publisher.destroy()
             except InvalidHandle:
@@ -1408,6 +1410,8 @@ class Node:
         """
         if subscription in self.__subscriptions:
             self.__subscriptions.remove(subscription)
+            for event_handler in subscription.event_handlers:
+                self.__waitables.remove(event_handler)
             try:
                 subscription.destroy()
             except InvalidHandle:
