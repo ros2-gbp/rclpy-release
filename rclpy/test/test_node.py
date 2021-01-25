@@ -44,6 +44,7 @@ from rclpy.qos import QoSLivelinessPolicy
 from rclpy.qos import QoSProfile
 from rclpy.qos import QoSReliabilityPolicy
 from rclpy.time_source import USE_SIM_TIME_NAME
+from rclpy.utilities import get_rmw_implementation_identifier
 from test_msgs.msg import BasicTypes
 
 TEST_NODE = 'my_node'
@@ -139,6 +140,10 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
     def dummy_cb(self, msg):
         pass
 
+    # https://github.com/ros2/rmw_connext/issues/405
+    @unittest.skipIf(
+        get_rmw_implementation_identifier() == 'rmw_connext_cpp',
+        reason='Source timestamp not implemented for Connext')
     def test_take(self):
         basic_types_pub = self.node.create_publisher(BasicTypes, 'take_test', 1)
         sub = self.node.create_subscription(
@@ -244,11 +249,11 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
         # Add a publisher
         qos_profile = QoSProfile(
             depth=10,
-            history=QoSHistoryPolicy.RMW_QOS_POLICY_HISTORY_KEEP_ALL,
+            history=QoSHistoryPolicy.KEEP_ALL,
             deadline=Duration(seconds=1, nanoseconds=12345),
             lifespan=Duration(seconds=20, nanoseconds=9887665),
-            reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT,
-            durability=QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL,
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
             liveliness_lease_duration=Duration(seconds=5, nanoseconds=23456),
             liveliness=QoSLivelinessPolicy.MANUAL_BY_TOPIC)
         self.node.create_publisher(BasicTypes, topic_name, qos_profile)
@@ -267,11 +272,11 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
         # Add a subscription
         qos_profile2 = QoSProfile(
             depth=0,
-            history=QoSHistoryPolicy.RMW_QOS_POLICY_HISTORY_KEEP_LAST,
+            history=QoSHistoryPolicy.KEEP_LAST,
             deadline=Duration(seconds=15, nanoseconds=1678),
             lifespan=Duration(seconds=29, nanoseconds=2345),
-            reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_RELIABLE,
-            durability=QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_VOLATILE,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.VOLATILE,
             liveliness_lease_duration=Duration(seconds=5, nanoseconds=23456),
             liveliness=QoSLivelinessPolicy.AUTOMATIC)
         self.node.create_subscription(BasicTypes, topic_name, lambda msg: print(msg), qos_profile2)
@@ -1838,6 +1843,97 @@ class TestCreateNode(unittest.TestCase):
                 context=context)
 
         rclpy.shutdown(context=context)
+
+    def test_node_get_fully_qualified_name(self):
+        context = rclpy.context.Context()
+        rclpy.init(context=context)
+
+        ns = '/my_ns'
+        name = 'my_node'
+        node = rclpy.create_node(name, namespace=ns, context=context)
+        assert node.get_fully_qualified_name() == '{}/{}'.format(ns, name)
+        node.destroy_node()
+
+        # When ns is not specified, a leading / should be added
+        node_without_ns = rclpy.create_node(name, context=context)
+        assert node_without_ns.get_fully_qualified_name() == '/' + name
+        node_without_ns.destroy_node()
+
+        remapped_ns = '/another_ns'
+        remapped_name = 'another_node'
+        node_with_remapped_ns = rclpy.create_node(
+            name,
+            namespace=ns,
+            context=context,
+            cli_args=['--ros-args', '-r', '__ns:=' + remapped_ns]
+        )
+        expected_name = '{}/{}'.format(remapped_ns, name)
+        assert node_with_remapped_ns.get_fully_qualified_name() == expected_name
+        node_with_remapped_ns.destroy_node()
+
+        node_with_remapped_name = rclpy.create_node(
+            name,
+            namespace=ns,
+            context=context,
+            cli_args=['--ros-args', '-r', '__node:=' + remapped_name]
+        )
+        expected_name = '{}/{}'.format(ns, remapped_name)
+        assert node_with_remapped_name.get_fully_qualified_name() == expected_name
+        node_with_remapped_name.destroy_node()
+
+        node_with_remapped_ns_name = rclpy.create_node(
+            name,
+            namespace=ns,
+            context=context,
+            cli_args=['--ros-args', '-r', '__node:=' + remapped_name, '-r', '__ns:=' + remapped_ns]
+        )
+        expected_name = '{}/{}'.format(remapped_ns, remapped_name)
+        assert node_with_remapped_ns_name.get_fully_qualified_name() == expected_name
+        node_with_remapped_ns_name.destroy_node()
+
+        rclpy.shutdown(context=context)
+
+        g_context = rclpy.context.Context()
+        global_remap_name = 'global_node_name'
+        rclpy.init(
+            args=['--ros-args', '-r', '__node:=' + global_remap_name],
+            context=g_context,
+        )
+        node_with_global_arguments = rclpy.create_node(
+            name,
+            namespace=ns,
+            context=g_context,
+        )
+        expected_name = '{}/{}'.format(ns, global_remap_name)
+        assert node_with_global_arguments.get_fully_qualified_name() == expected_name
+        node_with_global_arguments.destroy_node()
+
+        node_skip_global_params = rclpy.create_node(
+            name,
+            namespace=ns,
+            context=g_context,
+            use_global_arguments=False
+        )
+        assert node_skip_global_params.get_fully_qualified_name() == '{}/{}'.format(ns, name)
+        node_skip_global_params.destroy_node()
+
+        rclpy.shutdown(context=g_context)
+
+
+def test_node_resolve_name():
+    context = rclpy.Context()
+    rclpy.init(
+        args=['--ros-args', '-r', 'foo:=bar'],
+        context=context,
+    )
+    node = rclpy.create_node('test_rclpy_node_resolve_name', namespace='/my_ns', context=context)
+    assert node.resolve_topic_name('foo') == '/my_ns/bar'
+    assert node.resolve_topic_name('/abs') == '/abs'
+    assert node.resolve_topic_name('foo', only_expand=True) == '/my_ns/foo'
+    assert node.resolve_service_name('foo') == '/my_ns/bar'
+    assert node.resolve_service_name('/abs') == '/abs'
+    assert node.resolve_service_name('foo', only_expand=True) == '/my_ns/foo'
+    rclpy.shutdown(context=context)
 
 
 if __name__ == '__main__':

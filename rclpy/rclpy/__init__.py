@@ -59,7 +59,12 @@ if TYPE_CHECKING:
     from rclpy.node import Node  # noqa: F401
 
 
-def init(*, args: Optional[List[str]] = None, context: Context = None) -> None:
+def init(
+    *,
+    args: Optional[List[str]] = None,
+    context: Context = None,
+    domain_id: Optional[int] = None
+) -> None:
     """
     Initialize ROS communications for a given context.
 
@@ -68,7 +73,7 @@ def init(*, args: Optional[List[str]] = None, context: Context = None) -> None:
         (see :func:`.get_default_context`).
     """
     context = get_default_context() if context is None else context
-    return context.init(args)
+    return context.init(args, domain_id=domain_id)
 
 
 # The global spin functions need an executor to do the work
@@ -130,7 +135,7 @@ def create_node(
     :param start_parameter_services: ``False`` if the node should not create parameter services.
     :param parameter_overrides: A list of :class:`.Parameter` which are used to override the
         initial values of parameters declared on this node.
-     :param allow_undeclared_parameters: if True undeclared parameters are allowed, default False.
+    :param allow_undeclared_parameters: if True undeclared parameters are allowed, default False.
         This option doesn't affect `parameter_overrides`.
     :param automatically_declare_parameters_from_overrides: If True, the "parameter overrides" will
         be used to implicitly declare parameters on the node during creation, default False.
