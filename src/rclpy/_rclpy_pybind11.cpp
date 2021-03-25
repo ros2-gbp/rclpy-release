@@ -14,14 +14,20 @@
 
 #include <pybind11/pybind11.h>
 
+#include <rcl/domain_id.h>
+
 #include "client.hpp"
 #include "clock.hpp"
 #include "context.hpp"
 #include "duration.hpp"
 #include "graph.hpp"
 #include "guard_condition.hpp"
+#include "init.hpp"
 #include "names.hpp"
+#include "node.hpp"
 #include "publisher.hpp"
+#include "qos.hpp"
+#include "qos_events.hpp"
 #include "rclpy_common/exceptions.hpp"
 #include "serialization.hpp"
 #include "service.hpp"
@@ -42,6 +48,8 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
   .value("SYSTEM_TIME", RCL_SYSTEM_TIME)
   .value("STEADY_TIME", RCL_STEADY_TIME);
 
+  m.attr("RCL_DEFAULT_DOMAIN_ID") = py::int_(RCL_DEFAULT_DOMAIN_ID);
+
   py::enum_<rcl_clock_change_t>(m, "ClockChange")
   .value(
     "ROS_TIME_NO_CHANGE", RCL_ROS_TIME_NO_CHANGE,
@@ -56,16 +64,48 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
     "SYSTEM_TIME_NO_CHANGE", RCL_SYSTEM_TIME_NO_CHANGE,
     "ROS time is inactive and the clock will keep reporting system time");
 
+  py::enum_<rcl_subscription_event_type_t>(m, "QoSSubscriptionEventType")
+  .value("RCL_SUBSCRIPTION_REQUESTED_DEADLINE_MISSED", RCL_SUBSCRIPTION_REQUESTED_DEADLINE_MISSED)
+  .value("RCL_SUBSCRIPTION_LIVELINESS_CHANGED", RCL_SUBSCRIPTION_LIVELINESS_CHANGED)
+  .value("RCL_SUBSCRIPTION_REQUESTED_INCOMPATIBLE_QOS", RCL_SUBSCRIPTION_REQUESTED_INCOMPATIBLE_QOS)
+  .value("RCL_SUBSCRIPTION_MESSAGE_LOST", RCL_SUBSCRIPTION_MESSAGE_LOST);
+
+  py::enum_<rcl_publisher_event_type_t>(m, "QoSPublisherEventType")
+  .value("RCL_PUBLISHER_OFFERED_DEADLINE_MISSED", RCL_PUBLISHER_OFFERED_DEADLINE_MISSED)
+  .value("RCL_PUBLISHER_LIVELINESS_LOST", RCL_PUBLISHER_LIVELINESS_LOST)
+  .value("RCL_PUBLISHER_OFFERED_INCOMPATIBLE_QOS", RCL_PUBLISHER_OFFERED_INCOMPATIBLE_QOS);
+
+  py::enum_<rmw_qos_compatibility_type_t>(m, "QoSCompatibility")
+  .value("OK", RMW_QOS_COMPATIBILITY_OK)
+  .value("WARNING", RMW_QOS_COMPATIBILITY_WARNING)
+  .value("ERROR", RMW_QOS_COMPATIBILITY_ERROR);
+
+  py::class_<rclpy::QoSCheckCompatibleResult>(
+    m, "QoSCheckCompatibleResult",
+    "Result type for checking QoS compatibility with result")
+  .def(py::init<>())
+  .def_readonly("compatibility", &rclpy::QoSCheckCompatibleResult::compatibility)
+  .def_readonly("reason", &rclpy::QoSCheckCompatibleResult::reason);
+
   py::register_exception<rclpy::RCUtilsError>(m, "RCUtilsError", PyExc_RuntimeError);
   py::register_exception<rclpy::RMWError>(m, "RMWError", PyExc_RuntimeError);
   auto rclerror = py::register_exception<rclpy::RCLError>(m, "RCLError", PyExc_RuntimeError);
   py::register_exception<rclpy::RCLInvalidROSArgsError>(
     m, "RCLInvalidROSArgsError", rclerror.ptr());
-  py::register_exception<rclpy::UnknownROSArgsError>(m, "UnknownROSArgsError", rclerror.ptr());
+  py::register_exception<rclpy::UnknownROSArgsError>(m, "UnknownROSArgsError", PyExc_RuntimeError);
   py::register_exception<rclpy::NodeNameNonExistentError>(
     m, "NodeNameNonExistentError", rclerror.ptr());
   py::register_exception<rclpy::UnsupportedEventTypeError>(
     m, "UnsupportedEventTypeError", rclerror.ptr());
+  py::register_exception<rclpy::NotImplementedError>(
+    m, "NotImplementedError", PyExc_NotImplementedError);
+
+  m.def(
+    "rclpy_init", &rclpy::init,
+    "Initialize RCL.");
+  m.def(
+    "rclpy_shutdown", &rclpy::shutdown,
+    "rclpy_shutdown.");
 
   m.def(
     "rclpy_create_client", &rclpy::client_create,
@@ -101,6 +141,9 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
     "rclpy_create_publisher", &rclpy::publisher_create,
     "Create a Publisher");
   m.def(
+    "rclpy_get_publisher_logger_name", &rclpy::publisher_get_logger_name,
+    "Get the logger name associated with the node of a publisher.");
+  m.def(
     "rclpy_publisher_get_subscription_count", &rclpy::publisher_get_subscription_count,
     "Count subscribers from a publisher");
   m.def(
@@ -132,6 +175,10 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
   m.def(
     "rclpy_service_info_get_received_timestamp", &rclpy::service_info_get_received_timestamp,
     "Retrieve received timestamp from service_info");
+
+  m.def(
+    "rclpy_qos_check_compatible", &rclpy::qos_check_compatible,
+    "Check if two QoS profiles are compatible.");
 
   m.def(
     "rclpy_create_guard_condition", &rclpy::guard_condition_create,
@@ -180,6 +227,9 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
   m.def(
     "rclpy_get_subscription_topic_name", &rclpy::subscription_get_topic_name,
     "Get the topic name of a subscription");
+  m.def(
+    "rclpy_take", &rclpy::subscription_take_message,
+    "Take a message and its metadata from a subscription");
 
   m.def(
     "rclpy_create_time_point", &rclpy::create_time_point,
@@ -268,6 +318,14 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
     &rclpy::graph_get_subscriber_names_and_types_by_node,
     "Get topic names and types for which a remote node has subscribers.");
   m.def(
+    "rclpy_get_publishers_info_by_topic",
+    &rclpy::graph_get_publishers_info_by_topic,
+    "Get publishers info for a topic.");
+  m.def(
+    "rclpy_get_subscriptions_info_by_topic",
+    &rclpy::graph_get_subscriptions_info_by_topic,
+    "Get subscriptions info for a topic.");
+  m.def(
     "rclpy_get_service_names_and_types",
     &rclpy::graph_get_service_names_and_types,
     "Get all service names and types in the ROS graph.");
@@ -286,4 +344,43 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
   m.def(
     "rclpy_deserialize", &rclpy::deserialize,
     "Deserialize a ROS message.");
+
+  m.def(
+    "rclpy_node_get_fully_qualified_name", &rclpy::get_node_fully_qualified_name,
+    "Get the fully qualified name of node.");
+  m.def(
+    "rclpy_get_node_logger_name", &rclpy::get_node_logger_name,
+    "Get the logger name associated with a node.");
+  m.def(
+    "rclpy_get_node_name", &rclpy::get_node_name,
+    "Get the name of a node.");
+  m.def(
+    "rclpy_get_node_namespace", &rclpy::get_node_namespace,
+    "Get the namespace of a node.");
+  m.def(
+    "rclpy_get_node_names_and_namespaces", &rclpy::get_node_names_and_namespaces,
+    "Get node names and namespaces list from graph API.");
+  m.def(
+    "rclpy_get_node_names_and_namespaces_with_enclaves",
+    &rclpy::get_node_names_and_namespaces_with_enclaves,
+    "Get node names, namespaces, and enclaves list from graph API.");
+
+  m.def(
+    "rclpy_count_publishers", &rclpy::get_count_publishers,
+    "Count publishers for a topic.");
+
+  m.def(
+    "rclpy_count_subscribers", &rclpy::get_count_subscribers,
+    "Count subscribers for a topic.");
+
+  m.def(
+    "rclpy_create_event", &rclpy::create_event,
+    "Create an event for QoS event handling.");
+  m.def(
+    "rclpy_take_event", &rclpy::take_event,
+    "Get pending data from a ready QoS event.");
+
+  m.def(
+    "rclpy_get_node_parameters", &rclpy::get_node_parameters,
+    "Get the initial parameters for a node from the command line.");
 }
