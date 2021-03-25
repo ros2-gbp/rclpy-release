@@ -28,12 +28,15 @@ find_package(rmw_implementation_cmake REQUIRED)
 # Find python before pybind11
 find_package(python_cmake_module REQUIRED)
 find_package(PythonExtra REQUIRED)
+
+set(_PYTHON_EXECUTABLE "${PYTHON_EXECUTABLE}")
 if(WIN32 AND CMAKE_BUILD_TYPE STREQUAL "Debug")
   # Set the python debug interpreter.
   # pybind11 will setup the build for debug now.
   set(PYTHON_EXECUTABLE "${PYTHON_EXECUTABLE_DEBUG}")
 endif()
 
+find_package(pybind11_vendor REQUIRED)
 find_package(pybind11 REQUIRED)
 
 if(WIN32 AND CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -92,15 +95,6 @@ function(remove_py_debug_definition_on_win32 target)
   endif()
 endfunction()
 
-find_package(pybind11_vendor REQUIRED)
-find_package(pybind11 REQUIRED)
-
-set(_PYTHON_EXECUTABLE "${PYTHON_EXECUTABLE}")
-
-if(WIN32 AND CMAKE_BUILD_TYPE STREQUAL "Debug")
-  set(PYTHON_EXECUTABLE "${PYTHON_EXECUTABLE_DEBUG}")
-endif()
-
 # enables using the Python extensions from the build space for testing
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/test_rclpy/__init__.py" "")
 
@@ -129,7 +123,6 @@ endfunction()
 
 add_library(rclpy_common SHARED
   src/rclpy_common/src/common.c
-  src/rclpy_common/src/common.cpp
   src/rclpy_common/src/exceptions.cpp
   src/rclpy_common/src/handle.c
 )
@@ -179,14 +172,19 @@ pybind11_add_module(_rclpy_pybind11 SHARED
   src/rclpy/duration.cpp
   src/rclpy/graph.cpp
   src/rclpy/guard_condition.cpp
+  src/rclpy/init.cpp
   src/rclpy/names.cpp
+  src/rclpy/node.cpp
   src/rclpy/publisher.cpp
+  src/rclpy/qos.cpp
+  src/rclpy/qos_events.cpp
   src/rclpy/serialization.cpp
   src/rclpy/service.cpp
   src/rclpy/service_info.cpp
   src/rclpy/subscription.cpp
   src/rclpy/time_point.cpp
   src/rclpy/timer.cpp
+  src/rclpy/utils.cpp
   src/rclpy/wait_set.cpp
 )
 target_include_directories(_rclpy_pybind11 PRIVATE
