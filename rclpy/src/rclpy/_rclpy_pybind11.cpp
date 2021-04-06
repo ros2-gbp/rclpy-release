@@ -16,18 +16,24 @@
 
 #include <rcl/domain_id.h>
 
+#include "action_api.hpp"
 #include "client.hpp"
 #include "clock.hpp"
 #include "context.hpp"
+#include "destroyable.hpp"
 #include "duration.hpp"
 #include "graph.hpp"
 #include "guard_condition.hpp"
+#include "handle_api.hpp"
 #include "init.hpp"
+#include "logging.hpp"
+#include "logging_api.hpp"
 #include "names.hpp"
 #include "node.hpp"
 #include "publisher.hpp"
+#include "pycapsule_api.hpp"
 #include "qos.hpp"
-#include "qos_events.hpp"
+#include "qos_event.hpp"
 #include "rclpy_common/exceptions.hpp"
 #include "serialization.hpp"
 #include "service.hpp"
@@ -35,12 +41,15 @@
 #include "subscription.hpp"
 #include "time_point.hpp"
 #include "timer.hpp"
+#include "utils.hpp"
 #include "wait_set.hpp"
 
 namespace py = pybind11;
 
 PYBIND11_MODULE(_rclpy_pybind11, m) {
   m.doc() = "ROS 2 Python client library.";
+
+  rclpy::define_destroyable(m);
 
   py::enum_<rcl_clock_type_t>(m, "ClockType")
   .value("UNINITIALIZED", RCL_CLOCK_UNINITIALIZED)
@@ -63,17 +72,6 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
   .value(
     "SYSTEM_TIME_NO_CHANGE", RCL_SYSTEM_TIME_NO_CHANGE,
     "ROS time is inactive and the clock will keep reporting system time");
-
-  py::enum_<rcl_subscription_event_type_t>(m, "QoSSubscriptionEventType")
-  .value("RCL_SUBSCRIPTION_REQUESTED_DEADLINE_MISSED", RCL_SUBSCRIPTION_REQUESTED_DEADLINE_MISSED)
-  .value("RCL_SUBSCRIPTION_LIVELINESS_CHANGED", RCL_SUBSCRIPTION_LIVELINESS_CHANGED)
-  .value("RCL_SUBSCRIPTION_REQUESTED_INCOMPATIBLE_QOS", RCL_SUBSCRIPTION_REQUESTED_INCOMPATIBLE_QOS)
-  .value("RCL_SUBSCRIPTION_MESSAGE_LOST", RCL_SUBSCRIPTION_MESSAGE_LOST);
-
-  py::enum_<rcl_publisher_event_type_t>(m, "QoSPublisherEventType")
-  .value("RCL_PUBLISHER_OFFERED_DEADLINE_MISSED", RCL_PUBLISHER_OFFERED_DEADLINE_MISSED)
-  .value("RCL_PUBLISHER_LIVELINESS_LOST", RCL_PUBLISHER_LIVELINESS_LOST)
-  .value("RCL_PUBLISHER_OFFERED_INCOMPATIBLE_QOS", RCL_PUBLISHER_OFFERED_INCOMPATIBLE_QOS);
 
   py::enum_<rmw_qos_compatibility_type_t>(m, "QoSCompatibility")
   .value("OK", RMW_QOS_COMPATIBILITY_OK)
@@ -99,6 +97,8 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
     m, "UnsupportedEventTypeError", rclerror.ptr());
   py::register_exception<rclpy::NotImplementedError>(
     m, "NotImplementedError", PyExc_NotImplementedError);
+  py::register_exception<rclpy::InvalidHandle>(
+    m, "InvalidHandle", PyExc_RuntimeError);
 
   m.def(
     "rclpy_init", &rclpy::init,
@@ -107,18 +107,7 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
     "rclpy_shutdown", &rclpy::shutdown,
     "rclpy_shutdown.");
 
-  m.def(
-    "rclpy_create_client", &rclpy::client_create,
-    "Create a Client");
-  m.def(
-    "rclpy_send_request", &rclpy::client_send_request,
-    "Send a request");
-  m.def(
-    "rclpy_service_server_is_available", &rclpy::client_service_server_is_available,
-    "Return true if the service server is available");
-  m.def(
-    "rclpy_take_response", &rclpy::client_take_response,
-    "rclpy_take_response");
+  rclpy::define_client(m);
 
   m.def(
     "rclpy_context_get_domain_id", &rclpy::context_get_domain_id,
@@ -130,12 +119,7 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
     "rclpy_ok", &rclpy::context_is_valid,
     "Return true if the context is valid");
 
-  m.def(
-    "rclpy_create_duration", &rclpy::create_duration,
-    "Create a duration");
-  m.def(
-    "rclpy_duration_get_nanoseconds", &rclpy::duration_get_nanoseconds,
-    "Get the nanoseconds value of a duration");
+  rclpy::define_duration(m);
 
   m.def(
     "rclpy_create_publisher", &rclpy::publisher_create,
@@ -156,25 +140,9 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
     "rclpy_publish_raw", &rclpy::publisher_publish_raw,
     "Publish a serialized message");
 
-  m.def(
-    "rclpy_create_service", &rclpy::service_create,
-    "Create a service");
-  m.def(
-    "rclpy_send_response", &rclpy::service_send_response,
-    "Send a response");
-  m.def(
-    "rclpy_take_request", &rclpy::service_take_request,
-    "rclpy_take_request");
+  rclpy::define_service(m);
 
-  m.def(
-    "rclpy_service_info_get_sequence_number", &rclpy::service_info_get_sequence_number,
-    "Retrieve sequence number from service_info");
-  m.def(
-    "rclpy_service_info_get_source_timestamp", &rclpy::service_info_get_source_timestamp,
-    "Retrieve source timestamp from service_info");
-  m.def(
-    "rclpy_service_info_get_received_timestamp", &rclpy::service_info_get_received_timestamp,
-    "Retrieve received timestamp from service_info");
+  rclpy::define_service_info(m);
 
   m.def(
     "rclpy_qos_check_compatible", &rclpy::qos_check_compatible,
@@ -187,36 +155,7 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
     "rclpy_trigger_guard_condition", &rclpy::guard_condition_trigger,
     "Trigger a general purpose guard condition");
 
-  m.def(
-    "rclpy_reset_timer", &rclpy::reset_timer,
-    "Reset a timer.");
-  m.def(
-    "rclpy_call_timer", &rclpy::call_timer,
-    "Call a timer and starts counting again.");
-  m.def(
-    "rclpy_change_timer_period", &rclpy::change_timer_period,
-    "Set the period of a timer.");
-  m.def(
-    "rclpy_is_timer_ready", &rclpy::is_timer_ready,
-    "Check if a timer as reached timeout.");
-  m.def(
-    "rclpy_cancel_timer", &rclpy::cancel_timer,
-    "Cancel a timer.");
-  m.def(
-    "rclpy_is_timer_canceled", &rclpy::is_timer_canceled,
-    "Check if a timer is canceled.");
-  m.def(
-    "rclpy_time_until_next_call", &rclpy::time_until_next_call,
-    "Get the remaining time before timer is ready.");
-  m.def(
-    "rclpy_time_since_last_call", &rclpy::time_since_last_call,
-    "Get the elapsed time since last timer call.");
-  m.def(
-    "rclpy_get_timer_period", &rclpy::get_timer_period,
-    "Get the period of a timer.");
-  m.def(
-    "rclpy_create_timer", &rclpy::create_timer,
-    "Create a Timer.");
+  rclpy::define_timer(m);
 
   m.def(
     "rclpy_create_subscription", &rclpy::subscription_create,
@@ -231,34 +170,8 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
     "rclpy_take", &rclpy::subscription_take_message,
     "Take a message and its metadata from a subscription");
 
-  m.def(
-    "rclpy_create_time_point", &rclpy::create_time_point,
-    "Create a time point.");
-  m.def(
-    "rclpy_time_point_get_nanoseconds", &rclpy::time_point_get_nanoseconds,
-    "Get the nanoseconds value of a time point.");
-
-  m.def(
-    "rclpy_create_clock", &rclpy::create_clock,
-    "Create a clock.");
-  m.def(
-    "rclpy_clock_get_now", &rclpy::clock_get_now,
-    "Get the current value of a clock.");
-  m.def(
-    "rclpy_clock_get_ros_time_override_is_enabled", &rclpy::clock_get_ros_time_override_is_enabled,
-    "Get if a clock using ROS time has the ROS time override enabled.");
-  m.def(
-    "rclpy_clock_set_ros_time_override_is_enabled", &rclpy::clock_set_ros_time_override_is_enabled,
-    "Set if a clock using ROS time has the ROS time override enabled.");
-  m.def(
-    "rclpy_clock_set_ros_time_override", &rclpy::clock_set_ros_time_override,
-    "Set the current time of a clock using ROS time.");
-  m.def(
-    "rclpy_add_clock_callback", &rclpy::add_jump_callback,
-    "Add a time jump callback to a clock.");
-  m.def(
-    "rclpy_remove_clock_callback", &rclpy::remove_jump_callback,
-    "Remove a time jump callback from a clock.");
+  rclpy::define_time_point(m);
+  rclpy::define_clock(m);
 
   m.def(
     "rclpy_get_zero_initialized_wait_set", &rclpy::get_zero_initialized_wait_set,
@@ -272,6 +185,18 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
   m.def(
     "rclpy_wait_set_add_entity", &rclpy::wait_set_add_entity,
     "rclpy_wait_set_add_entity.");
+  m.def(
+    "rclpy_wait_set_add_client", &rclpy::wait_set_add_client,
+    "Add a client to the wait set.");
+  m.def(
+    "rclpy_wait_set_add_service", &rclpy::wait_set_add_service,
+    "Add a service to the wait set.");
+  m.def(
+    "rclpy_wait_set_add_timer", &rclpy::wait_set_add_timer,
+    "Add a timer to the wait set.");
+  m.def(
+    "rclpy_wait_set_add_event", &rclpy::wait_set_add_event,
+    "Add an event to the wait set.");
   m.def(
     "rclpy_wait_set_is_ready", &rclpy::wait_set_is_ready,
     "rclpy_wait_set_is_ready.");
@@ -346,6 +271,9 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
     "Deserialize a ROS message.");
 
   m.def(
+    "rclpy_create_node", &rclpy::create_node,
+    "Create a Node.");
+  m.def(
     "rclpy_node_get_fully_qualified_name", &rclpy::get_node_fully_qualified_name,
     "Get the fully qualified name of node.");
   m.def(
@@ -373,14 +301,36 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
     "rclpy_count_subscribers", &rclpy::get_count_subscribers,
     "Count subscribers for a topic.");
 
-  m.def(
-    "rclpy_create_event", &rclpy::create_event,
-    "Create an event for QoS event handling.");
-  m.def(
-    "rclpy_take_event", &rclpy::take_event,
-    "Get pending data from a ready QoS event.");
+  rclpy::define_qos_event(m);
 
   m.def(
     "rclpy_get_node_parameters", &rclpy::get_node_parameters,
     "Get the initial parameters for a node from the command line.");
+
+  m.def(
+    "rclpy_get_rmw_implementation_identifier",
+    &rclpy::get_rmw_implementation_identifier,
+    "Retrieve the identifier for the active RMW implementation.");
+
+  m.def(
+    "rclpy_assert_liveliness", &rclpy::assert_liveliness,
+    "Assert the liveliness of an entity.");
+
+  m.def(
+    "rclpy_remove_ros_args", &rclpy::remove_ros_args,
+    "Remove ROS-specific arguments from argument vector.");
+
+  rclpy::define_rmw_qos_profile(m);
+
+  m.def(
+    "rclpy_logging_fini", rclpy::logging_fini,
+    "Finalize RCL logging.");
+  m.def(
+    "rclpy_logging_configure", rclpy::logging_configure,
+    "Initialize RCL logging.");
+
+  rclpy::define_pycapsule_api(m);
+  rclpy::define_handle_api(m);
+  rclpy::define_logging_api(m);
+  rclpy::define_action_api(m);
 }
