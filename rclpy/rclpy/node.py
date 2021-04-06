@@ -863,6 +863,9 @@ class Node:
 
         Calling this function will add a callback in self._parameter_callbacks list.
 
+        It is considered bad practice to reject changes for "unknown" parameters as this prevents
+        other parts of the node (that may be aware of these parameters) from handling them.
+
         :param callback: The function that is called whenever parameters are set for the node.
         """
         self._parameters_callbacks.insert(0, callback)
@@ -1380,7 +1383,7 @@ class Node:
         failed = False
         try:
             with self.handle as node_capsule:
-                client_capsule = _rclpy.rclpy_create_client(
+                client_impl = _rclpy.Client(
                     node_capsule,
                     srv_type,
                     srv_name,
@@ -1390,11 +1393,9 @@ class Node:
         if failed:
             self._validate_topic_or_service_name(srv_name, is_service=True)
 
-        client_handle = Handle(client_capsule)
-
         client = Client(
             self.context,
-            client_handle, srv_type, srv_name, qos_profile,
+            client_impl, srv_type, srv_name, qos_profile,
             callback_group)
         self.__clients.append(client)
         callback_group.add_entity(client)
@@ -1427,7 +1428,7 @@ class Node:
         failed = False
         try:
             with self.handle as node_capsule:
-                service_capsule = _rclpy.rclpy_create_service(
+                service_impl = _rclpy.Service(
                     node_capsule,
                     srv_type,
                     srv_name,
@@ -1437,10 +1438,8 @@ class Node:
         if failed:
             self._validate_topic_or_service_name(srv_name, is_service=True)
 
-        service_handle = Handle(service_capsule)
-
         service = Service(
-            service_handle,
+            service_impl,
             srv_type, srv_name, callback, callback_group, qos_profile)
         self.__services.append(service)
         callback_group.add_entity(service)

@@ -1,4 +1,4 @@
-// Copyright 2020 Open Source Robotics Foundation, Inc.
+// Copyright 2021 Open Source Robotics Foundation, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,16 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "./logging_mutex.hpp"
+#ifndef RCLPY__LOGGING_API_HPP_
+#define RCLPY__LOGGING_API_HPP_
 
-#include <memory>
-#include <mutex>
+#include <pybind11/pybind11.h>
 
-#include "rcutils/macros.h"
+namespace py = pybind11;
 
-std::recursive_mutex &
-rclpy::detail::get_global_logging_mutex()
+namespace rclpy
 {
-  static std::recursive_mutex mutex;
-  return mutex;
-}
+/// Define methods on a module for the logging API
+/**
+ * \param[in] module a pybind11 module to add the definition to
+ */
+void
+define_logging_api(py::module module);
+}  // namespace rclpy
+#endif  // RCLPY__LOGGING_API_HPP_
