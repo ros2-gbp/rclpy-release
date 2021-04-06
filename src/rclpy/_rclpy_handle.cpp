@@ -18,6 +18,8 @@ namespace py = pybind11;
 
 #include "rclpy_common/handle.h"
 
+#include "handle_api.hpp"
+
 size_t
 rclpy_handle_get_pointer(py::capsule handle_capsule)
 {
@@ -31,7 +33,12 @@ rclpy_handle_get_pointer(py::capsule handle_capsule)
   return reinterpret_cast<size_t>(ptr);
 }
 
-PYBIND11_MODULE(_rclpy_handle, m) {
+namespace rclpy
+{
+void
+define_handle_api(py::module m)
+{
   m.doc() = "rclpy module for working with Handle objects.";
   m.def("rclpy_handle_get_pointer", &rclpy_handle_get_pointer, "Get handle pointer.");
 }
+}  // namespace rclpy
