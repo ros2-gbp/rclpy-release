@@ -2,9 +2,9 @@ cmake_minimum_required(VERSION 3.5)
 
 project(rclpy)
 
-# Default to C++14
+# Default to C++17
 if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 14)
+  set(CMAKE_CXX_STANDARD 17)
 endif()
 # Default to C11
 if(NOT CMAKE_C_STANDARD)
@@ -146,38 +146,28 @@ install(TARGETS rclpy_common
   RUNTIME DESTINATION bin
 )
 
-# Main extension with bulk of the code
-pybind11_add_module(_rclpy SHARED
-  src/rclpy/_rclpy.c
-  src/rclpy/detail/execute_with_logging_mutex.cpp
-  src/rclpy/detail/logging_mutex.cpp
-  src/rclpy/detail/thread_safe_logging_output_handler.cpp
-)
-target_link_libraries(_rclpy PRIVATE
-  rclpy_common
-  rcl::rcl
-  rcl_yaml_param_parser::rcl_yaml_param_parser
-  rcutils::rcutils
-)
-configure_build_install_location(_rclpy)
-clean_windows_flags(_rclpy)
-remove_py_debug_definition_on_win32(_rclpy)
-
 # Split from main extension and converted to pybind11
 pybind11_add_module(_rclpy_pybind11 SHARED
+  src/rclpy/_rclpy_action.cpp
+  src/rclpy/_rclpy_handle.cpp
+  src/rclpy/_rclpy_logging.cpp
   src/rclpy/_rclpy_pybind11.cpp
+  src/rclpy/_rclpy_pycapsule.cpp
   src/rclpy/client.cpp
   src/rclpy/clock.cpp
   src/rclpy/context.cpp
+  src/rclpy/destroyable.cpp
   src/rclpy/duration.cpp
   src/rclpy/graph.cpp
   src/rclpy/guard_condition.cpp
+  src/rclpy/handle.cpp
   src/rclpy/init.cpp
+  src/rclpy/logging.cpp
   src/rclpy/names.cpp
   src/rclpy/node.cpp
   src/rclpy/publisher.cpp
   src/rclpy/qos.cpp
-  src/rclpy/qos_events.cpp
+  src/rclpy/qos_event.cpp
   src/rclpy/serialization.cpp
   src/rclpy/service.cpp
   src/rclpy/service_info.cpp
@@ -191,34 +181,15 @@ target_include_directories(_rclpy_pybind11 PRIVATE
   src/rclpy/
 )
 target_link_libraries(_rclpy_pybind11 PRIVATE
-  rcpputils::rcpputils rclpy_common
+  rcl::rcl
+  rcl_action::rcl_action
+  rcl_logging_interface::rcl_logging_interface
+  rclpy_common
+  rcpputils::rcpputils
+  rcutils::rcutils
 )
 configure_build_install_location(_rclpy_pybind11)
 clean_windows_flags(_rclpy_pybind11)
-
-# Extension with code for Action servers and clients
-pybind11_add_module(_rclpy_action SHARED
-  src/rclpy/_rclpy_action.cpp
-)
-target_link_libraries(_rclpy_action PRIVATE
-  rclpy_common
-  rcl::rcl
-  rcl_action::rcl_action
-  rcutils::rcutils
-)
-configure_build_install_location(_rclpy_action)
-clean_windows_flags(_rclpy_action)
-
-# Logging support provided by rcutils
-pybind11_add_module(_rclpy_logging SHARED
-  src/rclpy/_rclpy_logging.cpp
-)
-target_link_libraries(_rclpy_logging PRIVATE
-  rcl_logging_interface::rcl_logging_interface
-  rcutils::rcutils
-)
-configure_build_install_location(_rclpy_logging)
-clean_windows_flags(_rclpy_logging)
 
 # Signal handling library
 pybind11_add_module(_rclpy_signal_handler SHARED
@@ -232,23 +203,6 @@ target_link_libraries(_rclpy_signal_handler PRIVATE
 configure_build_install_location(_rclpy_signal_handler)
 clean_windows_flags(_rclpy_signal_handler)
 remove_py_debug_definition_on_win32(_rclpy_signal_handler)
-
-# Pycapsule library
-pybind11_add_module(_rclpy_pycapsule SHARED
-  src/rclpy/_rclpy_pycapsule.cpp
-)
-configure_build_install_location(_rclpy_pycapsule)
-clean_windows_flags(_rclpy_pycapsule)
-
-# Handle library, used to keep dependencies between C objects.
-pybind11_add_module(_rclpy_handle SHARED
-  src/rclpy/_rclpy_handle.cpp
-)
-target_link_libraries(_rclpy_handle PRIVATE
-  rclpy_common
-)
-configure_build_install_location(_rclpy_handle)
-clean_windows_flags(_rclpy_handle)
 
 if(NOT WIN32)
   ament_environment_hooks(
@@ -284,6 +238,11 @@ if(BUILD_TESTING)
     src/test/rclpy_common/test_handle.cpp)
   target_link_libraries(test_c_handle
     rclpy_common)
+
+  ament_add_gtest(test_python_allocator
+    test/test_python_allocator.cpp)
+  target_include_directories(test_python_allocator PRIVATE src/rclpy)
+  target_link_libraries(test_python_allocator pybind11::embed)
 
   if(NOT _typesupport_impls STREQUAL "")
     # Run each test in its own pytest invocation to isolate any global state in rclpy
