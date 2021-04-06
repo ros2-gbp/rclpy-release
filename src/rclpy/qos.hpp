@@ -64,9 +64,16 @@ struct QoSCheckCompatibleResult
  */
 QoSCheckCompatibleResult
 qos_check_compatible(
-  const py::capsule & publisher_qos_profile,
-  const py::capsule & subscription_qos_profile
+  const rmw_qos_profile_t & publisher_qos_profile,
+  const rmw_qos_profile_t & subscription_qos_profile
 );
+
+/// Define a pybind11 wrapper for an rmw_qos_profile_t
+/**
+ * \param[in] module a pybind11 module to add the definition to
+ */
+void
+define_rmw_qos_profile(py::object module);
 
 }  // namespace rclpy
 
