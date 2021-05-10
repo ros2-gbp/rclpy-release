@@ -2,6 +2,11 @@
 Changelog for package rclpy
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+1.8.2 (2021-05-10)
+------------------
+* Break log function execution ASAP if configured severity is too high (`#776 <https://github.com/ros2/rclpy/issues/776>`_) (`#783 <https://github.com/ros2/rclpy/issues/783>`_)
+* Contributors: ksuszka
+
 1.8.1 (2021-04-12)
 ------------------
 * typo fix. (`#768 <https://github.com/ros2/rclpy/issues/768>`_)
