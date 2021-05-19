@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
+
 
 class NotInitializedException(Exception):
     """Raised when the rclpy implementation is accessed before rclpy.init()."""
@@ -37,6 +39,9 @@ Invalid {name_type}: {error_msg}:
    {indent}^\
 """.format(name_type=name_type, name=name, error_msg=error_msg, indent=' ' * invalid_index)
         Exception.__init__(self, msg)
+
+
+InvalidHandle = _rclpy.InvalidHandle
 
 
 class InvalidNamespaceException(NameValidationException):
@@ -127,13 +132,13 @@ class ParameterImmutableException(ParameterException):
         Exception.__init__(self, 'Attempted to modify read-only parameter', parameter, *args)
 
 
-class NoParameterOverrideProvidedException(ParameterException):
-    """Raised when no override is provided for a statically typed parameter with no default."""
+class ParameterUninitializedException(ParameterException):
+    """Raised when an uninitialized parameter is accessed."""
 
     def __init__(self, parameter_name, *args):
         Exception.__init__(
             self,
-            f"No parameter override provided for '{parameter_name}' when one was expected",
+            f"The parameter '{parameter_name}' is not initialized",
             *args)
 
 
