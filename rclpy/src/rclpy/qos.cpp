@@ -29,7 +29,8 @@
 #include "rclpy_common/common.h"
 #include "rclpy_common/handle.h"
 
-#include "exceptions.hpp"
+#include "rclpy_common/exceptions.hpp"
+
 #include "qos.hpp"
 
 namespace rclpy

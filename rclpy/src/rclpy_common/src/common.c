@@ -55,6 +55,91 @@ cleanup_rclpy_qos_profile(rclpy_qos_profile_t * profile)
   Py_XDECREF(profile->avoid_ros_namespace_conventions);
 }
 
+bool
+rclpy_names_and_types_fini(rcl_names_and_types_t * names_and_types)
+{
+  if (!names_and_types) {
+    return true;
+  }
+  rcl_ret_t ret = rcl_names_and_types_fini(names_and_types);
+  if (ret != RCL_RET_OK) {
+    PyErr_Format(
+      PyExc_RuntimeError,
+      "Failed to destroy rcl_names_and_types_t: %s", rcl_get_error_string().str);
+    rcl_reset_error();
+    return false;
+  }
+  return true;
+}
+
+void *
+rclpy_common_get_type_support(PyObject * pymsg_type)
+{
+  PyObject * pymetaclass = PyObject_GetAttrString(pymsg_type, "__class__");
+  if (!pymetaclass) {
+    return NULL;
+  }
+
+  PyObject * pyts = PyObject_GetAttrString(pymetaclass, "_TYPE_SUPPORT");
+  Py_DECREF(pymetaclass);
+  if (!pyts) {
+    return NULL;
+  }
+
+  void * ts = PyCapsule_GetPointer(pyts, NULL);
+  Py_DECREF(pyts);
+  return ts;
+}
+
+PyObject *
+rclpy_convert_to_py_names_and_types(rcl_names_and_types_t * names_and_types)
+{
+  if (!names_and_types) {
+    return NULL;
+  }
+
+  PyObject * pynames_and_types = PyList_New(names_and_types->names.size);
+  if (!pynames_and_types) {
+    return NULL;
+  }
+
+  size_t i;
+  for (i = 0; i < names_and_types->names.size; ++i) {
+    PyObject * pytuple = PyTuple_New(2);
+    if (!pytuple) {
+      Py_DECREF(pynames_and_types);
+      return NULL;
+    }
+    PyObject * pyname = PyUnicode_FromString(names_and_types->names.data[i]);
+    if (!pyname) {
+      Py_DECREF(pynames_and_types);
+      Py_DECREF(pytuple);
+      return NULL;
+    }
+    PyTuple_SET_ITEM(pytuple, 0, pyname);
+    PyObject * pytypes_list = PyList_New(names_and_types->types[i].size);
+    if (!pytypes_list) {
+      Py_DECREF(pynames_and_types);
+      Py_DECREF(pytuple);
+      return NULL;
+    }
+    size_t j;
+    for (j = 0; j < names_and_types->types[i].size; ++j) {
+      PyObject * pytype = PyUnicode_FromString(names_and_types->types[i].data[j]);
+      if (!pytype) {
+        Py_DECREF(pynames_and_types);
+        Py_DECREF(pytuple);
+        Py_DECREF(pytypes_list);
+        return NULL;
+      }
+      PyList_SET_ITEM(pytypes_list, j, pytype);
+    }
+    PyTuple_SET_ITEM(pytuple, 1, pytypes_list);
+    PyList_SET_ITEM(pynames_and_types, i, pytuple);
+  }
+  return pynames_and_types;
+}
+
 static
 PyObject *
 _convert_rmw_time_to_py_duration(const rmw_time_t * duration)
@@ -185,6 +270,93 @@ rclpy_common_convert_to_qos_dict(const rmw_qos_profile_t * qos_profile)
   }
 
   return pyqos_kwargs;
+}
+
+void *
+get_capsule_pointer(PyObject * pymetaclass, const char * attr)
+{
+  PyObject * pyattr = PyObject_GetAttrString(pymetaclass, attr);
+  if (!pyattr) {
+    return NULL;
+  }
+  void * ptr = PyCapsule_GetPointer(pyattr, NULL);
+  Py_DECREF(pyattr);
+  return ptr;
+}
+
+void *
+rclpy_create_from_py(PyObject * pymessage, destroy_ros_message_signature ** destroy_ros_message)
+{
+  PyObject * pymetaclass = PyObject_GetAttrString(pymessage, "__class__");
+  if (!pymetaclass) {
+    return NULL;
+  }
+
+  create_ros_message_signature * create_ros_message = get_capsule_pointer(
+    pymetaclass, "_CREATE_ROS_MESSAGE");
+  if (!create_ros_message) {
+    Py_DECREF(pymetaclass);
+    return NULL;
+  }
+
+  *destroy_ros_message = get_capsule_pointer(
+    pymetaclass, "_DESTROY_ROS_MESSAGE");
+  Py_DECREF(pymetaclass);
+  if (!(*destroy_ros_message)) {
+    return NULL;
+  }
+
+  void * message = create_ros_message();
+  if (!message) {
+    PyErr_NoMemory();
+    return NULL;
+  }
+  return message;
+}
+
+void *
+rclpy_convert_from_py(PyObject * pymessage, destroy_ros_message_signature ** destroy_ros_message)
+{
+  void * message = rclpy_create_from_py(pymessage, destroy_ros_message);
+  if (!message) {
+    return NULL;
+  }
+
+  PyObject * pymetaclass = PyObject_GetAttrString(pymessage, "__class__");
+  if (!pymetaclass) {
+    (**destroy_ros_message)(message);
+    return NULL;
+  }
+
+  convert_from_py_signature * convert = get_capsule_pointer(
+    pymetaclass, "_CONVERT_FROM_PY");
+  Py_DECREF(pymetaclass);
+  if (!convert) {
+    (**destroy_ros_message)(message);
+    return NULL;
+  }
+
+  if (!convert(pymessage, message)) {
+    (**destroy_ros_message)(message);
+    return NULL;
+  }
+  return message;
+}
+
+PyObject *
+rclpy_convert_to_py(void * message, PyObject * pyclass)
+{
+  PyObject * pymetaclass = PyObject_GetAttrString(pyclass, "__class__");
+  if (!pymetaclass) {
+    return NULL;
+  }
+  convert_to_py_signature * convert = get_capsule_pointer(
+    pymetaclass, "_CONVERT_TO_PY");
+  Py_DECREF(pymetaclass);
+  if (!convert) {
+    return NULL;
+  }
+  return convert(message);
 }
 
 PyObject *

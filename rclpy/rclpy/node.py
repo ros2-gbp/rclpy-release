@@ -45,7 +45,6 @@ from rclpy.clock import Clock
 from rclpy.clock import ROSClock
 from rclpy.constants import S_TO_NS
 from rclpy.context import Context
-from rclpy.exceptions import InvalidHandle
 from rclpy.exceptions import InvalidParameterTypeException
 from rclpy.exceptions import InvalidParameterValueException
 from rclpy.exceptions import InvalidTopicNameException
@@ -57,6 +56,8 @@ from rclpy.exceptions import ParameterUninitializedException
 from rclpy.executors import Executor
 from rclpy.expand_topic_name import expand_topic_name
 from rclpy.guard_condition import GuardCondition
+from rclpy.handle import Handle
+from rclpy.handle import InvalidHandle
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.logging import get_logger
 from rclpy.parameter import Parameter, PARAMETER_SEPARATOR_STRING
@@ -169,16 +170,16 @@ class Node:
         namespace = namespace or ''
         if not self._context.ok():
             raise NotInitializedException('cannot create node')
-        with self._context.handle:
+        with self._context.handle as capsule:
             try:
-                self.__node = _rclpy.Node(
+                self.__handle = Handle(_rclpy.rclpy_create_node(
                     node_name,
                     namespace,
-                    self._context.handle,
+                    capsule,
                     cli_args,
                     use_global_arguments,
                     enable_rosout
-                )
+                ))
             except ValueError:
                 # these will raise more specific errors if the name or namespace is bad
                 validate_node_name(node_name)
@@ -190,16 +191,16 @@ class Node:
                 validate_namespace(namespace)
                 # Should not get to this point
                 raise RuntimeError('rclpy_create_node failed for unknown reason')
-        with self.handle:
-            self._logger = get_logger(self.__node.logger_name())
+        with self.handle as capsule:
+            self._logger = get_logger(_rclpy.rclpy_get_node_logger_name(capsule))
 
         self.__executor_weakref = None
 
         self._parameter_event_publisher = self.create_publisher(
             ParameterEvent, '/parameter_events', qos_profile_parameter_events)
 
-        with self.handle:
-            self._parameter_overrides = self.__node.get_parameters(Parameter)
+        with self.handle as capsule:
+            self._parameter_overrides = _rclpy.rclpy_get_node_parameters(Parameter, capsule)
         # Combine parameters from params files with those from the node constructor and
         # use the set_parameters_atomically API so a parameter event is published.
         if parameter_overrides is not None:
@@ -304,7 +305,7 @@ class Node:
 
         :raises: AttributeError if modified after creation.
         """
-        return self.__node
+        return self.__handle
 
     @handle.setter
     def handle(self, value):
@@ -312,13 +313,13 @@ class Node:
 
     def get_name(self) -> str:
         """Get the name of the node."""
-        with self.handle:
-            return self.handle.get_node_name()
+        with self.handle as capsule:
+            return _rclpy.rclpy_get_node_name(capsule)
 
     def get_namespace(self) -> str:
         """Get the namespace of the node."""
-        with self.handle:
-            return self.handle.get_namespace()
+        with self.handle as capsule:
+            return _rclpy.rclpy_get_node_namespace(capsule)
 
     def get_clock(self) -> Clock:
         """Get the clock used by the node."""
@@ -1214,8 +1215,8 @@ class Node:
         :return: a fully qualified topic name,
             result of applying expansion and remapping to the given `topic`.
         """
-        with self.handle:
-            return _rclpy.rclpy_resolve_name(self.handle, topic, only_expand, False)
+        with self.handle as capsule:
+            return _rclpy.rclpy_resolve_name(capsule, topic, only_expand, False)
 
     def resolve_service_name(
         self, service: str, *, only_expand: bool = False
@@ -1228,8 +1229,8 @@ class Node:
         :return: a fully qualified service name,
             result of applying expansion and remapping to the given `service`.
         """
-        with self.handle:
-            return _rclpy.rclpy_resolve_name(self.handle, service, only_expand, True)
+        with self.handle as capsule:
+            return _rclpy.rclpy_resolve_name(capsule, service, only_expand, True)
 
     def create_publisher(
         self,
@@ -1280,21 +1281,22 @@ class Node:
         failed = False
         check_is_valid_msg_type(msg_type)
         try:
-            with self.handle:
-                publisher_object = _rclpy.Publisher(
-                    self.handle, msg_type, topic, qos_profile.get_c_qos_profile())
+            with self.handle as node_capsule:
+                publisher_capsule = _rclpy.rclpy_create_publisher(
+                    node_capsule, msg_type, topic, qos_profile.get_c_qos_profile())
         except ValueError:
             failed = True
         if failed:
             self._validate_topic_or_service_name(topic)
 
+        publisher_handle = Handle(publisher_capsule)
         try:
             publisher = Publisher(
-                publisher_object, msg_type, topic, qos_profile,
+                publisher_handle, msg_type, topic, qos_profile,
                 event_callbacks=event_callbacks or PublisherEventCallbacks(),
                 callback_group=callback_group)
         except Exception:
-            publisher_object.destroy_when_not_in_use()
+            publisher_handle.destroy()
             raise
         self.__publishers.append(publisher)
         self._wake_executor()
@@ -1357,21 +1359,22 @@ class Node:
         failed = False
         check_is_valid_msg_type(msg_type)
         try:
-            with self.handle:
-                subscription_object = _rclpy.Subscription(
-                    self.handle, msg_type, topic, qos_profile.get_c_qos_profile())
+            with self.handle as capsule:
+                subscription_capsule = _rclpy.rclpy_create_subscription(
+                    capsule, msg_type, topic, qos_profile.get_c_qos_profile())
         except ValueError:
             failed = True
         if failed:
             self._validate_topic_or_service_name(topic)
 
+        subscription_handle = Handle(subscription_capsule)
         try:
             subscription = Subscription(
-                subscription_object, msg_type,
+                subscription_handle, msg_type,
                 topic, callback, callback_group, qos_profile, raw,
                 event_callbacks=event_callbacks or SubscriptionEventCallbacks())
         except Exception:
-            subscription_object.destroy_when_not_in_use()
+            subscription_handle.destroy()
             raise
         self.__subscriptions.append(subscription)
         callback_group.add_entity(subscription)
@@ -1404,9 +1407,9 @@ class Node:
         check_is_valid_srv_type(srv_type)
         failed = False
         try:
-            with self.handle:
+            with self.handle as node_capsule:
                 client_impl = _rclpy.Client(
-                    self.handle,
+                    node_capsule,
                     srv_type,
                     srv_name,
                     qos_profile.get_c_qos_profile())
@@ -1449,9 +1452,9 @@ class Node:
         check_is_valid_srv_type(srv_type)
         failed = False
         try:
-            with self.handle:
+            with self.handle as node_capsule:
                 service_impl = _rclpy.Service(
-                    self.handle,
+                    node_capsule,
                     srv_type,
                     srv_name,
                     qos_profile.get_c_qos_profile())
@@ -1677,7 +1680,7 @@ class Node:
             self.destroy_timer(self.__timers[0])
         while self.__guards:
             self.destroy_guard_condition(self.__guards[0])
-        self.__node.destroy_when_not_in_use()
+        self.handle.destroy()
         self._wake_executor()
 
     def get_publisher_names_and_types_by_node(
@@ -1698,9 +1701,9 @@ class Node:
         :raise NodeNameNonExistentError: If the node wasn't found.
         :raise RuntimeError: Unexpected failure.
         """
-        with self.handle:
+        with self.handle as capsule:
             return _rclpy.rclpy_get_publisher_names_and_types_by_node(
-                self.handle, no_demangle, node_name, node_namespace)
+                capsule, no_demangle, node_name, node_namespace)
 
     def get_subscriber_names_and_types_by_node(
         self,
@@ -1720,9 +1723,9 @@ class Node:
         :raise NodeNameNonExistentError: If the node wasn't found.
         :raise RuntimeError: Unexpected failure.
         """
-        with self.handle:
+        with self.handle as capsule:
             return _rclpy.rclpy_get_subscriber_names_and_types_by_node(
-                self.handle, no_demangle, node_name, node_namespace)
+                capsule, no_demangle, node_name, node_namespace)
 
     def get_service_names_and_types_by_node(
         self,
@@ -1740,9 +1743,9 @@ class Node:
         :raise NodeNameNonExistentError: If the node wasn't found.
         :raise RuntimeError: Unexpected failure.
         """
-        with self.handle:
+        with self.handle as capsule:
             return _rclpy.rclpy_get_service_names_and_types_by_node(
-                self.handle, node_name, node_namespace)
+                capsule, node_name, node_namespace)
 
     def get_client_names_and_types_by_node(
         self,
@@ -1760,9 +1763,9 @@ class Node:
         :raise NodeNameNonExistentError: If the node wasn't found.
         :raise RuntimeError: Unexpected failure.
         """
-        with self.handle:
+        with self.handle as capsule:
             return _rclpy.rclpy_get_client_names_and_types_by_node(
-                self.handle, node_name, node_namespace)
+                capsule, node_name, node_namespace)
 
     def get_topic_names_and_types(self, no_demangle: bool = False) -> List[Tuple[str, List[str]]]:
         """
@@ -1773,8 +1776,8 @@ class Node:
           The first element of each tuple is the topic name and the second element is a list of
           topic types.
         """
-        with self.handle:
-            return _rclpy.rclpy_get_topic_names_and_types(self.handle, no_demangle)
+        with self.handle as capsule:
+            return _rclpy.rclpy_get_topic_names_and_types(capsule, no_demangle)
 
     def get_service_names_and_types(self) -> List[Tuple[str, List[str]]]:
         """
@@ -1784,8 +1787,8 @@ class Node:
           The first element of each tuple is the service name and the second element is a list of
           service types.
         """
-        with self.handle:
-            return _rclpy.rclpy_get_service_names_and_types(self.handle)
+        with self.handle as capsule:
+            return _rclpy.rclpy_get_service_names_and_types(capsule)
 
     def get_node_names(self) -> List[str]:
         """
@@ -1793,8 +1796,8 @@ class Node:
 
         :return: List of node names.
         """
-        with self.handle:
-            names_ns = self.handle.get_node_names_and_namespaces()
+        with self.handle as capsule:
+            names_ns = _rclpy.rclpy_get_node_names_and_namespaces(capsule)
         return [n[0] for n in names_ns]
 
     def get_node_names_and_namespaces(self) -> List[Tuple[str, str]]:
@@ -1803,8 +1806,8 @@ class Node:
 
         :return: List of tuples containing two strings: the node name and node namespace.
         """
-        with self.handle:
-            return self.handle.get_node_names_and_namespaces()
+        with self.handle as capsule:
+            return _rclpy.rclpy_get_node_names_and_namespaces(capsule)
 
     def get_node_names_and_namespaces_with_enclaves(self) -> List[Tuple[str, str, str]]:
         """
@@ -1813,8 +1816,8 @@ class Node:
         :return: List of tuples containing three strings: the node name, node namespace
             and enclave.
         """
-        with self.handle:
-            return self.handle.get_node_names_and_namespaces_with_enclaves()
+        with self.handle as capsule:
+            return _rclpy.rclpy_get_node_names_and_namespaces_with_enclaves(capsule)
 
     def get_fully_qualified_name(self) -> str:
         """
@@ -1822,14 +1825,14 @@ class Node:
 
         :return: Fully qualified node name.
         """
-        with self.handle:
-            return self.handle.get_fully_qualified_name()
+        with self.handle as capsule:
+            return _rclpy.rclpy_node_get_fully_qualified_name(capsule)
 
     def _count_publishers_or_subscribers(self, topic_name, func):
         fq_topic_name = expand_topic_name(topic_name, self.get_name(), self.get_namespace())
         validate_full_topic_name(fq_topic_name)
-        with self.handle:
-            return func(fq_topic_name)
+        with self.handle as node_capsule:
+            return func(node_capsule, fq_topic_name)
 
     def count_publishers(self, topic_name: str) -> int:
         """
@@ -1842,9 +1845,7 @@ class Node:
         :param topic_name: the topic_name on which to count the number of publishers.
         :return: the number of publishers on the topic.
         """
-        with self.handle:
-            return self._count_publishers_or_subscribers(
-                topic_name, self.handle.get_count_publishers)
+        return self._count_publishers_or_subscribers(topic_name, _rclpy.rclpy_count_publishers)
 
     def count_subscribers(self, topic_name: str) -> int:
         """
@@ -1857,9 +1858,7 @@ class Node:
         :param topic_name: the topic_name on which to count the number of subscribers.
         :return: the number of subscribers on the topic.
         """
-        with self.handle:
-            return self._count_publishers_or_subscribers(
-                topic_name, self.handle.get_count_subscribers)
+        return self._count_publishers_or_subscribers(topic_name, _rclpy.rclpy_count_subscribers)
 
     def _get_info_by_topic(
         self,
@@ -1867,16 +1866,16 @@ class Node:
         no_mangle: bool,
         func: Callable[[object, str, bool], List[Dict]]
     ) -> List[TopicEndpointInfo]:
-        with self.handle:
+        with self.handle as node_capsule:
             if no_mangle:
                 fq_topic_name = topic_name
             else:
                 fq_topic_name = expand_topic_name(
                     topic_name, self.get_name(), self.get_namespace())
                 validate_full_topic_name(fq_topic_name)
-                fq_topic_name = _rclpy.rclpy_remap_topic_name(self.handle, fq_topic_name)
+                fq_topic_name = _rclpy.rclpy_remap_topic_name(node_capsule, fq_topic_name)
 
-            info_dicts = func(self.handle, fq_topic_name, no_mangle)
+            info_dicts = func(node_capsule, fq_topic_name, no_mangle)
             infos = [TopicEndpointInfo(**x) for x in info_dicts]
             return infos
 

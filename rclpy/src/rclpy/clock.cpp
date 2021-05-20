@@ -26,6 +26,8 @@
 
 #include "rclpy_common/handle.h"
 
+#include "rclpy_common/exceptions.hpp"
+
 #include "clock.hpp"
 
 using pybind11::literals::operator""_a;
@@ -179,7 +181,7 @@ void Clock::remove_clock_callback(py::object pyjump_handle)
 
 void define_clock(py::object module)
 {
-  py::class_<Clock, Destroyable, std::shared_ptr<Clock>>(module, "Clock")
+  py::class_<Clock, Destroyable>(module, "Clock")
   .def(py::init<rcl_clock_type_t>())
   .def_property_readonly(
     "pointer", [](const Clock & clock) {

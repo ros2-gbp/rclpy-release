@@ -2,30 +2,16 @@
 Changelog for package rclpy
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-3.0.0 (2021-05-19)
+1.9.0 (2021-05-20)
 ------------------
-* Allow declaring uninitialized parameters (`#798 <https://github.com/ros2/rclpy/issues/798>`_)
-* Reject cancel request if failed to transit to CANCEL_GOAL state (`#791 <https://github.com/ros2/rclpy/issues/791>`_)
-* Deleted handle as it should no longer be used (`#786 <https://github.com/ros2/rclpy/issues/786>`_)
-* Removed some functions in common.c and replaced them in utils.cpp (`#787 <https://github.com/ros2/rclpy/issues/787>`_)
-* Moved exception.cpp/hpp to the _rclpy_pybind11 module (`#788 <https://github.com/ros2/rclpy/issues/788>`_)
-* Contributors: Alejandro Hernández Cordero, Jacob Perron, Tomoya Fujita
+* Allow declaring uninitialized statically typed parameters. (`#798 <https://github.com/ros2/rclpy/issues/798>`_) (`#799 <https://github.com/ros2/rclpy/issues/799>`_)
+* Reject cancel request if failed to transit to CANCEL_GOAL state. (`#791 <https://github.com/ros2/rclpy/issues/791>`_) (`#795 <https://github.com/ros2/rclpy/issues/795>`_)
+* Contributors: Jacob Perron, Tomoya Fujita
 
-2.0.0 (2021-05-10)
+1.8.2 (2021-05-10)
 ------------------
-* Print 'Infinite' for infinite durations in topic endpoint info (`#722 <https://github.com/ros2/rclpy/issues/722>`_)
-* Break log function execution ASAP if configured severity is too high (`#776 <https://github.com/ros2/rclpy/issues/776>`_)
-* Convert Node and Context to use C++ Classes (`#771 <https://github.com/ros2/rclpy/issues/771>`_)
-* Misc action server improvements (`#774 <https://github.com/ros2/rclpy/issues/774>`_)
-* Misc action goal handle improvements (`#767 <https://github.com/ros2/rclpy/issues/767>`_)
-* Convert Guardcondition to use C++ classes (`#772 <https://github.com/ros2/rclpy/issues/772>`_)
-* Removed unused structs ``rclpy_client_t`` and ``rclpy_service_t`` (`#770 <https://github.com/ros2/rclpy/issues/770>`_)
-* Convert WaitSet to use C++ Classes (`#769 <https://github.com/ros2/rclpy/issues/769>`_)
-* Convert ActionServer to use C++ Classes (`#766 <https://github.com/ros2/rclpy/issues/766>`_)
-* Convert ActionClient to use C++ classes (`#759 <https://github.com/ros2/rclpy/issues/759>`_)
-* Use py::class\_ for rcl_action_goal_handle_t (`#751 <https://github.com/ros2/rclpy/issues/751>`_)
-* Convert Publisher and Subscription to use C++ Classes (`#756 <https://github.com/ros2/rclpy/issues/756>`_)
-* Contributors: Alejandro Hernández Cordero, Emerson Knapp, Greg Balke, Shane Loretz, ksuszka
+* Break log function execution ASAP if configured severity is too high (`#776 <https://github.com/ros2/rclpy/issues/776>`_) (`#783 <https://github.com/ros2/rclpy/issues/783>`_)
+* Contributors: ksuszka
 
 1.8.1 (2021-04-12)
 ------------------
