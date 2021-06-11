@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Include pybind11 before rclpy_common/handle.h includes Python.h
 #include <pybind11/pybind11.h>
 
 #include <rcl/error_handling.h>
@@ -23,10 +22,6 @@
 #include <cstring>
 #include <memory>
 #include <stdexcept>
-
-#include "rclpy_common/handle.h"
-
-#include "rclpy_common/exceptions.hpp"
 
 #include "clock.hpp"
 
@@ -181,7 +176,7 @@ void Clock::remove_clock_callback(py::object pyjump_handle)
 
 void define_clock(py::object module)
 {
-  py::class_<Clock, Destroyable>(module, "Clock")
+  py::class_<Clock, Destroyable, std::shared_ptr<Clock>>(module, "Clock")
   .def(py::init<rcl_clock_type_t>())
   .def_property_readonly(
     "pointer", [](const Clock & clock) {

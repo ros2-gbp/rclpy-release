@@ -17,15 +17,15 @@
 
 #include <pybind11/pybind11.h>
 
-#include <rmw/types.h>
 #include <rcl/timer.h>
+#include <rcl/rcl.h>
+#include <rmw/types.h>
 
 #include <memory>
 #include <string>
 
 #include "destroyable.hpp"
-#include "handle.hpp"
-#include "rclpy_common/exceptions.hpp"
+#include "node.hpp"
 #include "utils.hpp"
 
 namespace py = pybind11;
@@ -33,7 +33,7 @@ namespace py = pybind11;
 namespace rclpy
 {
 
-class Service : public Destroyable
+class Service : public Destroyable, public std::enable_shared_from_this<Service>
 {
 public:
   /// Create a service server
@@ -45,14 +45,14 @@ public:
    * Raises ValueError if the capsules are not the correct types
    * Raises RCLError if the service could not be created
    *
-   * \param[in] pynode Capsule pointing to the node to add the service to
+   * \param[in] node node to add the service to
    * \param[in] pysrv_type Service module associated with the service
    * \param[in] service_name Python object for the service name
    * \param[in] pyqos_profile QoSProfile Python object for this service
    * \return capsule containing the rcl_service_t
    */
   Service(
-    py::capsule pynode, py::object pysrv_type, std::string service_name,
+    Node & node, py::object pysrv_type, std::string service_name,
     py::object pyqos_profile);
 
   ~Service() = default;
@@ -81,7 +81,7 @@ public:
   py::tuple
   service_take_request(py::object pyrequest_type);
 
-  /// Get rcl_client_t pointer
+  /// Get rcl_service_t pointer
   rcl_service_t *
   rcl_ptr() const
   {
@@ -93,8 +93,7 @@ public:
   destroy() override;
 
 private:
-  // TODO(ahcorde) replace with std::shared_ptr<rcl_node_t> when rclpy::Node exists
-  std::shared_ptr<Handle> node_handle_;
+  Node node_;
   std::shared_ptr<rcl_service_t> rcl_service_;
 };
 

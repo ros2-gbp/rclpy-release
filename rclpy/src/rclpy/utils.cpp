@@ -17,17 +17,15 @@
 #include <pybind11/pybind11.h>
 
 #include <rcl/error_handling.h>
+#include <rcl_action/rcl_action.h>
 #include <rcpputils/scope_exit.hpp>
 
 #include <limits>
 #include <memory>
+#include <string>
 #include <vector>
 
-#include "rclpy_common/common.h"
-#include "rclpy_common/handle.h"
-#include "rclpy_common/exceptions.hpp"
-
-#include "init.hpp"
+#include "exceptions.hpp"
 #include "utils.hpp"
 
 namespace rclpy
@@ -48,6 +46,17 @@ convert_to_py_names_and_types(const rcl_names_and_types_t * names_and_types)
       py::str(names_and_types->names.data[i]), py_types);
   }
   return py_names_and_types;
+}
+
+void *
+common_get_type_support(py::object pymessage)
+{
+  py::object pymetaclass = pymessage.attr("__class__");
+
+  py::object value = pymetaclass.attr("_TYPE_SUPPORT");
+  auto capsule_ptr = static_cast<void *>(value.cast<py::capsule>());
+
+  return capsule_ptr;
 }
 
 std::unique_ptr<void, destroy_ros_message_function *>
@@ -81,6 +90,31 @@ create_from_py(py::object pymessage)
     void, destroy_ros_message_function *>(message, destroy_ros_message);
 }
 
+std::unique_ptr<void, destroy_ros_message_function *>
+convert_from_py(py::object pymessage)
+{
+  typedef bool convert_from_py_signature (PyObject *, void *);
+
+  std::unique_ptr<void, destroy_ros_message_function *> message =
+    create_from_py(pymessage);
+
+  py::object pymetaclass = pymessage.attr("__class__");
+
+  auto capsule_ptr = static_cast<void *>(
+    pymetaclass.attr("_CONVERT_FROM_PY").cast<py::capsule>());
+  auto convert =
+    reinterpret_cast<convert_from_py_signature *>(capsule_ptr);
+  if (!convert) {
+    throw py::error_already_set();
+  }
+
+  if (!convert(pymessage.ptr(), message.get())) {
+    throw py::error_already_set();
+  }
+
+  return message;
+}
+
 py::object
 convert_to_py(void * message, py::object pyclass)
 {
@@ -104,20 +138,10 @@ get_rmw_implementation_identifier()
 }
 
 void
-assert_liveliness(py::capsule pyentity)
+assert_liveliness(rclpy::Publisher * publisher)
 {
-  if (0 == strcmp("rclpy_publisher_t", pyentity.name())) {
-    auto publisher = static_cast<rclpy_publisher_t *>(
-      rclpy_handle_get_pointer_from_capsule(
-        pyentity.ptr(), "rclpy_publisher_t"));
-    if (nullptr == publisher) {
-      throw py::error_already_set();
-    }
-    if (RCL_RET_OK != rcl_publisher_assert_liveliness(&publisher->publisher)) {
-      throw RCLError("Failed to assert liveliness on the Publisher");
-    }
-  } else {
-    throw py::type_error("Passed capsule is not a valid Publisher.");
+  if (RCL_RET_OK != rcl_publisher_assert_liveliness(publisher->rcl_ptr())) {
+    throw RCLError("Failed to assert liveliness on the Publisher");
   }
 }
 
@@ -209,5 +233,128 @@ remove_ros_args(py::object pycli_args)
   }
 
   return result_args;
+}
+
+void
+throw_if_unparsed_ros_args(py::list pyargs, const rcl_arguments_t & rcl_args)
+{
+  int unparsed_ros_args_count = rcl_arguments_get_count_unparsed_ros(&rcl_args);
+
+  if (unparsed_ros_args_count < 0) {
+    throw std::runtime_error("failed to count unparsed arguments");
+  }
+  if (0 == unparsed_ros_args_count) {
+    return;
+  }
+
+  rcl_allocator_t allocator = rcl_get_default_allocator();
+
+  int * unparsed_indices_c = nullptr;
+  rcl_ret_t ret = rcl_arguments_get_unparsed_ros(&rcl_args, allocator, &unparsed_indices_c);
+  if (RCL_RET_OK != ret) {
+    throw RCLError("failed to get unparsed arguments");
+  }
+
+  auto deallocator = [&](int ptr[]) {allocator.deallocate(ptr, allocator.state);};
+  auto unparsed_indices = std::unique_ptr<int[], decltype(deallocator)>(
+    unparsed_indices_c, deallocator);
+
+  py::list unparsed_args;
+  for (int i = 0; i < unparsed_ros_args_count; ++i) {
+    int index = unparsed_indices_c[i];
+    if (index < 0 || static_cast<size_t>(index) >= pyargs.size()) {
+      throw std::runtime_error("got invalid unparsed ROS arg index");
+    }
+    unparsed_args.append(pyargs[index]);
+  }
+
+  throw UnknownROSArgsError(static_cast<std::string>(py::repr(unparsed_args)));
+}
+
+py::dict
+rclpy_action_get_rmw_qos_profile(const char * rmw_profile)
+{
+  py::dict pyqos_profile;
+  if (0 == strcmp(rmw_profile, "rcl_action_qos_profile_status_default")) {
+    pyqos_profile = convert_to_qos_dict(&rcl_action_qos_profile_status_default);
+  } else {
+    std::string error_text = "Requested unknown rmw_qos_profile: ";
+    error_text += rmw_profile;
+    throw std::runtime_error(error_text);
+  }
+  return pyqos_profile;
+}
+
+py::dict
+_convert_to_py_topic_endpoint_info(const rmw_topic_endpoint_info_t * topic_endpoint_info)
+{
+  py::list py_endpoint_gid = py::list(RMW_GID_STORAGE_SIZE);
+  for (size_t i = 0; i < RMW_GID_STORAGE_SIZE; i++) {
+    py_endpoint_gid[i] = py::int_(topic_endpoint_info->endpoint_gid[i]);
+  }
+
+  // Create dictionary that represents rmw_topic_endpoint_info_t
+  py::dict py_endpoint_info_dict;
+  // Populate keyword arguments
+  // A success returns 0, and a failure returns -1
+  py_endpoint_info_dict["node_name"] = py::str(topic_endpoint_info->node_name);
+  py_endpoint_info_dict["node_namespace"] = py::str(topic_endpoint_info->node_namespace);
+  py_endpoint_info_dict["topic_type"] = py::str(topic_endpoint_info->topic_type);
+  py_endpoint_info_dict["endpoint_type"] =
+    py::int_(static_cast<int>(topic_endpoint_info->endpoint_type));
+  py_endpoint_info_dict["endpoint_gid"] = py_endpoint_gid;
+  py_endpoint_info_dict["qos_profile"] =
+    convert_to_qos_dict(&topic_endpoint_info->qos_profile);
+
+  return py_endpoint_info_dict;
+}
+
+py::list
+convert_to_py_topic_endpoint_info_list(const rmw_topic_endpoint_info_array_t * info_array)
+{
+  if (!info_array) {
+    throw std::runtime_error("rmw_topic_endpoint_info_array_t pointer is empty");
+  }
+
+  py::list py_info_array(info_array->size);
+
+  for (size_t i = 0; i < info_array->size; ++i) {
+    rmw_topic_endpoint_info_t topic_endpoint_info = info_array->info_array[i];
+    // add this dict to the list
+    py_info_array[i] = _convert_to_py_topic_endpoint_info(&topic_endpoint_info);
+  }
+  return py_info_array;
+}
+
+static
+py::object
+_convert_rmw_time_to_py_duration(const rmw_time_t * duration)
+{
+  auto pyduration_module = py::module::import("rclpy.duration");
+  py::object pymetaclass = pyduration_module.attr("Duration");
+  // to bring in the `_a` literal
+  using namespace pybind11::literals;  // NOLINT
+  return pymetaclass("seconds"_a = duration->sec, "nanoseconds"_a = duration->nsec);
+}
+
+py::dict
+convert_to_qos_dict(const rmw_qos_profile_t * qos_profile)
+{
+  // Create dictionary and populate arguments with QoSProfile object
+  py::dict pyqos_kwargs;
+
+  pyqos_kwargs["depth"] = py::int_(qos_profile->depth);
+  pyqos_kwargs["history"] = py::int_(static_cast<int>(qos_profile->history));
+  pyqos_kwargs["reliability"] = py::int_(static_cast<int>(qos_profile->reliability));
+  pyqos_kwargs["durability"] = py::int_(static_cast<int>(qos_profile->durability));
+  pyqos_kwargs["lifespan"] = _convert_rmw_time_to_py_duration(&qos_profile->lifespan);
+  pyqos_kwargs["deadline"] = _convert_rmw_time_to_py_duration(&qos_profile->deadline);
+  pyqos_kwargs["liveliness"] = py::int_(static_cast<int>(qos_profile->liveliness));
+  pyqos_kwargs["liveliness_lease_duration"] = _convert_rmw_time_to_py_duration(
+    &qos_profile->liveliness_lease_duration);
+  pyqos_kwargs["avoid_ros_namespace_conventions"] =
+    py::bool_(qos_profile->avoid_ros_namespace_conventions);
+
+  return pyqos_kwargs;
 }
 }  // namespace rclpy
