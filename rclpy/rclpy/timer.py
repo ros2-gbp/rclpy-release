@@ -14,7 +14,9 @@
 
 import threading
 
-from rclpy.exceptions import InvalidHandle, ROSInterruptException
+from rclpy.exceptions import ROSInterruptException
+from rclpy.handle import Handle
+from rclpy.handle import InvalidHandle
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.utilities import get_default_context
 
@@ -24,9 +26,9 @@ class Timer:
     def __init__(self, callback, callback_group, timer_period_ns, clock, *, context=None):
         self._context = get_default_context() if context is None else context
         self._clock = clock
-        with self._clock.handle, self._context.handle:
-            self.__timer = _rclpy.Timer(
-                self._clock.handle, self._context.handle, timer_period_ns)
+        with self._clock.handle as clock_capsule, self._context.handle as context_capsule:
+            self.__handle = Handle(_rclpy.rclpy_create_timer(
+                clock_capsule, context_capsule, timer_period_ns))
         self.timer_period_ns = timer_period_ns
         self.callback = callback
         self.callback_group = callback_group
@@ -35,10 +37,10 @@ class Timer:
 
     @property
     def handle(self):
-        return self.__timer
+        return self.__handle
 
     def destroy(self):
-        self.__timer.destroy_when_not_in_use()
+        self.handle.destroy()
 
     @property
     def clock(self):
@@ -46,41 +48,41 @@ class Timer:
 
     @property
     def timer_period_ns(self):
-        with self.__timer:
-            val = self.__timer.get_timer_period()
-        self.__timer_period_ns = val
+        with self.handle as capsule:
+            val = _rclpy.rclpy_get_timer_period(capsule)
+        self._timer_period_ns = val
         return val
 
     @timer_period_ns.setter
     def timer_period_ns(self, value):
         val = int(value)
-        with self.__timer:
-            self.__timer.change_timer_period(val)
-        self.__timer_period_ns = val
+        with self.handle as capsule:
+            _rclpy.rclpy_change_timer_period(capsule, val)
+        self._timer_period_ns = val
 
     def is_ready(self):
-        with self.__timer:
-            return self.__timer.is_timer_ready()
+        with self.handle as capsule:
+            return _rclpy.rclpy_is_timer_ready(capsule)
 
     def is_canceled(self):
-        with self.__timer:
-            return self.__timer.is_timer_canceled()
+        with self.handle as capsule:
+            return _rclpy.rclpy_is_timer_canceled(capsule)
 
     def cancel(self):
-        with self.__timer:
-            self.__timer.cancel_timer()
+        with self.handle as capsule:
+            _rclpy.rclpy_cancel_timer(capsule)
 
     def reset(self):
-        with self.__timer:
-            self.__timer.reset_timer()
+        with self.handle as capsule:
+            _rclpy.rclpy_reset_timer(capsule)
 
     def time_since_last_call(self):
-        with self.__timer:
-            return self.__timer.time_since_last_call()
+        with self.handle as capsule:
+            return _rclpy.rclpy_time_since_last_call(capsule)
 
     def time_until_next_call(self):
-        with self.__timer:
-            return self.__timer.time_until_next_call()
+        with self.handle as capsule:
+            return _rclpy.rclpy_time_until_next_call(capsule)
 
 
 class Rate:

@@ -26,8 +26,11 @@ For example, you might use it like this:
         # ...
 """
 
-from rpyutils import import_c_library
-package = 'rclpy'
+from rclpy.impl import _import
 
-rclpy_implementation = import_c_library('._rclpy_pybind11', package)
-rclpy_signal_handler_implementation = import_c_library('._rclpy_signal_handler', package)
+rclpy_implementation = _import('._rclpy')
+rclpy_action_implementation = _import('._rclpy_action')
+rclpy_logging_implementation = _import('._rclpy_logging')
+rclpy_signal_handler_implementation = _import('._rclpy_signal_handler')
+rclpy_handle_implementation = _import('._rclpy_handle')
+rclpy_pycapsule_implementation = _import('._rclpy_pycapsule')
