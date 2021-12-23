@@ -16,9 +16,11 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
+find_package(lifecycle_msgs REQUIRED)
 find_package(rcl REQUIRED)
-find_package(rcl_logging_interface REQUIRED)
 find_package(rcl_action REQUIRED)
+find_package(rcl_lifecycle REQUIRED)
+find_package(rcl_logging_interface REQUIRED)
 find_package(rcl_yaml_param_parser REQUIRED)
 find_package(rcpputils REQUIRED)
 find_package(rcutils REQUIRED)
@@ -109,9 +111,11 @@ pybind11_add_module(_rclpy_pybind11 SHARED
   src/rclpy/context.cpp
   src/rclpy/destroyable.cpp
   src/rclpy/duration.cpp
+  src/rclpy/clock_event.cpp
   src/rclpy/exceptions.cpp
   src/rclpy/graph.cpp
   src/rclpy/guard_condition.cpp
+  src/rclpy/lifecycle.cpp
   src/rclpy/logging.cpp
   src/rclpy/names.cpp
   src/rclpy/node.cpp
@@ -132,8 +136,11 @@ target_include_directories(_rclpy_pybind11 PRIVATE
   src/rclpy/
 )
 target_link_libraries(_rclpy_pybind11 PRIVATE
+  lifecycle_msgs::lifecycle_msgs__rosidl_generator_c
+  lifecycle_msgs::lifecycle_msgs__rosidl_typesupport_c
   rcl::rcl
   rcl_action::rcl_action
+  rcl_lifecycle::rcl_lifecycle
   rcl_logging_interface::rcl_logging_interface
   rcpputils::rcpputils
   rcutils::rcutils
@@ -185,6 +192,7 @@ if(BUILD_TESTING)
       test/test_callback_group.py
       test/test_client.py
       test/test_clock.py
+      test/test_context.py
       test/test_create_node.py
       test/test_create_while_spinning.py
       test/test_destruction.py
