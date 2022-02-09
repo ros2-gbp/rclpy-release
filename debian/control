@@ -1,0 +1,12 @@
+Source: ros-rolling-rclpy
+Section: misc
+Priority: optional
+Maintainer: Shane Loretz <sloretz@openrobotics.org>
+Build-Depends: debhelper (>= 9.0.0), python3-pytest, ros-rolling-ament-cmake, ros-rolling-ament-cmake-gtest, ros-rolling-ament-cmake-pytest, ros-rolling-ament-lint-auto, ros-rolling-ament-lint-common, ros-rolling-pybind11-vendor, ros-rolling-python-cmake-module, ros-rolling-rcl, ros-rolling-rcl-action, ros-rolling-rcl-lifecycle, ros-rolling-rcl-logging-interface, ros-rolling-rcl-yaml-param-parser, ros-rolling-rcpputils, ros-rolling-rcutils, ros-rolling-rmw-implementation, ros-rolling-rmw-implementation-cmake, ros-rolling-rosidl-generator-py, ros-rolling-test-msgs, ros-rolling-unique-identifier-msgs, ros-rolling-ros-workspace
+Homepage: 
+Standards-Version: 3.9.2
+
+Package: ros-rolling-rclpy
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, ros-rolling-ament-index-python, ros-rolling-builtin-interfaces, ros-rolling-rcl, ros-rolling-rcl-action, ros-rolling-rcl-interfaces, ros-rolling-rcl-lifecycle, ros-rolling-rcl-logging-interface, ros-rolling-rcl-yaml-param-parser, ros-rolling-rmw-implementation, ros-rolling-rosgraph-msgs, ros-rolling-rpyutils, ros-rolling-unique-identifier-msgs, ros-rolling-ros-workspace
+Description: Package containing the Python client.
