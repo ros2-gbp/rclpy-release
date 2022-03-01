@@ -437,7 +437,7 @@ class Node:
 
             if len(parameter_tuple) == 1:
                 warnings.warn(
-                    f"when declaring parmater named '{name}', "
+                    f"when declaring parameter named '{name}', "
                     'declaring a parameter only providing its name is deprecated. '
                     'You have to either:\n'
                     '\t- Pass a name and a default value different to "PARAMETER NOT SET"'
@@ -1643,14 +1643,15 @@ class Node:
             return True
         return False
 
-    def destroy_rate(self, rate: Rate):
+    def destroy_rate(self, rate: Rate) -> bool:
         """
         Destroy a Rate object created by the node.
 
         :return: ``True`` if successful, ``False`` otherwise.
         """
-        self.destroy_timer(rate._timer)
+        success = self.destroy_timer(rate._timer)
         rate.destroy()
+        return success
 
     def destroy_node(self):
         """
