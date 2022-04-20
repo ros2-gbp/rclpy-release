@@ -1,0 +1,12 @@
+Source: ros-humble-rclpy
+Section: misc
+Priority: optional
+Maintainer: Shane Loretz <sloretz@openrobotics.org>
+Build-Depends: debhelper (>= 9.0.0), python3-pytest <!nocheck>, ros-humble-ament-cmake, ros-humble-ament-cmake-gtest <!nocheck>, ros-humble-ament-cmake-pytest <!nocheck>, ros-humble-ament-lint-auto <!nocheck>, ros-humble-ament-lint-common <!nocheck>, ros-humble-pybind11-vendor, ros-humble-python-cmake-module, ros-humble-rcl, ros-humble-rcl-action, ros-humble-rcl-lifecycle, ros-humble-rcl-logging-interface, ros-humble-rcl-yaml-param-parser, ros-humble-rcpputils, ros-humble-rcutils, ros-humble-rmw, ros-humble-rmw-implementation, ros-humble-rmw-implementation-cmake, ros-humble-rosidl-generator-py <!nocheck>, ros-humble-rosidl-runtime-c, ros-humble-test-msgs <!nocheck>, ros-humble-unique-identifier-msgs, ros-humble-ros-workspace
+Homepage: 
+Standards-Version: 3.9.2
+
+Package: ros-humble-rclpy
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, ros-humble-ament-index-python, ros-humble-builtin-interfaces, ros-humble-rcl, ros-humble-rcl-action, ros-humble-rcl-interfaces, ros-humble-rcl-lifecycle, ros-humble-rcl-logging-interface, ros-humble-rcl-yaml-param-parser, ros-humble-rmw, ros-humble-rmw-implementation, ros-humble-rosgraph-msgs, ros-humble-rosidl-runtime-c, ros-humble-rpyutils, ros-humble-unique-identifier-msgs, ros-humble-ros-workspace
+Description: Package containing the Python client.
