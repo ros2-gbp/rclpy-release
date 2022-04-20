@@ -1,1 +1,1 @@
-{"base": "adc62ef", "parent": "debian/rolling/rclpy", "previous": "7403540", "trim": "", "trimbase": ""}
+{"base": "58f7f23", "parent": "debian/humble/rclpy", "previous": "385a205", "trim": "", "trimbase": ""}
