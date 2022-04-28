@@ -18,6 +18,7 @@
 #include <pybind11/pybind11.h>
 
 #include <rcl/subscription.h>
+#include <rmw/types.h>
 
 #include <memory>
 #include <string>
@@ -39,10 +40,10 @@ class Subscription : public Destroyable, public std::enable_shared_from_this<Sub
 {
 public:
   /// Create a subscription
-  /**
+  /*
    * Raises RCLError if the subscription could not be created
    *
-   * \param[in] node Node to add the subscriber to
+   * \param[in] node node to add the subscriber to
    * \param[in] pymsg_type Message module associated with the subscriber
    * \param[in] topic The topic name
    * \param[in] pyqos_profile rmw_qos_profile_t object for this subscription

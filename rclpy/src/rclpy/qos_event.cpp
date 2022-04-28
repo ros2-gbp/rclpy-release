@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Include pybind11 before rclpy_common/handle.h includes Python.h
 #include <pybind11/pybind11.h>
 
 #include <rcl/error_handling.h>
@@ -19,11 +20,14 @@
 #include <rmw/incompatible_qos_events_statuses.h>
 
 #include <memory>
-#include <stdexcept>
+#include <string>
 #include <utility>
+#include <variant>  // NOLINT
 
-#include "exceptions.hpp"
+#include "rclpy_common/common.h"
+
 #include "qos_event.hpp"
+#include "rclpy_common/exceptions.hpp"
 
 namespace rclpy
 {

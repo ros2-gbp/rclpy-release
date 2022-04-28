@@ -351,13 +351,6 @@ class ActionClient(Waitable):
     def add_to_wait_set(self, wait_set):
         """Add entities to wait set."""
         self._client_handle.add_to_waitset(wait_set)
-
-    def __enter__(self):
-        return self._client_handle.__enter__()
-
-    def __exit__(self, t, v, tb):
-        self._client_handle.__exit__(t, v, tb)
-
     # End Waitable API
 
     def send_goal(self, goal, **kwargs):
@@ -583,5 +576,13 @@ class ActionClient(Waitable):
 
     def destroy(self):
         """Destroy the underlying action client handle."""
-        self._client_handle.destroy_when_not_in_use()
-        self._node.remove_waitable(self)
+        if self._client_handle is None:
+            return
+        with self._node.handle:
+            self._client_handle.destroy_when_not_in_use()
+            self._node.remove_waitable(self)
+        self._client_handle = None
+
+    def __del__(self):
+        """Destroy the underlying action client handle."""
+        self.destroy()

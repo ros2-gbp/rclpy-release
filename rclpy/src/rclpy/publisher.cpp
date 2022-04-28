@@ -12,20 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Include pybind11 before rclpy_common/handle.h includes Python.h
 #include <pybind11/pybind11.h>
 
 #include <rcl/error_handling.h>
-#include <rcl/publisher.h>
-#include <rosidl_runtime_c/message_type_support_struct.h>
-#include <rmw/serialized_message.h>
 
 #include <memory>
 #include <string>
 
-#include "exceptions.hpp"
-#include "node.hpp"
+#include "rclpy_common/common.h"
+
+#include "rclpy_common/exceptions.hpp"
+
 #include "publisher.hpp"
-#include "utils.hpp"
 
 namespace rclpy
 {
@@ -35,7 +34,7 @@ Publisher::Publisher(
 : node_(node)
 {
   auto msg_type = static_cast<rosidl_message_type_support_t *>(
-    common_get_type_support(pymsg_type));
+    rclpy_common_get_type_support(pymsg_type.ptr()));
   if (!msg_type) {
     throw py::error_already_set();
   }
@@ -122,12 +121,14 @@ Publisher::get_topic_name()
 void
 Publisher::publish(py::object pymsg)
 {
-  auto raw_ros_message = convert_from_py(pymsg);
+  destroy_ros_message_signature * destroy_ros_message = NULL;
+  void * raw_ros_message = rclpy_convert_from_py(pymsg.ptr(), &destroy_ros_message);
   if (!raw_ros_message) {
     throw py::error_already_set();
   }
 
-  rcl_ret_t ret = rcl_publish(rcl_publisher_.get(), raw_ros_message.get(), NULL);
+  rcl_ret_t ret = rcl_publish(rcl_publisher_.get(), raw_ros_message, NULL);
+  destroy_ros_message(raw_ros_message);
   if (RCL_RET_OK != ret) {
     throw RCLError("Failed to publish");
   }
@@ -145,18 +146,6 @@ Publisher::publish_raw(std::string msg)
   if (RCL_RET_OK != ret) {
     throw RCLError("Failed to publish");
   }
-}
-
-bool
-Publisher::wait_for_all_acked(rcl_duration_t pytimeout)
-{
-  rcl_ret_t ret = rcl_publisher_wait_for_all_acked(rcl_publisher_.get(), pytimeout.nanoseconds);
-  if (RCL_RET_OK == ret) {
-    return true;
-  } else if (RCL_RET_TIMEOUT == ret) {
-    return false;
-  }
-  throw RCLError("Failed to wait for all acknowledgements");
 }
 
 void
@@ -183,9 +172,6 @@ define_publisher(py::object module)
     "Publish a message")
   .def(
     "publish_raw", &Publisher::publish_raw,
-    "Publish a serialized message.")
-  .def(
-    "wait_for_all_acked", &Publisher::wait_for_all_acked,
-    "Wait until all published message data is acknowledged");
+    "Publish a serialized message.");
 }
 }  // namespace rclpy
