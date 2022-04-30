@@ -12,20 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Include pybind11 before rclpy_common/handle.h includes Python.h
 #include <pybind11/pybind11.h>
 
+#include <rcl_action/action_server.h>
+#include <rcl_action/wait.h>
 #include <rcl/error_handling.h>
-#include <rcpputils/scope_exit.hpp>
+#include <rcl/time.h>
+#include <rcl/types.h>
+#include <rosidl_runtime_c/action_type_support_struct.h>
+#include <rmw/types.h>
 
 #include <memory>
+#include <stdexcept>
 #include <string>
 
-#include "rclpy_common/common.h"
-#include "rclpy_common/exceptions.hpp"
-#include "rclpy_common/handle.h"
+#include <rcpputils/scope_exit.hpp>
 
 #include "action_server.hpp"
+#include "clock.hpp"
+#include "exceptions.hpp"
+#include "node.hpp"
 
 namespace rclpy
 {
@@ -53,7 +59,7 @@ ActionServer::ActionServer(
   rcl_clock_t * clock = rclpy_clock.rcl_ptr();
 
   rosidl_action_type_support_t * ts = static_cast<rosidl_action_type_support_t *>(
-    rclpy_common_get_type_support(pyaction_type.ptr()));
+    common_get_type_support(pyaction_type));
   if (!ts) {
     throw py::error_already_set();
   }
@@ -183,6 +189,19 @@ ActionServer::publish_status()
   if (RCL_RET_OK != ret) {
     throw rclpy::RCLError("Failed get goal status array");
   }
+
+  RCPPUTILS_SCOPE_EXIT(
+    {
+      ret = rcl_action_goal_status_array_fini(&status_message);
+
+      if (RCL_RET_OK != ret) {
+        int stack_level = 1;
+        PyErr_WarnFormat(
+          PyExc_RuntimeWarning, stack_level, "Failed to finalize goal status array: %s",
+          rcl_get_error_string().str);
+        rcl_reset_error();
+      }
+    });
 
   ret = rcl_action_publish_status(rcl_action_server_.get(), &status_message);
 

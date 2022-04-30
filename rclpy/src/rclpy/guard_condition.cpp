@@ -12,21 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Include pybind11 before rclpy_common/handle.h includes Python.h
 #include <pybind11/pybind11.h>
 
 #include <rcl/error_handling.h>
 #include <rcl/guard_condition.h>
-#include <rcl/rcl.h>
 #include <rcl/types.h>
 
 #include <memory>
-#include <stdexcept>
 
-#include "rclpy_common/handle.h"
-
-#include "rclpy_common/exceptions.hpp"
-
+#include "context.hpp"
+#include "exceptions.hpp"
 #include "guard_condition.hpp"
 
 namespace rclpy
@@ -88,9 +83,6 @@ void define_guard_condition(py::object module)
     "Get the address of the entity as an integer")
   .def(
     "trigger_guard_condition", &GuardCondition::trigger_guard_condition,
-    "Trigger a general purpose guard condition")
-  .def(
-    "pycapsule", &GuardCondition::pycapsule,
-    "Return a pycapsule object with the guardcondition pointer");
+    "Trigger a general purpose guard condition");
 }
 }  // namespace rclpy

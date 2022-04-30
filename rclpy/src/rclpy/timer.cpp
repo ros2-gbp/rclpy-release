@@ -12,23 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Include pybind11 before rclpy_common/handle.h includes Python.h
 #include <pybind11/pybind11.h>
 
-#include <rcl/context.h>
 #include <rcl/error_handling.h>
-#include <rcl/rcl.h>
 #include <rcl/timer.h>
 #include <rcl/types.h>
 
 #include <memory>
-#include <stdexcept>
 
-#include "rclpy_common/handle.h"
-
-#include "rclpy_common/exceptions.hpp"
-
+#include "clock.hpp"
 #include "context.hpp"
+#include "exceptions.hpp"
 #include "timer.hpp"
 
 namespace rclpy
@@ -109,11 +103,13 @@ void Timer::change_timer_period(int64_t period_nsec)
   }
 }
 
-int64_t Timer::time_until_next_call()
+std::optional<int64_t> Timer::time_until_next_call()
 {
   int64_t remaining_time;
   rcl_ret_t ret = rcl_timer_get_time_until_next_call(rcl_timer_.get(), &remaining_time);
-  if (ret != RCL_RET_OK) {
+  if (ret == RCL_RET_TIMER_CANCELED) {
+    return std::nullopt;
+  } else if (ret != RCL_RET_OK) {
     throw RCLError("failed to get time until next timer call");
   }
 
