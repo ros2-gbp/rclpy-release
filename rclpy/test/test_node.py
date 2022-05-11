@@ -157,7 +157,8 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
             1)
         basic_types_msg = BasicTypes()
         basic_types_pub.publish(basic_types_msg)
-        for i in range(5):
+        cycle_count = 0
+        while cycle_count < 5:
             with sub.handle:
                 result = sub.handle.take_message(sub.msg_type, False)
             if result is not None:
@@ -165,7 +166,7 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
                 self.assertNotEqual(0, info['source_timestamp'])
                 return
             else:
-                time.sleep(0.2)
+                time.sleep(0.1)
 
     def test_create_client(self):
         self.node.create_client(GetParameters, 'get/parameters')

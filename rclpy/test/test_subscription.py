@@ -16,7 +16,6 @@ import pytest
 
 import rclpy
 from rclpy.node import Node
-from rclpy.subscription import Subscription
 
 from test_msgs.msg import Empty
 
@@ -67,25 +66,3 @@ def test_get_subscription_topic_name_after_remapping(topic_name, namespace, cli_
         qos_profile=10,
     )
     assert sub.topic_name == expected
-
-
-def test_subscription_callback_type():
-    node = Node('test_node', namespace='test_subscription/test_subscription_callback_type')
-    sub = node.create_subscription(
-        msg_type=Empty,
-        topic='test_subscription/test_subscription_callback_type/topic',
-        qos_profile=10,
-        callback=lambda _: None)
-    assert sub._callback_type == Subscription.CallbackType.MessageOnly
-    sub = node.create_subscription(
-        msg_type=Empty,
-        topic='test_subscription/test_subscription_callback_type/topic',
-        qos_profile=10,
-        callback=lambda _, _2: None)
-    assert sub._callback_type == Subscription.CallbackType.WithMessageInfo
-    with pytest.raises(RuntimeError):
-        node.create_subscription(
-            msg_type=Empty,
-            topic='test_subscription/test_subscription_callback_type/topic',
-            qos_profile=10,
-            callback=lambda _, _2, _3: None)
