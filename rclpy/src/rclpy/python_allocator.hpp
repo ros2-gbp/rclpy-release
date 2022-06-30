@@ -17,8 +17,6 @@
 
 #include <pybind11/pybind11.h>
 
-#include <stdexcept>
-
 namespace rclpy
 {
 //----------- Declaration ----------

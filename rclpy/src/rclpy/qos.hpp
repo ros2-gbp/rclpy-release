@@ -15,9 +15,10 @@
 #ifndef RCLPY__QOS_HPP_
 #define RCLPY__QOS_HPP_
 
+#include <rmw/qos_profiles.h>
+
 #include <pybind11/pybind11.h>
 
-#include <rmw/qos_profiles.h>
 
 namespace py = pybind11;
 

@@ -17,7 +17,7 @@ import time
 
 import pytest
 import rclpy
-from rclpy.exceptions import InvalidHandle
+from rclpy.handle import InvalidHandle
 from test_msgs.msg import BasicTypes
 from test_msgs.srv import BasicTypes as BasicTypesSrv
 

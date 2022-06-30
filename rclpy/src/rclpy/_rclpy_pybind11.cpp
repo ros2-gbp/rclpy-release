@@ -15,11 +15,7 @@
 #include <pybind11/pybind11.h>
 
 #include <rcl/domain_id.h>
-#include <rcl/time.h>
-#include <rcl_action/types.h>
-
-#include <rmw/qos_profiles.h>
-#include <rmw/time.h>
+#include <rcl_action/rcl_action.h>
 
 #include "action_client.hpp"
 #include "action_goal_handle.hpp"
@@ -29,22 +25,21 @@
 #include "context.hpp"
 #include "destroyable.hpp"
 #include "duration.hpp"
-#include "clock_event.hpp"
-#include "exceptions.hpp"
 #include "graph.hpp"
 #include "guard_condition.hpp"
-#include "lifecycle.hpp"
+#include "handle_api.hpp"
 #include "logging.hpp"
 #include "logging_api.hpp"
 #include "names.hpp"
 #include "node.hpp"
 #include "publisher.hpp"
+#include "pycapsule_api.hpp"
 #include "qos.hpp"
 #include "qos_event.hpp"
+#include "rclpy_common/exceptions.hpp"
 #include "serialization.hpp"
 #include "service.hpp"
 #include "service_info.hpp"
-#include "signal_handler.hpp"
 #include "subscription.hpp"
 #include "time_point.hpp"
 #include "timer.hpp"
@@ -72,7 +67,6 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
   .value("CANCELED", GOAL_EVENT_CANCELED);
 
   m.attr("RCL_DEFAULT_DOMAIN_ID") = py::int_(RCL_DEFAULT_DOMAIN_ID);
-  m.attr("RMW_DURATION_INFINITE") = py::int_(rmw_time_total_nsec(RMW_DURATION_INFINITE));
 
   py::enum_<rcl_clock_change_t>(m, "ClockChange")
   .value(
@@ -232,8 +226,7 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
     "rclpy_logging_configure", rclpy::logging_configure,
     "Initialize RCL logging.");
 
+  rclpy::define_pycapsule_api(m);
+  rclpy::define_handle_api(m);
   rclpy::define_logging_api(m);
-  rclpy::define_signal_handler_api(m);
-  rclpy::define_clock_event(m);
-  rclpy::define_lifecycle_api(m);
 }
