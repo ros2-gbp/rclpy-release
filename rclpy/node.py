@@ -349,6 +349,9 @@ class Node:
         This method, if successful, will result in any callback registered with
         :func:`add_on_set_parameters_callback` to be called.
 
+        The name and type in the given descriptor is ignored, and should be specified using
+        the name argument to this function and the default value's type instead.
+
         :param name: Fully-qualified name of the parameter, including its namespace.
         :param value: Value of the parameter to declare.
         :param descriptor: Descriptor for the parameter to declare.
@@ -381,6 +384,8 @@ class Node:
 
         The tuples in the given parameter list shall contain the name for each parameter,
         optionally providing a value and a descriptor.
+        The name and type in the given descriptors are ignored, and should be specified using
+        the name argument to this function and the default value's type instead.
         For each entry in the list, a parameter with a name of "namespace.name"
         will be declared.
         The resulting value for each declared parameter will be returned, considering
@@ -750,7 +755,7 @@ class Node:
         allowed for the node, this method will raise a ParameterNotDeclaredException exception.
 
         Parameters are set all at once.
-        If setting a parameter fails due to not being declared, then no parameter will be set set.
+        If setting a parameter fails due to not being declared, then no parameter will be set.
         Either all of the parameters are set or none of them are set.
 
         If undeclared parameters are allowed for the node, then all the parameters will be
