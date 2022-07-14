@@ -12,26 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Include pybind11 before rclpy_common/handle.h includes Python.h
 #include <pybind11/pybind11.h>
 
-#include <rcl/rcl.h>
 #include <rcl/time.h>
 #include <rmw/error_handling.h>
 #include <rmw/incompatible_qos_events_statuses.h>
 #include <rmw/qos_profiles.h>
+#include <rmw/time.h>
 #include <rmw/types.h>
 
 #include <cstring>
-#include <memory>
+#include <stdexcept>
 #include <string>
 
-#include "rclpy_common/common.h"
-#include "rclpy_common/handle.h"
-
-#include "rclpy_common/exceptions.hpp"
-
+#include "exceptions.hpp"
 #include "qos.hpp"
+#include "utils.hpp"
 
 namespace rclpy
 {
@@ -67,7 +63,7 @@ _convert_py_duration_to_rmw_time(const rcl_duration_t & duration, rmw_time_t * o
   out_time->nsec = duration.nanoseconds % (1000LL * 1000LL * 1000LL);
 }
 
-// Create an rmw_qos_profile_t instance.
+/// Create an rmw_qos_profile_t instance.
 /**
  * Raises ValueError if a any capsule is not of the expected type.
  * Raises MemoryError if rmw_qos_profile_t allocation fails.
@@ -122,24 +118,7 @@ create_qos_profile(
   return qos_profile;
 }
 
-// Convert a a rmw_qos_profile_t instance to a dictionary.
-/**
- * This function is exposed to facilitate testing profile type conversion.
- *
- * \param[in] qos_profile an rmw_qos_profile_t instance
- * \return a dictionary suitable for rclpy.qos.QoSProfile instantiation.
- */
-py::dict
-convert_qos_profile_to_dict(const rmw_qos_profile_t & qos_profile)
-{
-  PyObject * pydict = rclpy_common_convert_to_qos_dict(&qos_profile);
-  if (!pydict) {
-    throw py::error_already_set();
-  }
-  return py::reinterpret_steal<py::dict>(pydict);
-}
-
-// Fetch a predefined rmw_qos_profile_t instance.
+/// Fetch a predefined rmw_qos_profile_t instance.
 /**
  * Raises InvalidArgument if the given \p qos_profile_name is unknown.
  *
@@ -170,6 +149,9 @@ predefined_qos_profile_from_name(const char * qos_profile_name)
   if (0 == strcmp(qos_profile_name, "qos_profile_parameter_events")) {
     return rmw_qos_profile_parameter_events;
   }
+  if (0 == strcmp(qos_profile_name, "qos_profile_best_available")) {
+    return rmw_qos_profile_best_available;
+  }
 
   std::string error_text = "Requested unknown rmw_qos_profile: ";
   error_text += qos_profile_name;
@@ -183,7 +165,7 @@ define_rmw_qos_profile(py::object module)
 {
   py::class_<rmw_qos_profile_t>(module, "rmw_qos_profile_t")
   .def(py::init<>(&create_qos_profile))
-  .def("to_dict", &convert_qos_profile_to_dict)
+  .def("to_dict", &convert_to_qos_dict)
   .def_static("predefined", &predefined_qos_profile_from_name);
 }
 
