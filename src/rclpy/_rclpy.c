@@ -1122,6 +1122,7 @@ _get_info_by_topic(
   if (RCL_RET_OK != fini_ret) {
     PyErr_Format(RCLError, "rcl_topic_endpoint_info_array_fini failed.");
     rcl_reset_error();
+    Py_XDECREF(py_info_array);
     return NULL;
   }
   return py_info_array;
@@ -3294,6 +3295,8 @@ rclpy_wait(PyObject * Py_UNUSED(self), PyObject * args)
 static PyObject *
 rclpy_take_raw_with_info(rcl_subscription_t * subscription, rmw_message_info_t * message_info)
 {
+  PyObject * python_bytes = NULL;
+
   // Create a serialized message object
   rcl_serialized_message_t msg = rmw_get_zero_initialized_serialized_message();
   rcutils_allocator_t allocator = rcutils_get_default_allocator();
@@ -3303,34 +3306,36 @@ rclpy_take_raw_with_info(rcl_subscription_t * subscription, rmw_message_info_t *
       RCLError,
       "Failed to initialize message: %s", rcl_get_error_string().str);
     rcl_reset_error();
-    rmw_ret_t r_fini = rmw_serialized_message_fini(&msg);
-    if (r_fini != RMW_RET_OK) {
-      PyErr_Format(RCLError, "Failed to deallocate message buffer: %d", r_fini);
-    }
-    return NULL;
+    goto cleanup;
   }
 
   ret = rcl_take_serialized_message(subscription, &msg, message_info, NULL);
   if (ret != RCL_RET_OK) {
-    PyErr_Format(
-      RCLError,
-      "Failed to take_serialized from a subscription: %s", rcl_get_error_string().str);
-    rcl_reset_error();
-    rmw_ret_t r_fini = rmw_serialized_message_fini(&msg);
-    if (r_fini != RMW_RET_OK) {
-      PyErr_Format(RCLError, "Failed to deallocate message buffer: %d", r_fini);
+    if (ret == RCL_RET_SUBSCRIPTION_TAKE_FAILED) {
+      python_bytes = Py_None;
+      Py_INCREF(Py_None);
+    } else {
+      PyErr_Format(
+        RCLError,
+        "Failed to take_serialized from a subscription: %s", rcl_get_error_string().str);
+      rcl_reset_error();
     }
-    return NULL;
+    goto cleanup;
   }
-  PyObject * python_bytes = PyBytes_FromStringAndSize((char *)(msg.buffer), msg.buffer_length);
-  rmw_ret_t r_fini = rmw_serialized_message_fini(&msg);
-  if (r_fini != RMW_RET_OK) {
-    PyErr_Format(RCLError, "Failed to deallocate message buffer: %d", r_fini);
+
+  python_bytes = PyBytes_FromStringAndSize((char *)(msg.buffer), msg.buffer_length);
+
+cleanup:
+  ret = rmw_serialized_message_fini(&msg);
+  if (ret != RMW_RET_OK) {
+    PyErr_Format(RCLError, "Failed to deallocate message buffer: %d", ret);
+    rcl_reset_error();
     if (python_bytes) {
       Py_DECREF(python_bytes);
+      python_bytes = NULL;
     }
-    return NULL;
   }
+
   return python_bytes;
 }
 
@@ -5300,6 +5305,7 @@ rclpy_serialize(PyObject * Py_UNUSED(self), PyObject * args)
 {
   PyObject * pymsg;
   PyObject * pymsg_type;
+  PyObject * pyserialized_msg_buffer = NULL;
   if (!PyArg_ParseTuple(args, "OO", &pymsg, &pymsg_type)) {
     return NULL;
   }
@@ -5325,6 +5331,7 @@ rclpy_serialize(PyObject * Py_UNUSED(self), PyObject * args)
     PyErr_Format(
       RCLError,
       "Failed to initialize serialized message: %s", rcutils_get_error_string().str);
+    rcl_reset_error();
     return NULL;
   }
 
@@ -5333,17 +5340,26 @@ rclpy_serialize(PyObject * Py_UNUSED(self), PyObject * args)
   destroy_ros_message(ros_msg);
   if (RMW_RET_OK != rmw_ret) {
     PyErr_Format(RCLError, "Failed to serialize ROS message");
-    rcutils_ret = rmw_serialized_message_fini(&serialized_msg);
-    if (RCUTILS_RET_OK != rcutils_ret) {
-      PyErr_Format(
-        RCLError,
-        "Failed to finalize serialized message: %s", rcutils_get_error_string().str);
-    }
-    return NULL;
+    goto cleanup;
   }
 
   // Bundle serialized message in a bytes object
-  return Py_BuildValue("y#", serialized_msg.buffer, serialized_msg.buffer_length);
+  pyserialized_msg_buffer =
+    Py_BuildValue("y#", serialized_msg.buffer, serialized_msg.buffer_length);
+
+cleanup:
+  rcutils_ret = rmw_serialized_message_fini(&serialized_msg);
+  if (RCUTILS_RET_OK != rcutils_ret) {
+    PyErr_Format(
+      RCLError,
+      "Failed to finalize serialized message: %s", rcutils_get_error_string().str);
+    rcl_reset_error();
+    if (pyserialized_msg_buffer) {
+      Py_DECREF(pyserialized_msg_buffer);
+      pyserialized_msg_buffer = NULL;
+    }
+  }
+  return pyserialized_msg_buffer;
 }
 
 static PyObject *
