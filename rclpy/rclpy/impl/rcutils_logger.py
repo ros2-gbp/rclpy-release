@@ -19,7 +19,8 @@ import inspect
 import os
 
 from rclpy.clock import Clock
-from rclpy.impl.implementation_singleton import rclpy_logging_implementation as _rclpy_logging
+from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
+from rclpy.impl.logging_severity import LoggingSeverity
 
 # Known filenames from which logging methods can be called (will be ignored in `_find_caller`).
 _internal_callers = []
@@ -225,20 +226,17 @@ class RcutilsLogger:
         return RcutilsLogger(name=name)
 
     def set_level(self, level):
-        from rclpy.logging import LoggingSeverity
         level = LoggingSeverity(level)
-        return _rclpy_logging.rclpy_logging_set_logger_level(self.name, level)
+        return _rclpy.rclpy_logging_set_logger_level(self.name, level)
 
     def get_effective_level(self):
-        from rclpy.logging import LoggingSeverity
         level = LoggingSeverity(
-            _rclpy_logging.rclpy_logging_get_logger_effective_level(self.name))
+            _rclpy.rclpy_logging_get_logger_effective_level(self.name))
         return level
 
     def is_enabled_for(self, severity):
-        from rclpy.logging import LoggingSeverity
         severity = LoggingSeverity(severity)
-        return _rclpy_logging.rclpy_logging_logger_is_enabled_for(self.name, severity)
+        return _rclpy.rclpy_logging_logger_is_enabled_for(self.name, severity)
 
     def log(self, message, severity, **kwargs):
         r"""
@@ -278,7 +276,6 @@ class RcutilsLogger:
         if not self.is_enabled_for(severity):
             return False
 
-        from rclpy.logging import LoggingSeverity
         severity = LoggingSeverity(severity)
 
         name = kwargs.pop('name', self.name)
@@ -318,24 +315,21 @@ class RcutilsLogger:
                 return False
 
         # Call the relevant function from the C extension.
-        _rclpy_logging.rclpy_logging_rcutils_log(
+        _rclpy.rclpy_logging_rcutils_log(
             severity, name, message,
             caller_id.function_name, caller_id.file_path, caller_id.line_number)
         return True
 
     def debug(self, message, **kwargs):
         """Log a message with `DEBUG` severity via :py:classmethod:RcutilsLogger.log:."""
-        from rclpy.logging import LoggingSeverity
         return self.log(message, LoggingSeverity.DEBUG, **kwargs)
 
     def info(self, message, **kwargs):
         """Log a message with `INFO` severity via :py:classmethod:RcutilsLogger.log:."""
-        from rclpy.logging import LoggingSeverity
         return self.log(message, LoggingSeverity.INFO, **kwargs)
 
     def warning(self, message, **kwargs):
         """Log a message with `WARN` severity via :py:classmethod:RcutilsLogger.log:."""
-        from rclpy.logging import LoggingSeverity
         return self.log(message, LoggingSeverity.WARN, **kwargs)
 
     def warn(self, message, **kwargs):
@@ -348,10 +342,8 @@ class RcutilsLogger:
 
     def error(self, message, **kwargs):
         """Log a message with `ERROR` severity via :py:classmethod:RcutilsLogger.log:."""
-        from rclpy.logging import LoggingSeverity
         return self.log(message, LoggingSeverity.ERROR, **kwargs)
 
     def fatal(self, message, **kwargs):
         """Log a message with `FATAL` severity via :py:classmethod:RcutilsLogger.log:."""
-        from rclpy.logging import LoggingSeverity
         return self.log(message, LoggingSeverity.FATAL, **kwargs)

@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
+
 
 class NotInitializedException(Exception):
     """Raised when the rclpy implementation is accessed before rclpy.init()."""
@@ -37,6 +39,9 @@ Invalid {name_type}: {error_msg}:
    {indent}^\
 """.format(name_type=name_type, name=name, error_msg=error_msg, indent=' ' * invalid_index)
         Exception.__init__(self, msg)
+
+
+InvalidHandle = _rclpy.InvalidHandle
 
 
 class InvalidNamespaceException(NameValidationException):
@@ -95,6 +100,21 @@ class InvalidParameterException(ParameterException):
         Exception.__init__(self, 'Invalid parameter name', parameter, *args)
 
 
+class InvalidParameterTypeException(ParameterException):
+    """Raised when a parameter is rejected for having an invalid type."""
+
+    def __init__(self, desired_parameter, expected_type, *args):
+        from rclpy.parameter import Parameter
+        Exception.__init__(
+            self,
+            f"Trying to set parameter '{desired_parameter._name}' to '{desired_parameter._value}'"
+            f" of type '{Parameter.Type.from_parameter_value(desired_parameter._value).name}'"
+            f", expecting type '{expected_type}'",
+            *args)
+        self._actual_type = desired_parameter.type_
+        self._param_name = desired_parameter.name
+
+
 class InvalidParameterValueException(ParameterException):
     """Raised when a parameter is rejected by a user callback or when applying a descriptor."""
 
@@ -110,6 +130,16 @@ class ParameterImmutableException(ParameterException):
 
     def __init__(self, parameter, *args):
         Exception.__init__(self, 'Attempted to modify read-only parameter', parameter, *args)
+
+
+class ParameterUninitializedException(ParameterException):
+    """Raised when an uninitialized parameter is accessed."""
+
+    def __init__(self, parameter_name, *args):
+        Exception.__init__(
+            self,
+            f"The parameter '{parameter_name}' is not initialized",
+            *args)
 
 
 class ROSInterruptException(Exception):

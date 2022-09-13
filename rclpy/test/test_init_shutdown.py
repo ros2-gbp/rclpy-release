@@ -14,7 +14,9 @@
 
 import pytest
 import rclpy
+from rclpy import signals
 from rclpy.exceptions import NotInitializedException
+from rclpy.signals import SignalHandlerOptions
 
 
 def test_init():
@@ -27,7 +29,7 @@ def test_init_with_unknown_ros_args():
     from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 
     context = rclpy.context.Context()
-    unknown_ros_args_error_pattern = r'Found unknown ROS arguments:.*\[\'unknown\'\]'
+    unknown_ros_args_error_pattern = r'\[\'unknown\'\]'
     with pytest.raises(_rclpy.UnknownROSArgsError, match=unknown_ros_args_error_pattern):
         rclpy.init(context=context, args=['--ros-args', 'unknown'])
 
@@ -79,3 +81,25 @@ def test_create_node_without_init():
     context = rclpy.context.Context()
     with pytest.raises(NotInitializedException):
         rclpy.create_node('foo', context=context)
+
+
+def test_init_with_domain_id():
+    rclpy.init(domain_id=123)
+    assert rclpy.get_default_context().get_domain_id() == 123
+    rclpy.shutdown()
+    context = rclpy.context.Context()
+    rclpy.init(context=context, domain_id=123)
+    assert context.get_domain_id() == 123
+    rclpy.shutdown(context=context)
+
+
+def test_signal_handlers():
+    rclpy.init()
+    assert SignalHandlerOptions.ALL == signals.get_current_signal_handlers_options()
+    rclpy.shutdown()
+    assert SignalHandlerOptions.NO == signals.get_current_signal_handlers_options()
+
+
+def test_init_with_invalid_domain_id():
+    with pytest.raises(RuntimeError):
+        rclpy.init(domain_id=-1)
