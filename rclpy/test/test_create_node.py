@@ -18,7 +18,6 @@ import rclpy
 
 from rclpy.exceptions import InvalidNamespaceException
 from rclpy.exceptions import InvalidNodeNameException
-from rclpy.parameter import Parameter
 
 
 class TestCreateNode(unittest.TestCase):
@@ -71,16 +70,6 @@ class TestCreateNode(unittest.TestCase):
         namespace = '/invalid_namespace?'
         with self.assertRaisesRegex(InvalidNamespaceException, 'must not contain characters'):
             rclpy.create_node(node_name, namespace=namespace, context=self.context)
-
-    def test_create_node_with_parameter_overrides(self):
-        node_name = 'create_node_with_parameter_overrides_test'
-        rclpy.create_node(
-            node_name, context=self.context,
-            automatically_declare_parameters_from_overrides=True,
-            parameter_overrides=[
-                Parameter('use_sim_time', Parameter.Type.BOOL, True)
-            ]
-        ).destroy_node()
 
 
 if __name__ == '__main__':

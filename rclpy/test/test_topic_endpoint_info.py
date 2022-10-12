@@ -77,8 +77,7 @@ class TestQosProfile(unittest.TestCase):
         self.assertEqual(test_endpoint_gid, info_from_ctor.endpoint_gid)
 
     def test_qos_profile_only_constructor(self):
-        c_qos_profile = _rclpy.rmw_qos_profile_t.predefined('qos_profile_default')
-        test_qos_profile = QoSProfile(**c_qos_profile.to_dict())
+        test_qos_profile = QoSProfile(**_rclpy.rclpy_get_rmw_qos_profile('qos_profile_default'))
 
         info_for_ref = TopicEndpointInfo()
         info_for_ref.qos_profile = test_qos_profile
@@ -96,11 +95,10 @@ class TestQosProfile(unittest.TestCase):
             'Endpoint type: INVALID\n' \
             'GID: \n' \
             'QoS profile:\n' \
-            '  Reliability: UNKNOWN\n' \
-            '  History (Depth): UNKNOWN\n' \
-            '  Durability: UNKNOWN\n' \
+            '  Reliability: RMW_QOS_POLICY_RELIABILITY_UNKNOWN\n' \
+            '  Durability: RMW_QOS_POLICY_DURABILITY_UNKNOWN\n' \
             '  Lifespan: 0 nanoseconds\n' \
             '  Deadline: 0 nanoseconds\n' \
-            '  Liveliness: UNKNOWN\n' \
+            '  Liveliness: RMW_QOS_POLICY_LIVELINESS_UNKNOWN\n' \
             '  Liveliness lease duration: 0 nanoseconds'
         self.assertEqual(expected_info_str, actual_info_str)

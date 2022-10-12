@@ -12,44 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from rclpy.exceptions import InvalidHandle
 from rclpy.guard_condition import GuardCondition
-from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
-
-
-# re-export SignalHandlerOptions enum
-SignalHandlerOptions = _rclpy.SignalHandlerOptions
-
-
-def install_signal_handlers(options: SignalHandlerOptions = SignalHandlerOptions.ALL):
-    """
-    Install rclpy signal handlers.
-
-    :param options: Indicate if to install sigint, sigterm, both or no signal handler.
-    """
-    return _rclpy.install_signal_handlers(options)
-
-
-def get_current_signal_handlers_options():
-    """
-    Get current signal handler options.
-
-    :return: rclpy.signals.SignalHandlerOptions instance.
-    """
-    return _rclpy.get_current_signal_handlers_options()
-
-
-def uninstall_signal_handlers():
-    """Uninstall the rclpy signal handlers."""
-    _rclpy.uninstall_signal_handlers()
+from rclpy.handle import InvalidHandle
+from rclpy.impl.implementation_singleton import rclpy_signal_handler_implementation as _signals
 
 
 class SignalHandlerGuardCondition(GuardCondition):
 
     def __init__(self, context=None):
         super().__init__(callback=None, callback_group=None, context=context)
-        with self.handle:
-            _rclpy.register_sigint_guard_condition(self.handle)
+        with self.handle as capsule:
+            _signals.rclpy_register_sigint_guard_condition(capsule)
 
     def __del__(self):
         try:
@@ -62,6 +35,6 @@ class SignalHandlerGuardCondition(GuardCondition):
             pass
 
     def destroy(self):
-        with self.handle:
-            _rclpy.unregister_sigint_guard_condition(self.handle)
+        with self.handle as capsule:
+            _signals.rclpy_unregister_sigint_guard_condition(capsule)
         super().destroy()

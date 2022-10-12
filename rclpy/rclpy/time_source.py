@@ -18,8 +18,6 @@ from rcl_interfaces.msg import SetParametersResult
 from rclpy.clock import ClockType
 from rclpy.clock import ROSClock
 from rclpy.parameter import Parameter
-from rclpy.qos import QoSProfile
-from rclpy.qos import ReliabilityPolicy
 from rclpy.time import Time
 import rosgraph_msgs.msg
 
@@ -67,7 +65,7 @@ class TimeSource:
                     rosgraph_msgs.msg.Clock,
                     CLOCK_TOPIC,
                     self.clock_callback,
-                    QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
+                    10
                 )
 
     def attach_node(self, node):
@@ -123,24 +121,19 @@ class TimeSource:
             clock.set_ros_time_override(time_from_msg)
 
     def _on_parameter_event(self, parameter_list):
-        successful = True
-        reason = ''
-
         for parameter in parameter_list:
             if parameter.name == USE_SIM_TIME_NAME:
                 if parameter.type_ == Parameter.Type.BOOL:
                     self.ros_time_is_active = parameter.value
                 else:
-                    successful = False
-                    reason = '{} parameter set to something besides a bool'.format(
-                        USE_SIM_TIME_NAME)
-
                     node = self._get_node()
                     if node:
-                        node.get_logger().error(reason)
+                        node.get_logger().error(
+                            '{} parameter set to something besides a bool'
+                            .format(USE_SIM_TIME_NAME))
                 break
 
-        return SetParametersResult(successful=successful, reason=reason)
+        return SetParametersResult(successful=True)
 
     def _get_node(self):
         if self._node_weak_ref is not None:
