@@ -16,22 +16,14 @@ import pytest
 
 import rclpy
 from rclpy.node import Node
+from rclpy.subscription import Subscription
+
 from test_msgs.msg import Empty
 
 
 @pytest.fixture(scope='session', autouse=True)
 def setup_ros():
     rclpy.init()
-
-
-def make_mock_subscription(namespace, topic_name, cli_args=None):
-    node = Node('node_name', namespace=namespace, cli_args=cli_args)
-    return node.create_subscription(
-        msg_type=Empty,
-        topic=topic_name,
-        callback=lambda _: None,
-        qos_profile=10,
-    )
 
 
 @pytest.mark.parametrize('topic_name, namespace, expected', [
@@ -48,7 +40,13 @@ def make_mock_subscription(namespace, topic_name, cli_args=None):
     ('/example/topic', 'ns', '/example/topic'),
 ])
 def test_get_subscription_topic_name(topic_name, namespace, expected):
-    sub = make_mock_subscription(namespace, topic_name)
+    node = Node('node_name', namespace=namespace, cli_args=None)
+    sub = node.create_subscription(
+        msg_type=Empty,
+        topic=topic_name,
+        callback=lambda _: None,
+        qos_profile=10,
+    )
     assert sub.topic_name == expected
 
 
@@ -61,5 +59,33 @@ def test_get_subscription_topic_name(topic_name, namespace, expected):
      '/ns/new_topic'),
 ])
 def test_get_subscription_topic_name_after_remapping(topic_name, namespace, cli_args, expected):
-    sub = make_mock_subscription(namespace, topic_name, cli_args)
+    node = Node('node_name', namespace=namespace, cli_args=cli_args)
+    sub = node.create_subscription(
+        msg_type=Empty,
+        topic=topic_name,
+        callback=lambda _: None,
+        qos_profile=10,
+    )
     assert sub.topic_name == expected
+
+
+def test_subscription_callback_type():
+    node = Node('test_node', namespace='test_subscription/test_subscription_callback_type')
+    sub = node.create_subscription(
+        msg_type=Empty,
+        topic='test_subscription/test_subscription_callback_type/topic',
+        qos_profile=10,
+        callback=lambda _: None)
+    assert sub._callback_type == Subscription.CallbackType.MessageOnly
+    sub = node.create_subscription(
+        msg_type=Empty,
+        topic='test_subscription/test_subscription_callback_type/topic',
+        qos_profile=10,
+        callback=lambda _, _2: None)
+    assert sub._callback_type == Subscription.CallbackType.WithMessageInfo
+    with pytest.raises(RuntimeError):
+        node.create_subscription(
+            msg_type=Empty,
+            topic='test_subscription/test_subscription_callback_type/topic',
+            qos_profile=10,
+            callback=lambda _, _2, _3: None)

@@ -16,6 +16,7 @@ import unittest
 
 from rclpy.clock import ClockType
 from rclpy.duration import Duration
+from rclpy.duration import Infinite
 from rclpy.time import Time
 
 from test_msgs.msg import Builtins
@@ -32,9 +33,9 @@ class TestTime(unittest.TestCase):
         assert time.clock_type == ClockType.SYSTEM_TIME
 
         with self.assertRaises(OverflowError):
-            time = Time(nanoseconds=2**64)
-        time = Time(nanoseconds=2**64 - 1)
-        assert time.nanoseconds == 2**64 - 1
+            time = Time(nanoseconds=2**63)
+        time = Time(nanoseconds=2**63 - 1)
+        assert time.nanoseconds == 2**63 - 1
 
         with self.assertRaises(ValueError):
             time = Time(seconds=-1)
@@ -88,7 +89,7 @@ class TestTime(unittest.TestCase):
         assert time2.clock_type == ClockType.STEADY_TIME
 
         with self.assertRaises(OverflowError):
-            Duration(nanoseconds=1) + Time(nanoseconds=2**64 - 1)
+            Duration(nanoseconds=1) + Time(nanoseconds=2**63 - 1)
 
         with self.assertRaises(ValueError):
             Time(nanoseconds=1) - Duration(nanoseconds=2)
@@ -228,3 +229,7 @@ class TestTime(unittest.TestCase):
         assert (1, int(5e8)) == Time(seconds=1, nanoseconds=5e8).seconds_nanoseconds()
         assert (1, int(5e8)) == Time(seconds=0, nanoseconds=15e8).seconds_nanoseconds()
         assert (0, 0) == Time().seconds_nanoseconds()
+
+    def test_infinite_duration(self):
+        duration = Infinite
+        assert str(duration) == 'Infinite'

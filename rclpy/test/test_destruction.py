@@ -12,9 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
+import time
+
 import pytest
 import rclpy
-from rclpy.handle import InvalidHandle
+from rclpy.exceptions import InvalidHandle
 from test_msgs.msg import BasicTypes
 from test_msgs.srv import BasicTypes as BasicTypesSrv
 
@@ -35,10 +38,39 @@ def test_destroy_node_twice():
     try:
         node = rclpy.create_node('test_node2', context=context)
         node.destroy_node()
-        with pytest.raises(InvalidHandle):
-            node.destroy_node()
+        node.destroy_node()
     finally:
         rclpy.shutdown(context=context)
+
+
+def test_destroy_node_while_spinning():
+    context = rclpy.context.Context()
+    rclpy.init(context=context)
+    try:
+        executor = rclpy.executors.SingleThreadedExecutor(context=context)
+        node = rclpy.create_node('test_node1', context=context)
+
+        def spin():
+            with pytest.raises(rclpy.executors.ExternalShutdownException):
+                rclpy.spin(node, executor)
+
+        thread = threading.Thread(
+                target=spin,
+                daemon=True)
+        thread.start()
+        try:
+            # Let the spin thread get going
+            time.sleep(0.5)
+            node.destroy_node()
+
+            # Make sure the spin thread has time to react to the
+            # destruction of the node before stopping the test
+            time.sleep(0.5)
+            context.shutdown()
+        finally:
+            thread.join()
+    finally:
+        rclpy.try_shutdown(context=context)
 
 
 def test_destroy_timers():
@@ -111,11 +143,7 @@ def test_destroy_subscription_asap():
             with sub.handle:
                 pass
 
-            with sub.handle:
-                node.destroy_subscription(sub)
-                # handle valid because it's still being used
-                with sub.handle:
-                    pass
+            node.destroy_subscription(sub)
 
             with pytest.raises(InvalidHandle):
                 # handle invalid because it was destroyed when no one was using it
@@ -133,11 +161,8 @@ def test_destroy_node_asap():
 
     try:
         node = rclpy.create_node('test_destroy_subscription_asap', context=context)
-        with node.handle:
-            node.destroy_node()
-            # handle valid because it's still being used
-            with node.handle:
-                pass
+
+        node.destroy_node()
 
         with pytest.raises(InvalidHandle):
             # handle invalid because it was destroyed when no one was using it
@@ -160,11 +185,7 @@ def test_destroy_publisher_asap():
             with pub.handle:
                 pass
 
-            with pub.handle:
-                node.destroy_publisher(pub)
-                # handle valid because it's still being used
-                with pub.handle:
-                    pass
+            node.destroy_publisher(pub)
 
             with pytest.raises(InvalidHandle):
                 # handle invalid because it was destroyed when no one was using it
@@ -189,14 +210,10 @@ def test_destroy_client_asap():
             with client.handle:
                 pass
 
-            with client.handle:
-                node.destroy_client(client)
-                # handle valid because it's still being used
-                with client.handle:
-                    pass
+            node.destroy_client(client)
 
             with pytest.raises(InvalidHandle):
-                # handle invalid because it was destroyed when no one was using it
+                # handle invalid because it was destroyed
                 with client.handle:
                     pass
         finally:
@@ -218,14 +235,10 @@ def test_destroy_service_asap():
             with service.handle:
                 pass
 
-            with service.handle:
-                node.destroy_service(service)
-                # handle valid because it's still being used
-                with service.handle:
-                    pass
+            node.destroy_service(service)
 
             with pytest.raises(InvalidHandle):
-                # handle invalid because it was destroyed when no one was using it
+                # handle invalid because it was destroyed
                 with service.handle:
                     pass
         finally:
@@ -247,14 +260,10 @@ def test_destroy_timer_asap():
             with timer.handle:
                 pass
 
-            with timer.handle:
-                node.destroy_timer(timer)
-                # handle valid because it's still being used
-                with timer.handle:
-                    pass
+            node.destroy_timer(timer)
 
             with pytest.raises(InvalidHandle):
-                # handle invalid because it was destroyed when no one was using it
+                # handle invalid because it was destroyed
                 with timer.handle:
                     pass
         finally:

@@ -13,9 +13,14 @@
 # limitations under the License.
 
 import pathlib
+import platform
 import time
+from typing import List
 import unittest
 from unittest.mock import Mock
+import warnings
+
+import pytest
 
 from rcl_interfaces.msg import FloatingPointRange
 from rcl_interfaces.msg import IntegerRange
@@ -28,14 +33,15 @@ import rclpy
 from rclpy.clock import ClockType
 from rclpy.duration import Duration
 from rclpy.exceptions import InvalidParameterException
+from rclpy.exceptions import InvalidParameterTypeException
 from rclpy.exceptions import InvalidParameterValueException
 from rclpy.exceptions import InvalidServiceNameException
 from rclpy.exceptions import InvalidTopicNameException
 from rclpy.exceptions import ParameterAlreadyDeclaredException
 from rclpy.exceptions import ParameterImmutableException
 from rclpy.exceptions import ParameterNotDeclaredException
+from rclpy.exceptions import ParameterUninitializedException
 from rclpy.executors import SingleThreadedExecutor
-from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.parameter import Parameter
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.qos import QoSDurabilityPolicy
@@ -44,6 +50,7 @@ from rclpy.qos import QoSLivelinessPolicy
 from rclpy.qos import QoSProfile
 from rclpy.qos import QoSReliabilityPolicy
 from rclpy.time_source import USE_SIM_TIME_NAME
+from rclpy.utilities import get_rmw_implementation_identifier
 from test_msgs.msg import BasicTypes
 
 TEST_NODE = 'my_node'
@@ -139,6 +146,9 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
     def dummy_cb(self, msg):
         pass
 
+    @unittest.skipIf(
+        get_rmw_implementation_identifier() == 'rmw_connextdds' and platform.system() == 'Windows',
+        reason='Source timestamp not implemented for Connext on Windows')
     def test_take(self):
         basic_types_pub = self.node.create_publisher(BasicTypes, 'take_test', 1)
         sub = self.node.create_subscription(
@@ -148,16 +158,15 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
             1)
         basic_types_msg = BasicTypes()
         basic_types_pub.publish(basic_types_msg)
-        cycle_count = 0
-        while cycle_count < 5:
-            with sub.handle as capsule:
-                result = _rclpy.rclpy_take(capsule, sub.msg_type, False)
+        for i in range(5):
+            with sub.handle:
+                result = sub.handle.take_message(sub.msg_type, False)
             if result is not None:
                 msg, info = result
                 self.assertNotEqual(0, info['source_timestamp'])
                 return
             else:
-                time.sleep(0.1)
+                time.sleep(0.2)
 
     def test_create_client(self):
         self.node.create_client(GetParameters, 'get/parameters')
@@ -244,11 +253,11 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
         # Add a publisher
         qos_profile = QoSProfile(
             depth=10,
-            history=QoSHistoryPolicy.RMW_QOS_POLICY_HISTORY_KEEP_ALL,
+            history=QoSHistoryPolicy.KEEP_ALL,
             deadline=Duration(seconds=1, nanoseconds=12345),
             lifespan=Duration(seconds=20, nanoseconds=9887665),
-            reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT,
-            durability=QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL,
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
             liveliness_lease_duration=Duration(seconds=5, nanoseconds=23456),
             liveliness=QoSLivelinessPolicy.MANUAL_BY_TOPIC)
         self.node.create_publisher(BasicTypes, topic_name, qos_profile)
@@ -267,11 +276,11 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
         # Add a subscription
         qos_profile2 = QoSProfile(
             depth=0,
-            history=QoSHistoryPolicy.RMW_QOS_POLICY_HISTORY_KEEP_LAST,
+            history=QoSHistoryPolicy.KEEP_LAST,
             deadline=Duration(seconds=15, nanoseconds=1678),
             lifespan=Duration(seconds=29, nanoseconds=2345),
-            reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_RELIABLE,
-            durability=QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_VOLATILE,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.VOLATILE,
             liveliness_lease_duration=Duration(seconds=5, nanoseconds=23456),
             liveliness=QoSLivelinessPolicy.AUTOMATIC)
         self.node.create_subscription(BasicTypes, topic_name, lambda msg: print(msg), qos_profile2)
@@ -291,7 +300,7 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
         self.assert_qos_equal(qos_profile2, subscription_qos_profile, is_publisher=False)
 
         # Error cases
-        with self.assertRaisesRegex(TypeError, 'bad argument type for built-in operation'):
+        with self.assertRaises(TypeError):
             self.node.get_subscriptions_info_by_topic(1)
             self.node.get_publishers_info_by_topic(1)
         with self.assertRaisesRegex(ValueError, 'is invalid'):
@@ -321,7 +330,7 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
         self.assertEqual(2, short_topic_publisher.get_subscription_count())
 
         # error cases
-        with self.assertRaisesRegex(TypeError, 'bad argument type for built-in operation'):
+        with self.assertRaises(TypeError):
             self.node.count_subscribers(1)
         with self.assertRaisesRegex(ValueError, 'is invalid'):
             self.node.count_subscribers('42')
@@ -381,6 +390,14 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
         finally:
             node.destroy_node()
 
+    def modify_parameter_callback(self, parameters_list: List[Parameter]):
+        modified_list = parameters_list.copy()
+        for param in parameters_list:
+            if param.name == 'foo':
+                modified_list.append(Parameter('bar', Parameter.Type.STRING, 'hello'))
+
+        return modified_list
+
     def test_node_set_parameters(self):
         results = self.node.set_parameters([
             Parameter('foo', Parameter.Type.INTEGER, 42),
@@ -389,6 +406,32 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
         ])
         self.assertTrue(all(isinstance(result, SetParametersResult) for result in results))
         self.assertTrue(all(result.successful for result in results))
+        self.assertEqual(self.node.get_parameter('foo').value, 42)
+        self.assertEqual(self.node.get_parameter('bar').value, 'hello')
+        self.assertEqual(self.node.get_parameter('baz').value, 2.41)
+
+        self.node.undeclare_parameter('foo')
+        self.node.undeclare_parameter('bar')
+        self.node.undeclare_parameter('baz')
+
+        # adding a parameter using func: "add_pre_set parameter" callback when
+        # that parameter has not been declared will not throw if undeclared
+        # parameters are allowed
+
+        self.node.add_pre_set_parameters_callback(self.modify_parameter_callback)
+        results = self.node.set_parameters([
+            Parameter('foo', Parameter.Type.INTEGER, 42),
+            Parameter('baz', Parameter.Type.DOUBLE, 2.41)
+        ])
+
+        self.node.remove_pre_set_parameters_callback(self.modify_parameter_callback)
+
+        self.assertEqual(2, len(results))
+        self.assertTrue(all(isinstance(result, SetParametersResult) for result in results))
+        self.assertTrue(all(result.successful for result in results))
+        self.assertTrue(self.node.has_parameter('foo'))
+        self.assertTrue(self.node.has_parameter('bar'))
+        self.assertTrue(self.node.has_parameter('baz'))
         self.assertEqual(self.node.get_parameter('foo').value, 42)
         self.assertEqual(self.node.get_parameter('bar').value, 'hello')
         self.assertEqual(self.node.get_parameter('baz').value, 2.41)
@@ -406,6 +449,31 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
         self.assertEqual(self.node.get_parameter('foo').value, 42)
         self.assertIsInstance(result, SetParametersResult)
         self.assertTrue(result.successful)
+
+        self.node.undeclare_parameter('foo')
+        self.node.undeclare_parameter('bar')
+        self.node.undeclare_parameter('baz')
+
+        # adding a parameter using func: "add_pre_set parameter" callback,
+        # when that parameter has not been declared will not throw if undeclared
+        # parameters are allowed
+
+        self.node.add_pre_set_parameters_callback(self.modify_parameter_callback)
+
+        result = self.node.set_parameters_atomically([
+            Parameter('foo', Parameter.Type.INTEGER, 42),
+            Parameter('baz', Parameter.Type.DOUBLE, 2.41)
+        ])
+
+        self.node.remove_pre_set_parameters_callback(self.modify_parameter_callback)
+
+        self.assertEqual(True, result.successful)
+        self.assertTrue(self.node.has_parameter('foo'))
+        self.assertTrue(self.node.has_parameter('bar'))
+        self.assertTrue(self.node.has_parameter('baz'))
+        self.assertEqual(self.node.get_parameter('foo').value, 42)
+        self.assertEqual(self.node.get_parameter('bar').value, 'hello')
+        self.assertEqual(self.node.get_parameter('baz').value, 2.41)
 
     def test_describe_undeclared_parameter(self):
         self.assertFalse(self.node.has_parameter('foo'))
@@ -432,6 +500,26 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
     def test_node_get_parameter_returns_parameter_not_set(self):
         self.assertIsInstance(self.node.get_parameter('unset'), Parameter)
         self.assertEqual(self.node.get_parameter('unset').type_, Parameter.Type.NOT_SET)
+
+    def test_node_declare_static_parameter(self):
+        value = self.node.declare_parameter('an_integer', 5)
+        self.assertEqual(value.value, 5)
+        self.assertFalse(
+            self.node.set_parameters([Parameter('an_integer', value='asd')])[0].successful)
+        self.assertEqual(self.node.get_parameter('an_integer').value, 5)
+
+    def test_node_undeclared_parameters_are_dynamically_typed(self):
+        self.assertTrue(self.node.set_parameters([Parameter('my_param', value=5)])[0].successful)
+        self.assertEqual(self.node.get_parameter('my_param').value, 5)
+        self.assertTrue(
+            self.node.set_parameters([Parameter('my_param', value='asd')])[0].successful)
+        self.assertEqual(self.node.get_parameter('my_param').value, 'asd')
+
+    def test_node_cannot_declare_after_set(self):
+        self.assertTrue(self.node.set_parameters([Parameter('my_param', value=5)])[0].successful)
+        self.assertEqual(self.node.get_parameter('my_param').value, 5)
+        with pytest.raises(rclpy.exceptions.ParameterAlreadyDeclaredException):
+            self.node.declare_parameter('my_param', 5)
 
     def test_node_has_parameter_services(self):
         service_names_and_types = self.node.get_service_names_and_types()
@@ -476,7 +564,9 @@ class TestNode(unittest.TestCase):
             parameter_overrides=[
                 Parameter('initial_foo', Parameter.Type.INTEGER, 4321),
                 Parameter('initial_bar', Parameter.Type.STRING, 'init_param'),
-                Parameter('initial_baz', Parameter.Type.DOUBLE, 3.14)
+                Parameter('initial_baz', Parameter.Type.DOUBLE, 3.14),
+                Parameter('initial_decl_with_type', Parameter.Type.DOUBLE, 3.14),
+                Parameter('initial_decl_wrong_type', Parameter.Type.DOUBLE, 3.14),
             ],
             cli_args=[
                 '--ros-args', '-p', 'initial_fizz:=buzz',
@@ -492,18 +582,21 @@ class TestNode(unittest.TestCase):
         rclpy.shutdown(context=self.context)
 
     def test_declare_parameter(self):
+        with pytest.raises(ValueError):
+            result_initial_foo = self.node.declare_parameter(
+                'initial_foo', ParameterValue(), ParameterDescriptor())
         result_initial_foo = self.node.declare_parameter(
-            'initial_foo', ParameterValue(), ParameterDescriptor())
+                'initial_foo', ParameterValue(), ParameterDescriptor(dynamic_typing=True))
         result_initial_bar = self.node.declare_parameter(
             'initial_bar', 'ignoring_override', ParameterDescriptor(), ignore_override=True)
         result_initial_fizz = self.node.declare_parameter(
             'initial_fizz', 'default', ParameterDescriptor())
         result_initial_baz = self.node.declare_parameter(
-            'initial_baz', ParameterValue(), ParameterDescriptor())
+            'initial_baz', 0., ParameterDescriptor())
         result_initial_buzz = self.node.declare_parameter(
-            'initial_buzz', ParameterValue(), ParameterDescriptor())
+            'initial_buzz', 0., ParameterDescriptor())
         result_initial_foobar = self.node.declare_parameter(
-            'initial_foobar', ParameterValue(), ParameterDescriptor())
+            'initial_foobar', True, ParameterDescriptor())
 
         result_foo = self.node.declare_parameter(
             'foo', 42, ParameterDescriptor())
@@ -511,7 +604,11 @@ class TestNode(unittest.TestCase):
             'bar', 'hello', ParameterDescriptor())
         result_baz = self.node.declare_parameter(
             'baz', 2.41, ParameterDescriptor())
-        result_value_not_set = self.node.declare_parameter('value_not_set')
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always', category=UserWarning)
+            result_value_not_set = self.node.declare_parameter('value_not_set')
+            assert len(w) == 1
+            assert issubclass(w[0].category, UserWarning)
 
         # OK cases.
         self.assertIsInstance(result_initial_foo, Parameter)
@@ -525,9 +622,10 @@ class TestNode(unittest.TestCase):
         # initial_foo and initial_fizz get override values; initial_bar does not.
         self.assertEqual(result_initial_foo.value, 4321)
         self.assertEqual(result_initial_bar.value, 'ignoring_override')
-        self.assertEqual(result_initial_fizz.value, 23)  # provided by CLI, overridden by file
+        # provided by CLI, overridden by file
+        self.assertEqual(result_initial_fizz.value, 'param_file_override')
         self.assertEqual(result_initial_baz.value, 3.14)  # provided by file, overridden manually
-        self.assertEqual(result_initial_buzz.value, 1)  # provided by CLI
+        self.assertEqual(result_initial_buzz.value, 1.)  # provided by CLI
         self.assertEqual(result_initial_foobar.value, False)  # provided by file
         self.assertEqual(result_foo.value, 42)
         self.assertEqual(result_bar.value, 'hello')
@@ -535,7 +633,7 @@ class TestNode(unittest.TestCase):
         self.assertIsNone(result_value_not_set.value)
         self.assertEqual(self.node.get_parameter('initial_foo').value, 4321)
         self.assertEqual(self.node.get_parameter('initial_bar').value, 'ignoring_override')
-        self.assertEqual(self.node.get_parameter('initial_fizz').value, 23)
+        self.assertEqual(self.node.get_parameter('initial_fizz').value, 'param_file_override')
         self.assertEqual(self.node.get_parameter('initial_baz').value, 3.14)
         self.assertEqual(self.node.get_parameter('initial_buzz').value, 1)
         self.assertEqual(self.node.get_parameter('initial_foobar').value, False)
@@ -569,13 +667,19 @@ class TestNode(unittest.TestCase):
                 'wrong_name_type',
                 ParameterDescriptor())
 
-        with self.assertRaises(TypeError):
+        with self.assertRaises(ValueError):
             self.node.declare_parameter(
                 'wrong_parameter_value_type', ParameterValue(), ParameterDescriptor())
 
         with self.assertRaises(TypeError):
             self.node.declare_parameter(
                 'wrong_parameter_descriptor_type', 1, ParameterValue())
+
+        with self.assertRaises(ValueError):
+            self.node.declare_parameter(
+                'dynamic_typing_and_static_type',
+                Parameter.Type.DOUBLE,
+                descriptor=ParameterDescriptor(dynamic_typing=True))
 
     def test_declare_parameters(self):
         parameters = [
@@ -586,7 +690,22 @@ class TestNode(unittest.TestCase):
             ('value_not_set',)
         ]
 
-        result = self.node.declare_parameters('', parameters)
+        # Declare uninitialized parameter
+        parameter_type = self.node.declare_parameter('no_override', Parameter.Type.INTEGER).type_
+        assert parameter_type == Parameter.Type.NOT_SET
+
+        with pytest.raises(InvalidParameterTypeException):
+            self.node.declare_parameter('initial_decl_wrong_type', Parameter.Type.INTEGER)
+
+        self.assertAlmostEqual(
+            self.node.declare_parameter('initial_decl_with_type', Parameter.Type.DOUBLE).value,
+            3.14)
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always', category=UserWarning)
+            result = self.node.declare_parameters('', parameters)
+            assert len(w) == 1
+            assert issubclass(w[0].category, UserWarning)
 
         # OK cases - using overrides.
         self.assertIsInstance(result, list)
@@ -608,7 +727,10 @@ class TestNode(unittest.TestCase):
         self.assertIsNone(self.node.get_parameter('value_not_set').value)
         self.assertTrue(self.node.has_parameter('value_not_set'))
 
-        result = self.node.declare_parameters('namespace', parameters)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always', category=UserWarning)
+            result = self.node.declare_parameters('namespace', parameters)
+            assert len(w) == 1
 
         # OK cases.
         self.assertIsInstance(result, list)
@@ -690,7 +812,7 @@ class TestNode(unittest.TestCase):
                 )]
             )
 
-        with self.assertRaises(TypeError):
+        with self.assertRaises(ValueError):
             self.node.declare_parameters(
                 '',
                 [(
@@ -794,6 +916,22 @@ class TestNode(unittest.TestCase):
             'initial_foo', Parameter('foo', Parameter.Type.INTEGER, 152))
         self.assertEqual(result.name, 'foo')
         self.assertEqual(result.value, 152)
+
+    def test_node_get_uninitialized_parameter_or(self):
+        # Statically typed parameter
+        self.node.declare_parameter('uninitialized_foo', Parameter.Type.INTEGER)
+        result = self.node.get_parameter_or(
+            'uninitialized_foo', Parameter('foo', Parameter.Type.INTEGER, 152))
+        self.assertEqual(result.name, 'foo')
+        self.assertEqual(result.value, 152)
+
+        # Dynamically typed parameter
+        self.node.declare_parameter(
+            'uninitialized_bar', None, ParameterDescriptor(dynamic_typing=True))
+        result = self.node.get_parameter_or(
+            'uninitialized_bar', Parameter('foo', Parameter.Type.INTEGER, 153))
+        self.assertEqual(result.name, 'foo')
+        self.assertEqual(result.value, 153)
 
     def test_node_get_parameters_by_prefix(self):
         parameters = [
@@ -1005,6 +1143,61 @@ class TestNode(unittest.TestCase):
         self.assertIsInstance(result[2], SetParametersResult)
         self.assertTrue(result[2].successful)
 
+    def modify_parameter_callback(self, parameter_list: List[Parameter]):
+        modified_list = parameter_list.copy()
+        for param in parameter_list:
+            if param.name == 'foo':
+                modified_list.append(Parameter('bar', Parameter.Type.STRING, 'hello'))
+
+        return modified_list
+
+    def empty_parameter_callback(self, parameter_list: List[Parameter]):
+        return []
+
+    def test_add_remove_pre_set_parameter_callback(self):
+        callbacks = [self.modify_parameter_callback, self.empty_parameter_callback]
+
+        for callback in callbacks:
+            self.node.add_pre_set_parameters_callback(callback)
+            self.assertTrue(callback in self.node._pre_set_parameters_callbacks)
+        for callback in callbacks:
+            self.node.remove_pre_set_parameters_callback(callback)
+            self.assertFalse(callback in self.node._pre_set_parameters_callbacks)
+
+        # register a callback
+        self.node.add_pre_set_parameters_callback(self.modify_parameter_callback)
+
+        self.node.declare_parameter('foo', 0)
+        self.node.declare_parameter('bar', '')
+
+        # check that declare_parameter will not result in a call to any of the
+        # pre_set_parameter registered callbacks
+        self.assertTrue(self.node.has_parameter('foo'))
+        self.assertTrue(self.node.has_parameter('bar'))
+        self.assertTrue(self.node.get_parameter('foo').value == 0)
+        self.assertTrue(self.node.get_parameter('bar').value == '')
+
+        # setting of parameter 'foo' will result in setting of parameter 'bar'
+        results = self.node.set_parameters([Parameter('foo', Parameter.Type.INTEGER, 42)])
+        self.node.remove_pre_set_parameters_callback(self.modify_parameter_callback)
+
+        # param 'bar' should be modified because of registered callback
+        self.assertEqual(len(results), 1)
+        self.assertTrue(results[0].successful)
+        self.assertTrue(self.node.has_parameter('foo'))
+        self.assertTrue(self.node.has_parameter('bar'))
+        self.assertTrue(self.node.get_parameter('foo').value == 42)
+        self.assertTrue(self.node.get_parameter('bar').value == 'hello')
+
+        # result will be unsuccessful if the callback return an empty list
+        self.node.add_pre_set_parameters_callback(self.empty_parameter_callback)
+        results = self.node.set_parameters([Parameter('foo', Parameter.Type.INTEGER, 42)])
+        self.node.remove_pre_set_parameters_callback(self.empty_parameter_callback)
+        self.assertFalse(results[0].successful)
+        self.assertEqual(results[0].reason,
+                         'parameter list cannot be empty, this might be due to '
+                         'pre_set_parameters_callback modifying the original parameters list.')
+
     def test_node_add_on_set_parameter_callback(self):
         # Add callbacks to the list of callbacks.
         callbacks = [
@@ -1014,7 +1207,7 @@ class TestNode(unittest.TestCase):
         for callback in callbacks:
             self.node.add_on_set_parameters_callback(callback)
         for callback in callbacks:
-            self.assertTrue(callback in self.node._parameters_callbacks)
+            self.assertTrue(callback in self.node._on_set_parameters_callbacks)
         for callback in callbacks:
             self.node.remove_on_set_parameters_callback(callback)
 
@@ -1059,7 +1252,7 @@ class TestNode(unittest.TestCase):
         ]
         # Checking if the callbacks are not already present.
         for callback in callbacks:
-            self.assertFalse(callback in self.node._parameters_callbacks)
+            self.assertFalse(callback in self.node._on_set_parameters_callbacks)
 
         for callback in callbacks:
             self.node.add_on_set_parameters_callback(callback)
@@ -1078,7 +1271,8 @@ class TestNode(unittest.TestCase):
         self.assertFalse(result[0].successful)
         # Removing the callback which is causing the rejection.
         self.node.remove_on_set_parameters_callback(self.reject_parameter_callback_1)
-        self.assertFalse(self.reject_parameter_callback_1 in self.node._parameters_callbacks)
+        self.assertFalse(self.reject_parameter_callback_1 in
+                         self.node._on_set_parameters_callbacks)
         # Now the setting its value again.
         result = self.node.set_parameters(
             [
@@ -1092,6 +1286,45 @@ class TestNode(unittest.TestCase):
         self.assertIsInstance(result, list)
         self.assertIsInstance(result[0], SetParametersResult)
         self.assertTrue(result[0].successful)
+
+    def test_add_remove_post_set_parameter_callback(self):
+        def successful_parameter_set_callback(parameter_list: List[Parameter]):
+            for param in parameter_list:
+                if param.name == 'param1':
+                    self.track_value1 = param.value
+                elif param.name == 'param2':
+                    self.track_value2 = param.value
+
+        callbacks = [successful_parameter_set_callback]
+
+        for callback in callbacks:
+            self.node.add_post_set_parameters_callback(callback)
+            self.assertTrue(callback in self.node._post_set_parameters_callbacks)
+        for callback in callbacks:
+            self.node.remove_post_set_parameters_callback(callback)
+            self.assertFalse(callback in self.node._post_set_parameters_callbacks)
+
+        self.node.declare_parameter('param1', 0.0)
+        self.node.declare_parameter('param2', 0.0)
+
+        self.track_value1 = self.node.get_parameter('param1')
+        self.track_value2 = self.node.get_parameter('param2')
+
+        self.node.add_post_set_parameters_callback(successful_parameter_set_callback)
+        results = self.node.set_parameters([Parameter('param1', Parameter.Type.DOUBLE, 1.0),
+                                            Parameter('param2', Parameter.Type.DOUBLE, 2.0)])
+
+        # 'track_value1' and 'track_value2' should be updated to
+        # 'param1' and 'param2' value respectively.
+        self.assertEqual(len(results), 2)
+        self.assertTrue(results[0].successful)
+        self.assertTrue(results[1].successful)
+        self.assertTrue(self.node.has_parameter('param1'))
+        self.assertTrue(self.node.has_parameter('param2'))
+        self.assertEqual(self.node.get_parameter('param1').value, 1.0)
+        self.assertEqual(self.node.get_parameter('param2').value, 2.0)
+        self.assertTrue(self.track_value1 == 1.0)
+        self.assertTrue(self.track_value2 == 2.0)
 
     def test_node_set_parameters_read_only(self):
         integer_value = 42
@@ -1169,6 +1402,33 @@ class TestNode(unittest.TestCase):
         self.assertEqual(self.node.get_parameter('bar').value, 'bye')
         self.assertEqual(self.node.get_parameter('immutable_baz').value, 2.41)
 
+    def test_node_set_parameters_pre_set_parameter_callback(self):
+        # parameter 'bar' not declared here, only declare 'foo'
+        default_value = 0
+        self.node.declare_parameter('foo', default_value)
+        self.node.add_pre_set_parameters_callback(self.modify_parameter_callback)
+
+        # adding a parameter using "add_pre_set_parameter" callback, when that
+        # parameter has not been declared before will throw.
+        with self.assertRaises(ParameterNotDeclaredException):
+            self.node.set_parameters([
+                Parameter('foo', Parameter.Type.INTEGER, 42)])
+        self.assertTrue(self.node.has_parameter('foo'))
+        self.assertEqual(self.node.get_parameter('foo').value, default_value)
+        self.assertFalse(self.node.has_parameter('bar'))
+
+        self.node.remove_pre_set_parameters_callback(self.modify_parameter_callback)
+
+        # An empty list from  'add_pre_set_parameter' callback will return
+        # an unsuccessful result
+        self.node.add_pre_set_parameters_callback(self.empty_parameter_callback)
+        results = self.node.set_parameters([Parameter('foo', Parameter.Type.INTEGER, 42)])
+
+        self.assertFalse(results[0].successful)
+        self.assertTrue(self.node.has_parameter('foo'))
+        self.assertTrue(self.node.get_parameter('foo').value == default_value)
+        self.assertFalse(self.node.has_parameter('bar'))
+
     def test_node_set_parameters_implicit_undeclare(self):
         parameter_tuples = [
             (
@@ -1179,7 +1439,7 @@ class TestNode(unittest.TestCase):
             (
                 'bar',
                 'hello',
-                ParameterDescriptor()
+                ParameterDescriptor(dynamic_typing=True)
             ),
             (
                 'baz',
@@ -1295,6 +1555,34 @@ class TestNode(unittest.TestCase):
         with self.assertRaises(ParameterNotDeclaredException):
             self.node.get_parameter('foobar')
 
+    def test_node_set_parameters_atomically_pre_set_parameter_callback(self):
+        # parameter 'bar' not declared here, only declare 'foo'
+        default_value = 0
+        self.node.declare_parameter('foo', default_value)
+        self.node.add_pre_set_parameters_callback(self.modify_parameter_callback)
+
+        # adding a parameter using "add_pre_set_parameter" callback, when that
+        # parameter has not been declared before will throw.
+        with self.assertRaises(ParameterNotDeclaredException):
+            self.node.set_parameters_atomically([
+                Parameter('foo', Parameter.Type.INTEGER, 42)])
+        self.assertTrue(self.node.has_parameter('foo'))
+        self.assertEqual(self.node.get_parameter('foo').value, default_value)
+        self.assertFalse(self.node.has_parameter('bar'))
+
+        self.node.remove_pre_set_parameters_callback(self.modify_parameter_callback)
+
+        # An empty list from  'add_pre_set_parameter' callback will return
+        # an unsuccessful result
+        self.node.add_pre_set_parameters_callback(self.empty_parameter_callback)
+        result = self.node.set_parameters_atomically(
+                      [Parameter('foo', Parameter.Type.INTEGER, 42)])
+
+        self.assertFalse(result.successful)
+        self.assertTrue(self.node.has_parameter('foo'))
+        self.assertTrue(self.node.get_parameter('foo').value == default_value)
+        self.assertFalse(self.node.has_parameter('bar'))
+
     def test_node_set_parameters_atomically_rejection(self):
         # Declare a new parameter and set a callback so that it's rejected when set.
         reject_parameter_tuple = (
@@ -1396,7 +1684,7 @@ class TestNode(unittest.TestCase):
             (
                 'bar',
                 'hello',
-                ParameterDescriptor()
+                ParameterDescriptor(dynamic_typing=True)
             ),
             (
                 'baz',
@@ -1413,7 +1701,9 @@ class TestNode(unittest.TestCase):
         self.assertEqual(self.node.get_parameter('baz').value, 2.41)
 
         # Now undeclare one of them implicitly.
-        self.node.set_parameters_atomically([Parameter('bar', Parameter.Type.NOT_SET, None)])
+        result = self.node.set_parameters_atomically([
+            Parameter('bar', Parameter.Type.NOT_SET, None)])
+        self.assertEqual(result.successful, True)
         self.assertEqual(self.node.get_parameter('foo').value, 42)
         self.assertFalse(self.node.has_parameter('bar'))
         self.assertEqual(self.node.get_parameter('baz').value, 2.41)
@@ -1535,7 +1825,8 @@ class TestNode(unittest.TestCase):
                 type=ParameterType.PARAMETER_INTEGER,  # Type will be ignored too.
                 additional_constraints='some constraints',
                 read_only=False,
-                integer_range=[IntegerRange(from_value=-10, to_value=10, step=2)]
+                integer_range=[IntegerRange(from_value=-10, to_value=10, step=2)],
+                dynamic_typing=True
             )
         )
         self.assertEqual(value.type, Parameter.Type.STRING.value)
@@ -1645,13 +1936,6 @@ class TestNode(unittest.TestCase):
         self.assertFalse(result[0].successful)
         self.assertEqual(self.node.get_parameter('in_range').value, 4.5)
 
-        # Change in_range parameter to int; ranges will not apply.
-        result = self.node.set_parameters([Parameter('in_range', value=12)])
-        self.assertIsInstance(result, list)
-        self.assertIsInstance(result[0], SetParametersResult)
-        self.assertTrue(result[0].successful)
-        self.assertEqual(self.node.get_parameter('in_range').value, 12)
-
         # From and to are always valid.
         # Parameters that don't comply with the description will raise an exception.
         fp_range = FloatingPointRange(from_value=-10.0, to_value=0.0, step=30.0)
@@ -1734,13 +2018,6 @@ class TestNode(unittest.TestCase):
         self.assertFalse(result[0].successful)
         self.assertEqual(self.node.get_parameter('in_range').value, 4)
 
-        # Change in_range parameter to a float; ranges will not apply.
-        result = self.node.set_parameters([Parameter('in_range', value=12.0)])
-        self.assertIsInstance(result, list)
-        self.assertIsInstance(result[0], SetParametersResult)
-        self.assertTrue(result[0].successful)
-        self.assertAlmostEqual(self.node.get_parameter('in_range').value, 12.0)
-
         # From and to are always valid.
         # Parameters that don't comply with the description will raise an exception.
         integer_range = IntegerRange(from_value=-10, to_value=0, step=30)
@@ -1778,6 +2055,67 @@ class TestNode(unittest.TestCase):
         self.assertEqual(self.node.get_parameter('from_value_no_step').value, -10)
         self.assertEqual(self.node.get_parameter('to_value_no_step').value, 10)
         self.assertEqual(self.node.get_parameter('in_range_no_step').value, 5)
+
+    def test_static_dynamic_typing(self):
+        parameters = [
+            ('int_param', 0),
+            ('int_param_no_default', Parameter.Type.INTEGER),
+            ('dynamic_param', None, ParameterDescriptor(dynamic_typing=True)),
+        ]
+        result = self.node.declare_parameters('', parameters)
+
+        # Try getting parameters before setting values
+        int_param = self.node.get_parameter('int_param')
+        self.assertEqual(int_param.type_, Parameter.Type.INTEGER)
+        self.assertEqual(int_param.value, 0)
+        with pytest.raises(ParameterUninitializedException):
+            self.node.get_parameter('int_param_no_default')
+        self.assertEqual(self.node.get_parameter('dynamic_param').type_, Parameter.Type.NOT_SET)
+
+        result = self.node.set_parameters([Parameter('int_param', value='asd')])[0]
+        self.assertFalse(result.successful)
+        self.assertTrue(result.reason.startswith('Wrong parameter type'))
+
+        self.assertTrue(self.node.set_parameters([Parameter('int_param', value=3)])[0].successful)
+
+        result = self.node.set_parameters([Parameter('int_param_no_default', value='asd')])[0]
+        self.assertFalse(result.successful)
+        self.assertTrue(result.reason.startswith('Wrong parameter type'))
+
+        self.assertTrue(
+            self.node.set_parameters([Parameter('int_param_no_default', value=3)])[0].successful)
+        self.assertEqual(self.node.get_parameter('int_param_no_default').value, 3)
+
+        result = self.node.set_parameters([Parameter('int_param_no_default', value=None)])[0]
+        self.assertFalse(result.successful)
+        self.assertTrue(result.reason.startswith('Static parameter cannot be undeclared'))
+
+        self.assertTrue(
+            self.node.set_parameters([Parameter('dynamic_param', value='asd')])[0].successful)
+        self.assertTrue(
+            self.node.set_parameters([Parameter('dynamic_param', value=3)])[0].successful)
+
+        result = self.node.set_parameters_atomically([
+            Parameter('dynamic_param', value=3), Parameter('int_param', value='asd')])
+        self.assertFalse(result.successful)
+        self.assertTrue(result.reason.startswith('Wrong parameter type'))
+
+        self.assertTrue(self.node.set_parameters_atomically([
+            Parameter('dynamic_param', value=None), Parameter('int_param', value=4)]).successful)
+        self.assertEqual(self.node.get_parameter('int_param').value, 4)
+        self.assertFalse(self.node.has_parameter('dynamic_param'))
+
+    def test_wait_for_node(self):
+        try:
+            node = rclpy.create_node(
+                'waiting_for_this_node', namespace='/my_ns', context=self.context
+            )
+            self.assertTrue(self.node.wait_for_node('/my_ns/waiting_for_this_node', 3.0))
+        finally:
+            node.destroy_node()
+
+    def test_wait_for_node_timeout(self):
+        self.assertFalse(self.node.wait_for_node('node_does_not_exist', 0.1))
 
 
 class TestCreateNode(unittest.TestCase):
@@ -1829,7 +2167,7 @@ class TestCreateNode(unittest.TestCase):
                 cli_args=['--ros-args', '-r', 'not-a-remap'],
                 context=context)
 
-        unknown_ros_args_error_pattern = r'Found unknown ROS arguments:.*\[\'--my-custom-flag\'\]'
+        unknown_ros_args_error_pattern = r'\[\'--my-custom-flag\'\]'
         with self.assertRaisesRegex(_rclpy.UnknownROSArgsError, unknown_ros_args_error_pattern):
             rclpy.create_node(
                 'my_node',
@@ -1838,6 +2176,185 @@ class TestCreateNode(unittest.TestCase):
                 context=context)
 
         rclpy.shutdown(context=context)
+
+    def test_node_get_fully_qualified_name(self):
+        context = rclpy.context.Context()
+        rclpy.init(context=context)
+
+        ns = '/my_ns'
+        name = 'my_node'
+        node = rclpy.create_node(name, namespace=ns, context=context)
+        assert node.get_fully_qualified_name() == '{}/{}'.format(ns, name)
+        node.destroy_node()
+
+        # When ns is not specified, a leading / should be added
+        node_without_ns = rclpy.create_node(name, context=context)
+        assert node_without_ns.get_fully_qualified_name() == '/' + name
+        node_without_ns.destroy_node()
+
+        remapped_ns = '/another_ns'
+        remapped_name = 'another_node'
+        node_with_remapped_ns = rclpy.create_node(
+            name,
+            namespace=ns,
+            context=context,
+            cli_args=['--ros-args', '-r', '__ns:=' + remapped_ns]
+        )
+        expected_name = '{}/{}'.format(remapped_ns, name)
+        assert node_with_remapped_ns.get_fully_qualified_name() == expected_name
+        node_with_remapped_ns.destroy_node()
+
+        node_with_remapped_name = rclpy.create_node(
+            name,
+            namespace=ns,
+            context=context,
+            cli_args=['--ros-args', '-r', '__node:=' + remapped_name]
+        )
+        expected_name = '{}/{}'.format(ns, remapped_name)
+        assert node_with_remapped_name.get_fully_qualified_name() == expected_name
+        node_with_remapped_name.destroy_node()
+
+        node_with_remapped_ns_name = rclpy.create_node(
+            name,
+            namespace=ns,
+            context=context,
+            cli_args=['--ros-args', '-r', '__node:=' + remapped_name, '-r', '__ns:=' + remapped_ns]
+        )
+        expected_name = '{}/{}'.format(remapped_ns, remapped_name)
+        assert node_with_remapped_ns_name.get_fully_qualified_name() == expected_name
+        node_with_remapped_ns_name.destroy_node()
+
+        rclpy.shutdown(context=context)
+
+        g_context = rclpy.context.Context()
+        global_remap_name = 'global_node_name'
+        rclpy.init(
+            args=['--ros-args', '-r', '__node:=' + global_remap_name],
+            context=g_context,
+        )
+        node_with_global_arguments = rclpy.create_node(
+            name,
+            namespace=ns,
+            context=g_context,
+        )
+        expected_name = '{}/{}'.format(ns, global_remap_name)
+        assert node_with_global_arguments.get_fully_qualified_name() == expected_name
+        node_with_global_arguments.destroy_node()
+
+        node_skip_global_params = rclpy.create_node(
+            name,
+            namespace=ns,
+            context=g_context,
+            use_global_arguments=False
+        )
+        assert node_skip_global_params.get_fully_qualified_name() == '{}/{}'.format(ns, name)
+        node_skip_global_params.destroy_node()
+
+        rclpy.shutdown(context=g_context)
+
+
+def test_node_resolve_name():
+    context = rclpy.Context()
+    rclpy.init(
+        args=['--ros-args', '-r', 'foo:=bar'],
+        context=context,
+    )
+    node = rclpy.create_node('test_rclpy_node_resolve_name', namespace='/my_ns', context=context)
+    assert node.resolve_topic_name('foo') == '/my_ns/bar'
+    assert node.resolve_topic_name('/abs') == '/abs'
+    assert node.resolve_topic_name('foo', only_expand=True) == '/my_ns/foo'
+    assert node.resolve_service_name('foo') == '/my_ns/bar'
+    assert node.resolve_service_name('/abs') == '/abs'
+    assert node.resolve_service_name('foo', only_expand=True) == '/my_ns/foo'
+    rclpy.shutdown(context=context)
+
+
+class TestNodeParamsFile(unittest.TestCase):
+
+    @classmethod
+    def setUp(self):
+        rclpy.init()
+
+    @classmethod
+    def tearDown(self):
+        rclpy.shutdown()
+
+    def test_node_ns_params_file_with_wildcards(self):
+        node = rclpy.create_node(
+            'node2',
+            namespace='/ns',
+            cli_args=[
+                '--ros-args',
+                '--params-file', str(TEST_RESOURCES_DIR / 'wildcards.yaml')
+            ],
+            automatically_declare_parameters_from_overrides=True)
+        self.assertEqual('full_wild', node.get_parameter('full_wild').value)
+        self.assertEqual('namespace_wild', node.get_parameter('namespace_wild').value)
+        self.assertEqual(
+          'namespace_wild_another', node.get_parameter('namespace_wild_another').value)
+        self.assertEqual(
+          'namespace_wild_one_star', node.get_parameter('namespace_wild_one_star').value)
+        self.assertEqual('node_wild_in_ns', node.get_parameter('node_wild_in_ns').value)
+        self.assertEqual(
+          'node_wild_in_ns_another', node.get_parameter('node_wild_in_ns_another').value)
+        self.assertEqual('explicit_in_ns', node.get_parameter('explicit_in_ns').value)
+        with self.assertRaises(ParameterNotDeclaredException):
+            node.get_parameter('node_wild_no_ns')
+        with self.assertRaises(ParameterNotDeclaredException):
+            node.get_parameter('explicit_no_ns')
+        with self.assertRaises(ParameterNotDeclaredException):
+            node.get_parameter('should_not_appear')
+
+    def test_node_params_file_with_wildcards(self):
+        node = rclpy.create_node(
+            'node2',
+            cli_args=[
+                '--ros-args',
+                '--params-file', str(TEST_RESOURCES_DIR / 'wildcards.yaml')
+            ],
+            automatically_declare_parameters_from_overrides=True)
+        self.assertEqual('full_wild', node.get_parameter('full_wild').value)
+        self.assertEqual('namespace_wild', node.get_parameter('namespace_wild').value)
+        self.assertEqual(
+          'namespace_wild_another', node.get_parameter('namespace_wild_another').value)
+        with self.assertRaises(ParameterNotDeclaredException):
+            node.get_parameter('namespace_wild_one_star')
+        with self.assertRaises(ParameterNotDeclaredException):
+            node.get_parameter('node_wild_in_ns')
+        with self.assertRaises(ParameterNotDeclaredException):
+            node.get_parameter('node_wild_in_ns_another')
+        with self.assertRaises(ParameterNotDeclaredException):
+            node.get_parameter('explicit_in_ns')
+        self.assertEqual('node_wild_no_ns', node.get_parameter('node_wild_no_ns').value)
+        self.assertEqual('explicit_no_ns', node.get_parameter('explicit_no_ns').value)
+        with self.assertRaises(ParameterNotDeclaredException):
+            node.get_parameter('should_not_appear')
+
+    def test_node_ns_params_file_by_order(self):
+        node = rclpy.create_node(
+            'node2',
+            namespace='/ns',
+            cli_args=[
+                '--ros-args',
+                '--params-file', str(TEST_RESOURCES_DIR / 'params_by_order.yaml')
+            ],
+            automatically_declare_parameters_from_overrides=True)
+        self.assertEqual('last_one_win', node.get_parameter('a_value').value)
+        self.assertEqual('foo', node.get_parameter('foo').value)
+        self.assertEqual('bar', node.get_parameter('bar').value)
+
+    def test_node_ns_params_file_with_complicated_wildcards(self):
+        # regex matched: /**/foo/*/bar
+        node = rclpy.create_node(
+            'node2',
+            namespace='/a/b/c/foo/d/bar',
+            cli_args=[
+                '--ros-args',
+                '--params-file', str(TEST_RESOURCES_DIR / 'complicated_wildcards.yaml')
+            ],
+            automatically_declare_parameters_from_overrides=True)
+        self.assertEqual('foo', node.get_parameter('foo').value)
+        self.assertEqual('bar', node.get_parameter('bar').value)
 
 
 if __name__ == '__main__':
