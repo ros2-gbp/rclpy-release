@@ -101,7 +101,7 @@ class Client:
 
     def call_async(self, request: SrvTypeRequest) -> Future:
         """
-        Make a service request and asynchronously get the result.
+        Make a service request and asyncronously get the result.
 
         :param request: The service request.
         :return: A future that completes when the request does.
@@ -170,7 +170,6 @@ class Client:
         """
         # TODO(sloretz) Return as soon as the service is available
         # This is a temporary implementation. The sleep time is arbitrary.
-        # https://github.com/ros2/rclpy/issues/58
         sleep_time = 0.25
         if timeout_sec is None:
             timeout_sec = float('inf')
