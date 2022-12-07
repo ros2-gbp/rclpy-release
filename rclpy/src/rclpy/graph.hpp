@@ -17,6 +17,9 @@
 
 #include <pybind11/pybind11.h>
 
+#include <rcl/graph.h>
+
+#include <memory>
 #include <string>
 
 #include "node.hpp"

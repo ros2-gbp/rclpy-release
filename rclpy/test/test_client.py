@@ -108,7 +108,6 @@ class TestClient(unittest.TestCase):
                     result = srv.handle.service_take_request(srv.srv_type.Request)
                 if result is not None:
                     request, header = result
-                    self.assertTrue(header is not None)
                     self.assertNotEqual(0, header.source_timestamp)
                     return
                 else:

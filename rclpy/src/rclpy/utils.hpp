@@ -17,13 +17,11 @@
 
 #include <pybind11/pybind11.h>
 
-#include <rcl/arguments.h>
 #include <rcl/graph.h>  // rcl_names_and_types_t
-#include <rmw/topic_endpoint_info.h>
-#include <rmw/types.h>
 
 #include <memory>
 
+#include "rclpy_common/common.h"
 #include "publisher.hpp"
 
 namespace py = pybind11;
@@ -35,20 +33,12 @@ typedef void destroy_ros_message_function (void *);
 
 /// Convert a C rcl_names_and_types_t into a Python list.
 /**
- * \param[in] topic_names_and_types The names and types struct to convert.
+ * \param[in] names_and_types The names and types struct to convert.
  * \return List of tuples, where the first element of each tuple is a string
  *   for the name and the second element is a list of strings for the types.
  */
 py::list
 convert_to_py_names_and_types(const rcl_names_and_types_t * topic_names_and_types);
-
-/// Get the type support structure for a Python ROS message type.
-/**
- * \param[in] pymessage The Python ROS message type.
- * \return The type support structure or NULL if an error occurred.
- */
-void *
-common_get_type_support(py::object pymessage);
 
 /// Create the equivalent ROS message C type instance for a given Python type.
 /**
@@ -97,7 +87,7 @@ get_rmw_implementation_identifier();
  * Raises RCLError on failure to assert liveliness
  * Raises TypeError if passed object is not a valid Publisher
  *
- * \param[in] publisher A capsule containing an rcl_publisher_t
+ * \param[in] pyentity A capsule containing an rcl_publisher_t
  * \return None
  */
 void
@@ -131,24 +121,6 @@ throw_if_unparsed_ros_args(py::list pyargs, const rcl_arguments_t & rcl_args);
  */
 py::dict
 rclpy_action_get_rmw_qos_profile(const char * rmw_profile);
-
-/// Convert a C rmw_topic_endpoint_info_array_t into a Python list.
-/**
- * Raises RuntimeError if the rmw_profile profile is null.
- *
- * \param[in] info_array a pointer to a rmw_topic_endpoint_info_array_t
- * \return Python list
- */
-py::list
-convert_to_py_topic_endpoint_info_list(const rmw_topic_endpoint_info_array_t * info_array);
-
-/// Convert a C rmw_qos_profile_t into a Python dictionary with qos profile args.
-/**
- * \param[in] qos_profile Pointer to a rmw_qos_profile_t to convert
- * \return Python dictionary
- */
-py::dict
-convert_to_qos_dict(const rmw_qos_profile_t * qos_profile);
 }  // namespace rclpy
 
 #endif  // RCLPY__UTILS_HPP_

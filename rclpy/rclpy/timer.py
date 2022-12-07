@@ -14,7 +14,8 @@
 
 import threading
 
-from rclpy.exceptions import InvalidHandle, ROSInterruptException
+from rclpy.exceptions import ROSInterruptException
+from rclpy.handle import InvalidHandle
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.utilities import get_default_context
 

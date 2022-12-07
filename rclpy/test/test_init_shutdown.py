@@ -14,9 +14,7 @@
 
 import pytest
 import rclpy
-from rclpy import signals
 from rclpy.exceptions import NotInitializedException
-from rclpy.signals import SignalHandlerOptions
 
 
 def test_init():
@@ -91,13 +89,6 @@ def test_init_with_domain_id():
     rclpy.init(context=context, domain_id=123)
     assert context.get_domain_id() == 123
     rclpy.shutdown(context=context)
-
-
-def test_signal_handlers():
-    rclpy.init()
-    assert SignalHandlerOptions.ALL == signals.get_current_signal_handlers_options()
-    rclpy.shutdown()
-    assert SignalHandlerOptions.NO == signals.get_current_signal_handlers_options()
 
 
 def test_init_with_invalid_domain_id():
