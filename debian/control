@@ -1,0 +1,12 @@
+Source: ros-galactic-rclpy
+Section: misc
+Priority: optional
+Maintainer: Ivan Paunovic <ivanpauno@ekumenlabs.com>
+Build-Depends: debhelper (>= 9.0.0), python3-pytest <!nocheck>, ros-galactic-ament-cmake, ros-galactic-ament-cmake-gtest <!nocheck>, ros-galactic-ament-cmake-pytest <!nocheck>, ros-galactic-ament-lint-auto <!nocheck>, ros-galactic-ament-lint-common <!nocheck>, ros-galactic-pybind11-vendor, ros-galactic-python-cmake-module, ros-galactic-rcl, ros-galactic-rcl-action, ros-galactic-rcl-logging-interface, ros-galactic-rcl-yaml-param-parser, ros-galactic-rcpputils, ros-galactic-rcutils, ros-galactic-rmw-implementation, ros-galactic-rmw-implementation-cmake, ros-galactic-rosidl-generator-py <!nocheck>, ros-galactic-test-msgs <!nocheck>, ros-galactic-unique-identifier-msgs, ros-galactic-ros-workspace
+Homepage: 
+Standards-Version: 3.9.2
+
+Package: ros-galactic-rclpy
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, ros-galactic-ament-index-python, ros-galactic-builtin-interfaces, ros-galactic-rcl, ros-galactic-rcl-action, ros-galactic-rcl-interfaces, ros-galactic-rcl-logging-interface, ros-galactic-rcl-yaml-param-parser, ros-galactic-rmw-implementation, ros-galactic-rosgraph-msgs, ros-galactic-rpyutils, ros-galactic-unique-identifier-msgs, ros-galactic-ros-workspace
+Description: Package containing the Python client.
