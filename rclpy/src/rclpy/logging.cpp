@@ -12,21 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Include pybind11 before rclpy_common/handle.h includes Python.h
 #include <pybind11/pybind11.h>
 
+#include <rcl/allocator.h>
 #include <rcl/error_handling.h>
 #include <rcl/logging.h>
-#include <rcl/rcl.h>
 #include <rcl/types.h>
 #include <rcutils/logging.h>
+#include <rcutils/time.h>
 
 #include <mutex>
 #include <stdexcept>
 
-#include "rclpy_common/exceptions.hpp"
-#include "rclpy_common/handle.h"
-
+#include "exceptions.hpp"
 #include "logging.hpp"
 
 namespace rclpy

@@ -12,21 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Include pybind11 before rclpy_common/handle.h includes Python.h
 #include <pybind11/pybind11.h>
 
 #include <rcl/error_handling.h>
+#include <rcl/service.h>
+#include <rosidl_runtime_c/service_type_support_struct.h>
+#include <rmw/types.h>
 
 #include <memory>
 #include <string>
-#include <utility>
 
-#include "rclpy_common/common.h"
-#include "rclpy_common/handle.h"
-
-#include "rclpy_common/exceptions.hpp"
-
+#include "exceptions.hpp"
+#include "node.hpp"
 #include "service.hpp"
+#include "utils.hpp"
 
 namespace rclpy
 {
@@ -44,7 +43,7 @@ Service::Service(
 : node_(node)
 {
   auto srv_type = static_cast<rosidl_service_type_support_t *>(
-    rclpy_common_get_type_support(pysrv_type.ptr()));
+    common_get_type_support(pysrv_type));
   if (!srv_type) {
     throw py::error_already_set();
   }
@@ -91,20 +90,21 @@ Service::Service(
   }
 }
 
+Service::Service(
+  Node & node, std::shared_ptr<rcl_service_t> rcl_service)
+: node_(node), rcl_service_(rcl_service)
+{}
+
 void
 Service::service_send_response(py::object pyresponse, rmw_request_id_t * header)
 {
-  destroy_ros_message_signature * destroy_ros_message = nullptr;
-  void * raw_ros_response = rclpy_convert_from_py(pyresponse.ptr(), &destroy_ros_message);
+  auto raw_ros_response = convert_from_py(pyresponse);
   if (!raw_ros_response) {
     throw py::error_already_set();
   }
-  auto message_deleter = [destroy_ros_message](void * ptr) {destroy_ros_message(ptr);};
-  auto ros_response = std::unique_ptr<void, decltype(message_deleter)>(
-    raw_ros_response, message_deleter);
 
-  rcl_ret_t ret = rcl_send_response(rcl_service_.get(), header, ros_response.get());
-  if (ret != RCL_RET_OK) {
+  rcl_ret_t ret = rcl_send_response(rcl_service_.get(), header, raw_ros_response.get());
+  if (RCL_RET_OK != ret) {
     throw RCLError("failed to send response");
   }
 }
@@ -113,7 +113,6 @@ py::tuple
 Service::service_take_request(py::object pyrequest_type)
 {
   auto taken_request = create_from_py(pyrequest_type);
-
   rmw_service_info_t header;
 
   py::tuple result_tuple(2);
@@ -131,6 +130,20 @@ Service::service_take_request(py::object pyrequest_type)
 
   return result_tuple;
 }
+
+const char *
+Service::get_service_name()
+{
+  return rcl_service_get_service_name(rcl_service_.get());
+}
+
+py::dict
+Service::get_qos_profile()
+{
+  const auto * options = rcl_service_get_options(rcl_service_.get());
+  return rclpy::convert_to_qos_dict(&options->qos);
+}
+
 void
 define_service(py::object module)
 {
@@ -141,6 +154,12 @@ define_service(py::object module)
       return reinterpret_cast<size_t>(service.rcl_ptr());
     },
     "Get the address of the entity as an integer")
+  .def_property_readonly(
+    "name", &Service::get_service_name,
+    "Get the name of the service")
+  .def_property_readonly(
+    "qos", &Service::get_qos_profile,
+    "Get the qos profile of the service")
   .def(
     "service_send_response", &Service::service_send_response,
     "Send a response")

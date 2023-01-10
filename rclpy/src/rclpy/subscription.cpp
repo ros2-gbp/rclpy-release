@@ -12,20 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Include pybind11 before rclpy_common/handle.h includes Python.h
 #include <pybind11/pybind11.h>
 
 #include <rcl/error_handling.h>
-#include <rcl/rcl.h>
+#include <rcl/node.h>
+#include <rcl/subscription.h>
 #include <rcl/types.h>
+#include <rosidl_runtime_c/message_type_support_struct.h>
+#include <rmw/types.h>
 
 #include <memory>
+#include <stdexcept>
 #include <string>
 
-#include "rclpy_common/common.h"
-
-#include "rclpy_common/exceptions.hpp"
-
+#include "exceptions.hpp"
+#include "node.hpp"
 #include "serialization.hpp"
 #include "subscription.hpp"
 #include "utils.hpp"
@@ -40,7 +41,7 @@ Subscription::Subscription(
 : node_(node)
 {
   auto msg_type = static_cast<rosidl_message_type_support_t *>(
-    rclpy_common_get_type_support(pymsg_type.ptr()));
+    common_get_type_support(pymsg_type));
   if (!msg_type) {
     throw py::error_already_set();
   }

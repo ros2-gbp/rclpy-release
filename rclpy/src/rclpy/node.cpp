@@ -12,18 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Include pybind11 before rclpy_common/handle.h includes Python.h
 #include <pybind11/pybind11.h>
 
 #include <rcl_action/rcl_action.h>
 #include <rcl/error_handling.h>
 #include <rcl/graph.h>
-#include <rcl/rcl.h>
 #include <rcl/types.h>
 #include <rcl_interfaces/msg/parameter_type.h>
 #include <rcl_yaml_param_parser/parser.h>
-#include <rcpputils/find_and_replace.hpp>
-#include <rcpputils/scope_exit.hpp>
 #include <rcutils/format_string.h>
 
 #include <limits>
@@ -34,9 +30,10 @@
 #include <utility>
 #include <vector>
 
-#include "rclpy_common/exceptions.hpp"
-#include "rclpy_common/handle.h"
+#include <rcpputils/find_and_replace.hpp>
+#include <rcpputils/scope_exit.hpp>
 
+#include "exceptions.hpp"
 #include "logging.hpp"
 #include "node.hpp"
 #include "utils.hpp"
