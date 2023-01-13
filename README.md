@@ -1,3 +1,26 @@
+## rclpy (humble) - 3.3.7-1
+
+The packages in the `rclpy` repository were released into the `humble` distro by running `/usr/local/bin/bloom-release -r humble -y rclpy` on `Fri, 13 Jan 2023 17:49:14 -0000`
+
+The `rclpy` package was released.
+
+Version of package(s) in repository `rclpy`:
+
+- upstream repository: https://github.com/ros2/rclpy.git
+- release repository: https://github.com/ros2-gbp/rclpy-release.git
+- rosdistro version: `3.3.6-1`
+- old version: `3.3.6-1`
+- new version: `3.3.7-1`
+
+Versions of tools used:
+
+- bloom version: `0.11.2`
+- catkin_pkg version: `0.5.2`
+- rosdep version: `0.22.1`
+- rosdistro version: `0.9.0`
+- vcstools version: `0.1.42`
+
+
 ## rclpy (humble) - 3.3.6-1
 
 The packages in the `rclpy` repository were released into the `humble` distro by running `/usr/local/bin/bloom-release -r humble -y rclpy` on `Tue, 10 Jan 2023 14:02:11 -0000`
