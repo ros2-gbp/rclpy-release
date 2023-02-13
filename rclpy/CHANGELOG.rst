@@ -2,35 +2,71 @@
 Changelog for package rclpy
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-3.3.7 (2023-01-13)
+3.8.0 (2023-02-13)
 ------------------
-* Fix `test_publisher` linter for pydocstyle 6.2.2 (backport `#1063 <https://github.com/ros2/rclpy/issues/1063>`_) (`#1066 <https://github.com/ros2/rclpy/issues/1066>`_)
-* Contributors: mergify[bot]
+* Force C++17 support on. (`#1076 <https://github.com/ros2/rclpy/issues/1076>`_)
+* Use RCPPUTILS_SCOPE_EXIT to cleanup unparsed_indices_c. (`#1075 <https://github.com/ros2/rclpy/issues/1075>`_)
+* Explicitly link atomic when building with Clang (`#1065 <https://github.com/ros2/rclpy/issues/1065>`_)
+* Fix test_publisher linter for pydocstyle 6.2.2 (`#1063 <https://github.com/ros2/rclpy/issues/1063>`_)
+* Add default preset qos profile (`#1062 <https://github.com/ros2/rclpy/issues/1062>`_)
+* Add on_parameter_event method to the AsyncParameterClient. (`#1061 <https://github.com/ros2/rclpy/issues/1061>`_)
+* Add documentation page for rclpy.clock (`#1055 <https://github.com/ros2/rclpy/issues/1055>`_)
+* Rewrite test code without depending on parameter client (`#1045 <https://github.com/ros2/rclpy/issues/1045>`_)
+* Add parallel callback test (`#1044 <https://github.com/ros2/rclpy/issues/1044>`_)
+* decorator should not be callable. (`#1050 <https://github.com/ros2/rclpy/issues/1050>`_)
+* typo fix. (`#1049 <https://github.com/ros2/rclpy/issues/1049>`_)
+* Add in a warning for a depth of 0 with KEEP_LAST. (`#1048 <https://github.com/ros2/rclpy/issues/1048>`_)
+* Add feature of wait for message (`#953 <https://github.com/ros2/rclpy/issues/953>`_). (`#960 <https://github.com/ros2/rclpy/issues/960>`_)
+* Document rclpy.time.Time class (`#1040 <https://github.com/ros2/rclpy/issues/1040>`_)
+* Deal with ParameterUninitializedException for parameter service (`#1033 <https://github.com/ros2/rclpy/issues/1033>`_)
+* Improve documentation in rclpy.utilities (`#1038 <https://github.com/ros2/rclpy/issues/1038>`_)
+* Document rclpy.utilities.remove_ros_args (`#1036 <https://github.com/ros2/rclpy/issues/1036>`_)
+* Fix incorrect comparsion on whether parameter type is NOT_SET (`#1032 <https://github.com/ros2/rclpy/issues/1032>`_)
+* [rolling] Update maintainers (`#1035 <https://github.com/ros2/rclpy/issues/1035>`_)
+* Contributors: Audrow Nash, Barry Xu, Chris Lalancette, Cristóbal Arroyo, Florian Vahl, Ivan Santiago Paunovic, Lei Liu, Sebastian Freitag, Shane Loretz, Tomoya Fujita
 
-3.3.6 (2023-01-10)
+3.7.1 (2022-11-02)
 ------------------
-* decorator should not be callable. (`#1050 <https://github.com/ros2/rclpy/issues/1050>`_) (`#1051 <https://github.com/ros2/rclpy/issues/1051>`_)
-* Add parallel callback test (`#1044 <https://github.com/ros2/rclpy/issues/1044>`_) (`#1052 <https://github.com/ros2/rclpy/issues/1052>`_)
-* Contributors: mergify[bot]
+* Set the default number of threads of the MultiThreadedExecutor to 2 (`#1031 <https://github.com/ros2/rclpy/issues/1031>`_)
+* Update the rclpy method documentation. (`#1026 <https://github.com/ros2/rclpy/issues/1026>`_)
+* Revert "Raise user handler exception in MultiThreadedExecutor. (`#984 <https://github.com/ros2/rclpy/issues/984>`_)" (`#1017 <https://github.com/ros2/rclpy/issues/1017>`_)
+* Waitable should check callback_group if it can be executed. (`#1001 <https://github.com/ros2/rclpy/issues/1001>`_)
+* Contributors: Chris Lalancette, Tomoya Fujita
 
-3.3.5 (2022-11-07)
+3.7.0 (2022-09-13)
 ------------------
-* Waitable should check callback_group if it can be executed. (`#1001 <https://github.com/ros2/rclpy/issues/1001>`_) (`#1013 <https://github.com/ros2/rclpy/issues/1013>`_)
-* Revert "Raise user handler exception in MultiThreadedExecutor. (`#984 <https://github.com/ros2/rclpy/issues/984>`_)" (`#1017 <https://github.com/ros2/rclpy/issues/1017>`_) (`#1023 <https://github.com/ros2/rclpy/issues/1023>`_)
-* support wildcard matching for params file (`#987 <https://github.com/ros2/rclpy/issues/987>`_) (`#1002 <https://github.com/ros2/rclpy/issues/1002>`_)
-* Raise user handler exception in MultiThreadedExecutor. (`#984 <https://github.com/ros2/rclpy/issues/984>`_) (`#990 <https://github.com/ros2/rclpy/issues/990>`_)
-* fix gcc 7.5 build errors (`#977 <https://github.com/ros2/rclpy/issues/977>`_) (`#980 <https://github.com/ros2/rclpy/issues/980>`_)
-* Contributors: mergify[bot]
+* support wildcard matching for params file (`#987 <https://github.com/ros2/rclpy/issues/987>`_)
+* Raise user handler exception in MultiThreadedExecutor. (`#984 <https://github.com/ros2/rclpy/issues/984>`_)
+* Add wait_for_node method (`#930 <https://github.com/ros2/rclpy/issues/930>`_)
+* Create sublogger for action server and action client (`#982 <https://github.com/ros2/rclpy/issues/982>`_)
+* Support for pre-set and post-set parameter callback. (`#966 <https://github.com/ros2/rclpy/issues/966>`_)
+* fix gcc 7.5 build errors (`#977 <https://github.com/ros2/rclpy/issues/977>`_)
+* make _on_parameter_event return result correctly (`#817 <https://github.com/ros2/rclpy/issues/817>`_)
+* Fix a small typo in documentation. (`#967 <https://github.com/ros2/rclpy/issues/967>`_)
+* Contributors: Chen Lihui, Chris Lalancette, Deepanshu Bansal, Gonzo, Seulbae Kim, Steve Nogar, Tomoya Fujita, Tony Najjar
 
-3.3.4 (2022-05-17)
+3.6.0 (2022-07-14)
 ------------------
-* check if the context is already shutdown. (`#939 <https://github.com/ros2/rclpy/issues/939>`_) (`#943 <https://github.com/ros2/rclpy/issues/943>`_)
-* Contributors: mergify[bot]
+* Add Parameter Client (`#959 <https://github.com/ros2/rclpy/issues/959>`_)
+* Change sphinx theme to readthedocs (`#950 <https://github.com/ros2/rclpy/issues/950>`_)
+* Name and type in descriptor(s) is ignored via declare_parameter(s). (`#957 <https://github.com/ros2/rclpy/issues/957>`_)
+* Typo fix (`#951 <https://github.com/ros2/rclpy/issues/951>`_)
+* Add py.typed to package (`#946 <https://github.com/ros2/rclpy/issues/946>`_)
+* Fix rclpy.shutdown() from hanging when triggered from callback (`#947 <https://github.com/ros2/rclpy/pull/947>`_)
+* Check if the context is already shutdown. (`#939 <https://github.com/ros2/rclpy/issues/939>`_)
+* Contributors: Brian Chen, Tomoya Fujita, Yuki Igarashi
 
-3.3.3 (2022-05-10)
+3.5.0 (2022-05-03)
 ------------------
-* remove feedback callback when the goal has been completed. (`#927 <https://github.com/ros2/rclpy/issues/927>`_) (`#931 <https://github.com/ros2/rclpy/issues/931>`_)
-* Contributors: mergify[bot]
+* Avoid causing infinite loop when message is empty (`#935 <https://github.com/ros2/rclpy/issues/935>`_)
+* Expose 'best available' QoS policies (`#928 <https://github.com/ros2/rclpy/issues/928>`_)
+* Contributors: Jacob Perron, Takeshi Ishita
+
+3.4.0 (2022-04-29)
+------------------
+* remove feedback callback when the goal has been completed. (`#927 <https://github.com/ros2/rclpy/issues/927>`_)
+* Allow to create a subscription with a callback that also receives the message info (`#922 <https://github.com/ros2/rclpy/issues/922>`_)
+* Contributors: Ivan Santiago Paunovic, Tomoya Fujita
 
 3.3.2 (2022-04-08)
 ------------------

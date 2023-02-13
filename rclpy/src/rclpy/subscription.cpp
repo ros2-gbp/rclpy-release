@@ -56,7 +56,7 @@ Subscription::Subscription(
     new rcl_subscription_t,
     [node](rcl_subscription_t * subscription)
     {
-      // Intentionally capture node by copy so shared_ptr can be transfered to copies
+      // Intentionally capture node by copy so shared_ptr can be transferred to copies
       rcl_ret_t ret = rcl_subscription_fini(subscription, node.rcl_ptr());
       if (RCL_RET_OK != ret) {
         // Warning should use line number of the current stack frame
@@ -131,11 +131,20 @@ Subscription::take_message(py::object pymsg_type, bool raw)
 
     pytaken_msg = convert_to_py(taken_msg.get(), pymsg_type);
   }
-
+  py::object pub_seq_number = py::none();
+  if (message_info.publication_sequence_number != RMW_MESSAGE_INFO_SEQUENCE_NUMBER_UNSUPPORTED) {
+    pub_seq_number = py::int_(message_info.publication_sequence_number);
+  }
+  py::object rec_seq_number = py::none();
+  if (message_info.reception_sequence_number != RMW_MESSAGE_INFO_SEQUENCE_NUMBER_UNSUPPORTED) {
+    rec_seq_number = py::int_(message_info.reception_sequence_number);
+  }
   return py::make_tuple(
     pytaken_msg, py::dict(
       "source_timestamp"_a = message_info.source_timestamp,
-      "received_timestamp"_a = message_info.received_timestamp));
+      "received_timestamp"_a = message_info.received_timestamp,
+      "publication_sequence_number"_a = pub_seq_number,
+      "reception_sequence_number"_a = rec_seq_number));
 }
 
 const char *
