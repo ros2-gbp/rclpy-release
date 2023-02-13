@@ -5,6 +5,7 @@ project(rclpy)
 # Default to C++17
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
+  set(CMAKE_CXX_STANDARD_REQUIRED ON)
 endif()
 # Default to C11
 if(NOT CMAKE_C_STANDARD)
@@ -102,6 +103,11 @@ pybind11_add_module(_rclpy_pybind11 SHARED
   src/rclpy/utils.cpp
   src/rclpy/wait_set.cpp
 )
+
+if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+  target_link_libraries(_rclpy_pybind11 PRIVATE atomic)
+endif()
+
 target_include_directories(_rclpy_pybind11 PRIVATE
   src/rclpy/
 )
@@ -175,6 +181,8 @@ if(BUILD_TESTING)
       test/test_messages.py
       test/test_node.py
       test/test_parameter.py
+      test/test_parameter_client.py
+      test/test_parameter_service.py
       test/test_publisher.py
       test/test_qos.py
       test/test_qos_event.py
@@ -195,6 +203,7 @@ if(BUILD_TESTING)
       test/test_validate_node_name.py
       test/test_validate_topic_name.py
       test/test_waitable.py
+      test/test_wait_for_message.py
     )
 
     foreach(_test_path ${_rclpy_pytest_tests})
