@@ -470,7 +470,7 @@ class Node:
                 descriptor.dynamic_typing = True
 
             if isinstance(second_arg, Parameter.Type):
-                if second_arg.value == Parameter.Type.NOT_SET:
+                if second_arg == Parameter.Type.NOT_SET:
                     raise ValueError(
                         f'Cannot declare parameter {{{name}}} as statically typed of type NOT_SET')
                 if descriptor.dynamic_typing is True:
@@ -1752,7 +1752,7 @@ class Node:
         """
         Destroy a subscription created by the node.
 
-        :return: ``True`` if succesful, ``False`` otherwise.
+        :return: ``True`` if successful, ``False`` otherwise.
         """
         if subscription in self._subscriptions:
             self._subscriptions.remove(subscription)
