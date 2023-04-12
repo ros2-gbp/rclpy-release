@@ -29,6 +29,7 @@ find_package(ament_cmake_python REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
 find_package(rcl REQUIRED)
 find_package(rcl_action REQUIRED)
+find_package(rcl_interfaces REQUIRED)
 find_package(rcl_lifecycle REQUIRED)
 find_package(rcl_logging_interface REQUIRED)
 find_package(rcl_yaml_param_parser REQUIRED)
@@ -92,7 +93,7 @@ pybind11_add_module(_rclpy_pybind11 SHARED
   src/rclpy/node.cpp
   src/rclpy/publisher.cpp
   src/rclpy/qos.cpp
-  src/rclpy/qos_event.cpp
+  src/rclpy/event_handle.cpp
   src/rclpy/serialization.cpp
   src/rclpy/service.cpp
   src/rclpy/service_info.cpp
@@ -105,7 +106,7 @@ pybind11_add_module(_rclpy_pybind11 SHARED
   src/rclpy/wait_set.cpp
 )
 
-if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+if(CMAKE_C_COMPILER_ID MATCHES "Clang" AND NOT APPLE)
   target_link_libraries(_rclpy_pybind11 PRIVATE atomic)
 endif()
 
@@ -117,6 +118,7 @@ target_link_libraries(_rclpy_pybind11 PRIVATE
   lifecycle_msgs::lifecycle_msgs__rosidl_typesupport_c
   rcl::rcl
   rcl_action::rcl_action
+  ${rcl_interfaces_TARGETS}
   rcl_lifecycle::rcl_lifecycle
   rcl_logging_interface::rcl_logging_interface
   rcpputils::rcpputils
