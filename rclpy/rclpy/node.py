@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import math
-import time
 
 from typing import Any
 from typing import Callable
@@ -47,8 +46,6 @@ from rclpy.clock import Clock
 from rclpy.clock import ROSClock
 from rclpy.constants import S_TO_NS
 from rclpy.context import Context
-from rclpy.event_handler import PublisherEventCallbacks
-from rclpy.event_handler import SubscriptionEventCallbacks
 from rclpy.exceptions import InvalidHandle
 from rclpy.exceptions import InvalidParameterTypeException
 from rclpy.exceptions import InvalidParameterValueException
@@ -63,13 +60,14 @@ from rclpy.expand_topic_name import expand_topic_name
 from rclpy.guard_condition import GuardCondition
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.logging import get_logger
-from rclpy.logging_service import LoggingService
 from rclpy.parameter import Parameter, PARAMETER_SEPARATOR_STRING
 from rclpy.parameter_service import ParameterService
 from rclpy.publisher import Publisher
 from rclpy.qos import qos_profile_parameter_events
 from rclpy.qos import qos_profile_services_default
 from rclpy.qos import QoSProfile
+from rclpy.qos_event import PublisherEventCallbacks
+from rclpy.qos_event import SubscriptionEventCallbacks
 from rclpy.qos_overriding_options import _declare_qos_parameters
 from rclpy.qos_overriding_options import QoSOverridingOptions
 from rclpy.service import Service
@@ -127,8 +125,7 @@ class Node:
         start_parameter_services: bool = True,
         parameter_overrides: List[Parameter] = None,
         allow_undeclared_parameters: bool = False,
-        automatically_declare_parameters_from_overrides: bool = False,
-        enable_logger_service: bool = False
+        automatically_declare_parameters_from_overrides: bool = False
     ) -> None:
         """
         Create a Node.
@@ -152,9 +149,6 @@ class Node:
             This flag affects the behavior of parameter-related operations.
         :param automatically_declare_parameters_from_overrides: If True, the "parameter overrides"
             will be used to implicitly declare parameters on the node during creation.
-        :param enable_logger_service: ``True`` if ROS2 services are created to allow external nodes
-            to get and set logger levels of this node. Otherwise, logger levels are only managed
-            locally. That is, logger levels cannot be changed remotely.
         """
         self.__handle = None
         self._context = get_default_context() if context is None else context
@@ -167,10 +161,7 @@ class Node:
         self._guards: List[GuardCondition] = []
         self.__waitables: List[Waitable] = []
         self._default_callback_group = MutuallyExclusiveCallbackGroup()
-        self._pre_set_parameters_callbacks: List[Callable[[List[Parameter]], List[Parameter]]] = []
-        self._on_set_parameters_callbacks: \
-            List[Callable[[List[Parameter]], SetParametersResult]] = []
-        self._post_set_parameters_callbacks: List[Callable[[List[Parameter]], None]] = []
+        self._parameters_callbacks: List[Callable[[List[Parameter]], SetParametersResult]] = []
         self._rate_group = ReentrantCallbackGroup()
         self._allow_undeclared_parameters = allow_undeclared_parameters
         self._parameter_overrides = {}
@@ -235,9 +226,6 @@ class Node:
 
         if start_parameter_services:
             self._parameter_service = ParameterService(self)
-
-        if enable_logger_service:
-            self._logger_service = LoggingService(self)
 
     @property
     def publishers(self) -> Iterator[Publisher]:
@@ -359,11 +347,7 @@ class Node:
         Declare and initialize a parameter.
 
         This method, if successful, will result in any callback registered with
-        :func:`add_on_set_parameters_callback` and :func:`add_post_set_parameters_callback`
-        to be called.
-
-        The name and type in the given descriptor is ignored, and should be specified using
-        the name argument to this function and the default value's type instead.
+        :func:`add_on_set_parameters_callback` to be called.
 
         :param name: Fully-qualified name of the parameter, including its namespace.
         :param value: Value of the parameter to declare.
@@ -397,8 +381,6 @@ class Node:
 
         The tuples in the given parameter list shall contain the name for each parameter,
         optionally providing a value and a descriptor.
-        The name and type in the given descriptors are ignored, and should be specified using
-        the name argument to this function and the default value's type instead.
         For each entry in the list, a parameter with a name of "namespace.name"
         will be declared.
         The resulting value for each declared parameter will be returned, considering
@@ -412,22 +394,11 @@ class Node:
         expanding "namespace.name".
         This allows you to declare several parameters at once without a namespace.
 
-        This method will result in any callback registered with
-        :func:`add_on_set_parameters_callback` and :func:`add_post_set_parameters_callback`
-        to be called once for each parameter.
-
-        If a callback was registered previously with :func:`add_on_set_parameters_callback`, it
-        will be called prior to setting the parameters for the node, once for each parameter.
-        If one of the calls due to :func:`add_on_set_parameters_callback` fail, an exception will
-        be raised and the remaining parameters will not be declared. Parameters declared up to that
-        point will not be undeclared.
-
-        If a callback was registered previously with :func:`add_post_set_parameters_callback`,
-        it will be called after setting the parameters successfully for the node,
-        once for each parameter.
-
-        This method will `not` result in any callbacks registered with
-        :func:`add_pre_set_parameters_callback` to be called.
+        This method, if successful, will result in any callback registered with
+        :func:`add_on_set_parameters_callback` to be called once for each parameter.
+        If one of those calls fail, an exception will be raised and the remaining parameters will
+        not be declared.
+        Parameters declared up to that point will not be undeclared.
 
         :param namespace: Namespace for parameters.
         :param parameters: List of tuples with parameters to declare.
@@ -478,7 +449,7 @@ class Node:
                 descriptor.dynamic_typing = True
 
             if isinstance(second_arg, Parameter.Type):
-                if second_arg == Parameter.Type.NOT_SET:
+                if second_arg.value == Parameter.Type.NOT_SET:
                     raise ValueError(
                         f'Cannot declare parameter {{{name}}} as statically typed of type NOT_SET')
                 if descriptor.dynamic_typing is True:
@@ -520,75 +491,21 @@ class Node:
 
         # Call the callback once for each of the parameters, using method that doesn't
         # check whether the parameter was declared beforehand or not.
-        self._declare_parameter_common(
+        self._set_parameters(
             parameter_list,
-            descriptors
+            descriptors,
+            raise_on_failure=True,
+            allow_undeclared_parameters=True
         )
         # Don't call get_parameters() to bypass check for NOT_SET parameters
         return [self._parameters[parameter.name] for parameter in parameter_list]
-
-    def _declare_parameter_common(
-        self,
-        parameter_list: List[Parameter],
-        descriptors: Optional[Dict[str, ParameterDescriptor]] = None
-    ) -> List[SetParametersResult]:
-        """
-        Declare parameters for the node, and return the result for the declare action.
-
-        Method for internal usage; applies a setter method for each parameters in the list.
-        By default, it checks if the parameters were declared, raising an exception if at least
-        one of them was not.
-
-        This method will result in any callback registered with
-        :func:`add_on_set_parameters_callback` and :func:`add_post_set_parameters_callback`
-        to be called once for each parameter.
-
-        If a callback was registered previously with :func:`add_on_set_parameters_callback`, it
-        will be called prior to setting the parameters for the node, once for each parameter.
-        If the callback doesn't succeed for a given parameter an exception will be raised.
-
-        If a callback was registered previously with :func:`add_post_set_parameters_callback`,
-        it will be called after setting the parameters successfully for the node,
-        once for each parameter.
-
-        This method will `not` result in any callbacks registered with
-        :func:`add_pre_set_parameters_callback` to be called.
-
-        :param parameter_list: List of parameters to set.
-        :param descriptors: Descriptors to set to the given parameters.
-           If descriptors are given, each parameter in the list must have a corresponding one.
-        :return: The result for each set action as a list.
-        :raises: InvalidParameterValueException if the user-defined callback rejects the
-            parameter value.
-        :raises: ParameterNotDeclaredException if undeclared parameters are not allowed in this
-            method and at least one parameter in the list hadn't been declared beforehand.`
-        """
-        if descriptors is not None:
-            assert all(parameter.name in descriptors for parameter in parameter_list)
-
-        results = []
-        for param in parameter_list:
-            # If undeclared parameters are allowed, parameters with type NOT_SET shall be stored.
-            result = self._set_parameters_atomically_common(
-                [param],
-                descriptors,
-                allow_not_set_type=True
-            )
-            if not result.successful:
-                if result.reason.startswith('Wrong parameter type'):
-                    raise InvalidParameterTypeException(
-                        param, Parameter.Type(descriptors[param._name].type).name)
-                raise InvalidParameterValueException(param.name, param.value, result.reason)
-            results.append(result)
-        return results
 
     def undeclare_parameter(self, name: str):
         """
         Undeclare a previously declared parameter.
 
-        This method will not cause a callback registered with any of the
-        :func:`add_pre_set_parameters_callback`,
-        and :func:`add_post_set_parameters_callback` to be called.
+        This method will not cause a callback registered with
+        :func:`add_on_set_parameters_callback` to be called.
 
         :param name: Fully-qualified name of the parameter, including its namespace.
         :raises: ParameterNotDeclaredException if parameter had not been declared before.
@@ -754,24 +671,10 @@ class Node:
         declared before being set even if they were not declared beforehand.
         Parameter overrides are ignored by this method.
 
-        This method will result in any callback registered with
-        :func:`add_pre_set_parameters_callback`, :func:`add_on_set_parameters_callback` and
-        :func:`add_post_set_parameters_callback` to be called once for each parameter.
-
-        If a callback was registered previously with :func:`add_pre_set_parameters_callback`, it
-        will be called prior to the validation of parameters for the node, once for each parameter.
-        If this callback makes modified parameter list empty, then it will be reflected in the
-        returned result; no exceptions will be raised in this case.
-
         If a callback was registered previously with :func:`add_on_set_parameters_callback`, it
         will be called prior to setting the parameters for the node, once for each parameter.
-        If this callback prevents a parameter from being set, then it will be reflected in the
+        If the callback prevents a parameter from being set, then it will be reflected in the
         returned result; no exceptions will be raised in this case.
-
-        If a callback was registered previously with :func:`add_post_set_parameters_callback`,
-        it will be called after setting the parameters successfully for the node,
-        once for each parameter.
-
         For each successfully set parameter, a :class:`ParameterEvent` message is
         published.
 
@@ -783,11 +686,60 @@ class Node:
         :raises: ParameterNotDeclaredException if undeclared parameters are not allowed,
             and at least one parameter in the list hadn't been declared beforehand.
         """
+        return self._set_parameters(parameter_list)
+
+    def _set_parameters(
+        self,
+        parameter_list: List[Parameter],
+        descriptors: Optional[Dict[str, ParameterDescriptor]] = None,
+        raise_on_failure: bool = False,
+        allow_undeclared_parameters: bool = False
+    ) -> List[SetParametersResult]:
+        """
+        Set parameters for the node, and return the result for the set action.
+
+        Method for internal usage; applies a setter method for each parameters in the list.
+        By default it checks if the parameters were declared, raising an exception if at least
+        one of them was not.
+
+        If a callback was registered previously with :func:`add_on_set_parameters_callback`, it
+        will be called prior to setting the parameters for the node, once for each parameter.
+        If the callback doesn't succeed for a given parameter, it won't be set and either an
+        unsuccessful result will be returned for that parameter, or an exception will be raised
+        according to `raise_on_failure` flag.
+
+        :param parameter_list: List of parameters to set.
+        :param descriptors: Descriptors to set to the given parameters.
+            If descriptors are given, each parameter in the list must have a corresponding one.
+        :param raise_on_failure: True if InvalidParameterValueException has to be raised when
+            the user callback rejects a parameter, False otherwise.
+        :param allow_undeclared_parameters: If False, this method will check for undeclared
+            parameters for each of the elements in the parameter list.
+        :return: The result for each set action as a list.
+        :raises: InvalidParameterValueException if the user-defined callback rejects the
+            parameter value and raise_on_failure flag is True.
+        :raises: ParameterNotDeclaredException if undeclared parameters are not allowed in this
+            method and at least one parameter in the list hadn't been declared beforehand.
+        """
+        if descriptors is not None:
+            assert all(parameter.name in descriptors for parameter in parameter_list)
+
         results = []
         for param in parameter_list:
-            result = self._set_parameters_atomically([param])
+            if not allow_undeclared_parameters:
+                self._check_undeclared_parameters([param])
+            # If undeclared parameters are allowed, parameters with type NOT_SET shall be stored.
+            result = self._set_parameters_atomically(
+                [param],
+                descriptors,
+                allow_not_set_type=allow_undeclared_parameters
+            )
+            if raise_on_failure and not result.successful:
+                if result.reason.startswith('Wrong parameter type'):
+                    raise InvalidParameterTypeException(
+                        param, Parameter.Type(descriptors[param._name].type).name)
+                raise InvalidParameterValueException(param.name, param.value, result.reason)
             results.append(result)
-
         return results
 
     def set_parameters_atomically(self, parameter_list: List[Parameter]) -> SetParametersResult:
@@ -798,29 +750,16 @@ class Node:
         allowed for the node, this method will raise a ParameterNotDeclaredException exception.
 
         Parameters are set all at once.
-        If setting a parameter fails due to not being declared, then no parameter will be set.
+        If setting a parameter fails due to not being declared, then no parameter will be set set.
         Either all of the parameters are set or none of them are set.
 
         If undeclared parameters are allowed for the node, then all the parameters will be
         implicitly declared before being set even if they were not declared beforehand.
 
-        This method will result in any callback registered with
-        :func:`add_pre_set_parameters_callback` :func:`add_on_set_parameters_callback` and
-        :func:`add_post_set_parameters_callback` to be called only once for all parameters.
-
-        If a callback was registered previously with :func:`add_pre_set_parameters_callback`, it
-        will be called prior to the validation of node parameters only once for all parameters.
-        If this callback makes modified parameter list empty, then it will be reflected in the
-        returned result; no exceptions will be raised in this case.
-
         If a callback was registered previously with :func:`add_on_set_parameters_callback`, it
         will be called prior to setting the parameters for the node only once for all parameters.
         If the callback prevents the parameters from being set, then it will be reflected in the
         returned result; no exceptions will be raised in this case.
-
-        If a callback was registered previously with :func:`add_post_set_parameters_callback`, it
-        will be called after setting the node parameters successfully only once for all parameters.
-
         For each successfully set parameter, a :class:`ParameterEvent` message is published.
 
         If the value type of the parameter is NOT_SET, and the existing parameter type is
@@ -831,29 +770,26 @@ class Node:
         :raises: ParameterNotDeclaredException if undeclared parameters are not allowed,
             and at least one parameter in the list hadn't been declared beforehand.
         """
+        self._check_undeclared_parameters(parameter_list)
         return self._set_parameters_atomically(parameter_list)
 
+    def _check_undeclared_parameters(self, parameter_list: List[Parameter]):
+        """
+        Check if parameter list has correct types and was declared beforehand.
+
+        :raises: ParameterNotDeclaredException if at least one parameter in the list was not
+            declared beforehand.
+        """
+        if not all(isinstance(parameter, Parameter) for parameter in parameter_list):
+            raise TypeError("parameter must be instance of type '{}'".format(repr(Parameter)))
+
+        undeclared_parameters = (
+            param.name for param in parameter_list if param.name not in self._parameters
+        )
+        if (not self._allow_undeclared_parameters and any(undeclared_parameters)):
+            raise ParameterNotDeclaredException(list(undeclared_parameters))
+
     def _set_parameters_atomically(
-        self,
-        parameter_list: List[Parameter],
-    ) -> SetParametersResult:
-
-        modified_parameter_list = self._call_pre_set_parameters_callback(parameter_list)
-        if modified_parameter_list is not None:
-            parameter_list = modified_parameter_list
-
-            if len(parameter_list) == 0:
-                result = SetParametersResult()
-                result.successful = False
-                result.reason = 'parameter list cannot be empty, this might be due to ' \
-                                'pre_set_parameters_callback modifying the original parameters ' \
-                                'list.'
-                return result
-
-        self._check_undeclared_parameters(parameter_list)
-        return self._set_parameters_atomically_common(parameter_list)
-
-    def _set_parameters_atomically_common(
         self,
         parameter_list: List[Parameter],
         descriptors: Optional[Dict[str, ParameterDescriptor]] = None,
@@ -865,19 +801,10 @@ class Node:
         This internal method does not reject undeclared parameters.
         If :param:`allow_not_set_type` is False, a parameter with type NOT_SET will be undeclared.
 
-        This method will result in any callback registered with
-        :func:`add_on_set_parameters_callback` and :func:`add_post_set_parameters_callback`
-        to be called only once for all parameters.
-
         If a callback was registered previously with :func:`add_on_set_parameters_callback`, it
         will be called prior to setting the parameters for the node only once for all parameters.
         If the callback prevents the parameters from being set, then it will be reflected in the
         returned result; no exceptions will be raised in this case.
-
-        If a callback was registered previously with :func:`add_post_set_parameters_callback`,
-        it will be called after setting the node parameters successfully only once for all
-        parameters.
-
         For each successfully set parameter, a :class:`ParameterEvent` message is
         published.
 
@@ -899,8 +826,8 @@ class Node:
 
         if not result.successful:
             return result
-        elif self._on_set_parameters_callbacks:
-            for callback in self._on_set_parameters_callbacks:
+        elif self._parameters_callbacks:
+            for callback in self._parameters_callbacks:
                 result = callback(parameter_list)
                 if not result.successful:
                     return result
@@ -948,133 +875,27 @@ class Node:
             parameter_event.stamp = self._clock.now().to_msg()
             self._parameter_event_publisher.publish(parameter_event)
 
-            # call post set parameter registered callbacks
-            self._call_post_set_parameters_callback(parameter_list)
-
         return result
 
-    def _check_undeclared_parameters(self, parameter_list: List[Parameter]):
-        """
-        Check if parameter list has correct types and was declared beforehand.
-
-        :raises: ParameterNotDeclaredException if at least one parameter in the list was not
-            declared beforehand.
-        """
-        if not all(isinstance(parameter, Parameter) for parameter in parameter_list):
-            raise TypeError("parameter must be instance of type '{}'".format(repr(Parameter)))
-
-        undeclared_parameters = (
-            param.name for param in parameter_list if param.name not in self._parameters
-        )
-        if not self._allow_undeclared_parameters and any(undeclared_parameters):
-            raise ParameterNotDeclaredException(list(undeclared_parameters))
-
-    def _call_pre_set_parameters_callback(self, parameter_list: [List[Parameter]]):
-        if self._pre_set_parameters_callbacks:
-            modified_parameter_list = []
-            for callback in self._pre_set_parameters_callbacks:
-                modified_parameter_list.extend(callback(parameter_list))
-
-            return modified_parameter_list
-        else:
-            return None
-
-    def _call_post_set_parameters_callback(self, parameter_list: [List[Parameter]]):
-        if self._post_set_parameters_callbacks:
-            for callback in self._post_set_parameters_callbacks:
-                callback(parameter_list)
-
-    def add_pre_set_parameters_callback(
-            self,
-            callback: Callable[[List[Parameter]], List[Parameter]]
-    ) -> None:
-        """
-        Add a callback gets triggered before parameters are validated.
-
-        Calling this function will add a callback in self._pre_set_parameter_callbacks list.
-
-        This callback can be used to modify the original list of parameters being
-        set by the user. The modified list of parameters is then forwarded to the
-        "on set parameter" callback for validation.
-
-        The callback takes a list of parameters to be set and returns a list of
-        modified parameters.
-
-        One of the use case of "pre set callback" can be updating additional parameters
-        conditioned on changes to a parameter.
-
-        All parameters in the modified list will be set atomically.
-
-        Note that the callback is only called while setting parameters with ``set_parameters``,
-        ``set_parameters_atomically``, or externally with a parameters service.
-
-        The callback is not called when parameters are declared with ``declare_parameter``
-        or ``declare_parameters``.
-
-        The callback is not called when parameters are undeclared with ``undeclare_parameter``.
-
-        An empty modified parameter list from the callback will result in ``set_parameter*``
-        returning an unsuccessful result.
-
-        :param callback: The function that is called before parameters are validated.
-        """
-        self._pre_set_parameters_callbacks.insert(0, callback)
-
     def add_on_set_parameters_callback(
-            self,
-            callback: Callable[[List[Parameter]], SetParametersResult]
+        self,
+        callback: Callable[[List[Parameter]], SetParametersResult]
     ) -> None:
         """
         Add a callback in front to the list of callbacks.
 
-        Calling this function will add a callback in self._on_set_parameter_callbacks list.
+        Calling this function will add a callback in self._parameter_callbacks list.
 
         It is considered bad practice to reject changes for "unknown" parameters as this prevents
         other parts of the node (that may be aware of these parameters) from handling them.
 
-        :param callback: The function that is called whenever parameters are being validated
-                         for the node.
-        """
-        self._on_set_parameters_callbacks.insert(0, callback)
-
-    def add_post_set_parameters_callback(
-            self,
-            callback: Callable[[List[Parameter]], None]
-    ) -> None:
-        """
-        Add a callback gets triggered after parameters are set successfully.
-
-        Calling this function will add a callback in self._post_set_parameter_callbacks list.
-
-        The callback signature is designed to allow handling of the ``set_parameter*``
-        or ``declare_parameter*`` methods. The callback takes a list of parameters that
-        have been set successfully.
-
-        The callback can be valuable as a place to cause side effects based on parameter
-        changes. For instance updating the internally tracked class attributes once the params
-        have been changed successfully.
-
-        :param callback: The function that is called after parameters are set for the node.
-        """
-        self._post_set_parameters_callbacks.insert(0, callback)
-
-    def remove_pre_set_parameters_callback(
-            self,
-            callback: Callable[[List[Parameter]], List[Parameter]]
-    ) -> None:
-        """
-        Remove a callback from list of callbacks.
-
-        Calling this function will remove the callback from self._pre_set_parameter_callbacks list.
-
         :param callback: The function that is called whenever parameters are set for the node.
-        :raises: ValueError if a callback is not present in the list of callbacks.
         """
-        self._pre_set_parameters_callbacks.remove(callback)
+        self._parameters_callbacks.insert(0, callback)
 
     def remove_on_set_parameters_callback(
-            self,
-            callback: Callable[[List[Parameter]], SetParametersResult]
+        self,
+        callback: Callable[[List[Parameter]], SetParametersResult]
     ) -> None:
         """
         Remove a callback from list of callbacks.
@@ -1084,21 +905,7 @@ class Node:
         :param callback: The function that is called whenever parameters are set for the node.
         :raises: ValueError if a callback is not present in the list of callbacks.
         """
-        self._on_set_parameters_callbacks.remove(callback)
-
-    def remove_post_set_parameters_callback(
-            self,
-            callback: Callable[[List[Parameter]], None]
-    ) -> None:
-        """
-        Remove a callback from list of callbacks.
-
-        Calling this function will remove the callback from self._parameter_callbacks list.
-
-        :param callback: The function that is called whenever parameters are set for the node.
-        :raises: ValueError if a callback is not present in the list of callbacks.
-        """
-        self._post_set_parameters_callbacks.remove(callback)
+        self._parameters_callbacks.remove(callback)
 
     def _apply_descriptors(
         self,
@@ -1114,7 +921,7 @@ class Node:
 
         :param parameter_list: Parameters to be checked.
         :param descriptors: Descriptors to apply.
-        :param check_read_only: ``True`` if read-only check has to be applied.
+        :param check_read_only: True if read-only check has to be applied.
         :return: SetParametersResult; successful if checks passed, unsuccessful otherwise.
         :raises: ParameterNotDeclaredException if a descriptor is not provided, the given parameter
             name had not been declared and undeclared parameters are not allowed.
@@ -1139,9 +946,9 @@ class Node:
         If a descriptor is provided, its name will be set to the name of the parameter.
 
         :param parameter: Parameter to be checked.
-        :param descriptor: Descriptor to apply. If ``None``, the stored descriptor for the given
+        :param descriptor: Descriptor to apply. If None, the stored descriptor for the given
             parameter's name is used instead.
-        :param check_read_only: ``True`` if read-only check has to be applied.
+        :param check_read_only: True if read-only check has to be applied.
         :return: SetParametersResult; successful if checks passed, unsuccessful otherwise.
         :raises: ParameterNotDeclaredException if a descriptor is not provided, the given parameter
             name had not been declared and undeclared parameters are not allowed.
@@ -1323,7 +1130,7 @@ class Node:
         """
         Set a new descriptor for a given parameter.
 
-        The name in the descriptor is ignored and set to ``name``.
+        The name in the descriptor is ignored and set to **name**.
 
         :param name: Fully-qualified name of the parameter to set the descriptor to.
         :param descriptor: New descriptor to apply to the parameter.
@@ -1410,10 +1217,10 @@ class Node:
         """
         Return a topic name expanded and remapped.
 
-        :param topic: Topic name to be expanded and remapped.
-        :param only_expand: If ``True``, remapping rules won't be applied.
-        :return: A fully qualified topic name,
-            the result of applying expansion and remapping to the given ``topic``.
+        :param topic: topic name to be expanded and remapped.
+        :param only_expand: if `True`, remapping rules won't be applied.
+        :return: a fully qualified topic name,
+            result of applying expansion and remapping to the given `topic`.
         """
         with self.handle:
             return _rclpy.rclpy_resolve_name(self.handle, topic, only_expand, False)
@@ -1424,10 +1231,10 @@ class Node:
         """
         Return a service name expanded and remapped.
 
-        :param service: Service name to be expanded and remapped.
-        :param only_expand: If ``True``, remapping rules won't be applied.
-        :return: A fully qualified service name,
-            the result of applying expansion and remapping to the given ``service``.
+        :param service: service name to be expanded and remapped.
+        :param only_expand: if `True`, remapping rules won't be applied.
+        :return: a fully qualified service name,
+            result of applying expansion and remapping to the given `service`.
         """
         with self.handle:
             return _rclpy.rclpy_resolve_name(self.handle, service, only_expand, True)
@@ -1449,11 +1256,11 @@ class Node:
         :param msg_type: The type of ROS messages the publisher will publish.
         :param topic: The name of the topic the publisher will publish to.
         :param qos_profile: A QoSProfile or a history depth to apply to the publisher.
-            In the case that a history depth is provided, the QoS history is set to
-            KEEP_LAST, the QoS history depth is set to the value
-            of the parameter, and all other QoS settings are set to their default values.
+          In the case that a history depth is provided, the QoS history is set to
+          KEEP_LAST, the QoS history depth is set to the value
+          of the parameter, and all other QoS settings are set to their default values.
         :param callback_group: The callback group for the publisher's event handlers.
-            If ``None``, then the default callback group for the node is used.
+            If ``None``, then the node's default callback group is used.
         :param event_callbacks: User-defined callbacks for middleware events.
         :return: The new publisher.
         """
@@ -1526,11 +1333,11 @@ class Node:
         :param callback: A user-defined callback function that is called when a message is
             received by the subscription.
         :param qos_profile: A QoSProfile or a history depth to apply to the subscription.
-            In the case that a history depth is provided, the QoS history is set to
-            KEEP_LAST, the QoS history depth is set to the value
-            of the parameter, and all other QoS settings are set to their default values.
+          In the case that a history depth is provided, the QoS history is set to
+          KEEP_LAST, the QoS history depth is set to the value
+          of the parameter, and all other QoS settings are set to their default values.
         :param callback_group: The callback group for the subscription. If ``None``, then the
-            default callback group for the node is used.
+            nodes default callback group is used.
         :param event_callbacks: User-defined callbacks for middleware events.
         :param raw: If ``True``, then received messages will be stored in raw binary
             representation.
@@ -1599,7 +1406,7 @@ class Node:
         :param srv_name: The name of the service.
         :param qos_profile: The quality of service profile to apply the service client.
         :param callback_group: The callback group for the service client. If ``None``, then the
-            default callback group for the node is used.
+            nodes default callback group is used.
         """
         if callback_group is None:
             callback_group = self.default_callback_group
@@ -1644,7 +1451,7 @@ class Node:
             received by the server.
         :param qos_profile: The quality of service profile to apply the service server.
         :param callback_group: The callback group for the service server. If ``None``, then the
-            default callback group for the node is used.
+            nodes default callback group is used.
         """
         if callback_group is None:
             callback_group = self.default_callback_group
@@ -1685,8 +1492,8 @@ class Node:
 
         :param timer_period_sec: The period (s) of the timer.
         :param callback: A user-defined callback function that is called when the timer expires.
-        :param callback_group: The callback group for the timer. If ``None``, then the
-            default callback group for the node is used.
+        :param callback_group: The callback group for the timer. If ``None``, then the nodes
+            default callback group is used.
         :param clock: The clock which the timer gets time from.
         """
         timer_period_nsec = int(float(timer_period_sec) * S_TO_NS)
@@ -1760,7 +1567,7 @@ class Node:
         """
         Destroy a subscription created by the node.
 
-        :return: ``True`` if successful, ``False`` otherwise.
+        :return: ``True`` if succesful, ``False`` otherwise.
         """
         if subscription in self._subscriptions:
             self._subscriptions.remove(subscription)
@@ -1933,7 +1740,7 @@ class Node:
         node_namespace: str
     ) -> List[Tuple[str, List[str]]]:
         """
-        Get a list of discovered service servers for a remote node.
+        Get a list of discovered service server topics for a remote node.
 
         :param node_name: Name of a remote node to get services for.
         :param node_namespace: Namespace of the remote node.
@@ -1953,12 +1760,12 @@ class Node:
         node_namespace: str
     ) -> List[Tuple[str, List[str]]]:
         """
-        Get a list of discovered service clients for a remote node.
+        Get a list of discovered service client topics for a remote node.
 
         :param node_name: Name of a remote node to get service clients for.
         :param node_namespace: Namespace of the remote node.
         :return: List of tuples.
-          The first element of each tuple is the service client name
+          The fist element of each tuple is the service client name
           and the second element is a list of service client types.
         :raise NodeNameNonExistentError: If the node wasn't found.
         :raise RuntimeError: Unexpected failure.
@@ -1969,7 +1776,7 @@ class Node:
 
     def get_topic_names_and_types(self, no_demangle: bool = False) -> List[Tuple[str, List[str]]]:
         """
-        Get a list of discovered topic names and types.
+        Get a list topic names and types for the node.
 
         :param no_demangle: If ``True``, then topic names and types returned will not be demangled.
         :return: List of tuples.
@@ -1981,7 +1788,7 @@ class Node:
 
     def get_service_names_and_types(self) -> List[Tuple[str, List[str]]]:
         """
-        Get a list of discovered service names and types.
+        Get a list of service topics for the node.
 
         :return: List of tuples.
           The first element of each tuple is the service name and the second element is a list of
@@ -1999,20 +1806,6 @@ class Node:
         with self.handle:
             names_ns = self.handle.get_node_names_and_namespaces()
         return [n[0] for n in names_ns]
-
-    def get_fully_qualified_node_names(self) -> List[str]:
-        """
-        Get a list of fully qualified names for discovered nodes.
-
-        Similar to ``get_node_names_namespaces()``, but concatenates the names and namespaces.
-
-        :return: List of fully qualified node names.
-        """
-        names_and_namespaces = self.get_node_names_and_namespaces()
-        return [
-            ns + ('' if ns.endswith('/') else '/') + name
-            for name, ns in names_and_namespaces
-        ]
 
     def get_node_names_and_namespaces(self) -> List[Tuple[str, str]]:
         """
@@ -2052,12 +1845,12 @@ class Node:
         """
         Return the number of publishers on a given topic.
 
-        ``topic_name`` may be a relative, private, or fully qualified topic name.
+        `topic_name` may be a relative, private, or fully qualified topic name.
         A relative or private topic is expanded using this node's namespace and name.
         The queried topic name is not remapped.
 
-        :param topic_name: The topic name on which to count the number of publishers.
-        :return: The number of publishers on the topic.
+        :param topic_name: the topic_name on which to count the number of publishers.
+        :return: the number of publishers on the topic.
         """
         with self.handle:
             return self._count_publishers_or_subscribers(
@@ -2067,12 +1860,12 @@ class Node:
         """
         Return the number of subscribers on a given topic.
 
-        ``topic_name`` may be a relative, private, or fully qualified topic name.
+        `topic_name` may be a relative, private, or fully qualified topic name.
         A relative or private topic is expanded using this node's namespace and name.
         The queried topic name is not remapped.
 
-        :param topic_name: The topic name on which to count the number of subscribers.
-        :return: The number of subscribers on the topic.
+        :param topic_name: the topic_name on which to count the number of subscribers.
+        :return: the number of subscribers on the topic.
         """
         with self.handle:
             return self._count_publishers_or_subscribers(
@@ -2108,18 +1901,18 @@ class Node:
         The returned parameter is a list of TopicEndpointInfo objects, where each will contain
         the node name, node namespace, topic type, topic endpoint's GID, and its QoS profile.
 
-        When the ``no_mangle`` parameter is ``True``, the provided ``topic_name`` should be a valid
-        topic name for the middleware (useful when combining ROS with native middleware (e.g. DDS)
-        apps).  When the ``no_mangle`` parameter is ``False``, the provided ``topic_name`` should
-        follow ROS topic name conventions.
+        When the `no_mangle` parameter is `true`, the provided `topic_name` should be a valid topic
+        name for the middleware (useful when combining ROS with native middleware (e.g. DDS) apps).
+        When the `no_mangle` parameter is `false`, the provided `topic_name` should follow
+        ROS topic name conventions.
 
-        ``topic_name`` may be a relative, private, or fully qualified topic name.
+        `topic_name` may be a relative, private, or fully qualified topic name.
         A relative or private topic will be expanded using this node's namespace and name.
-        The queried ``topic_name`` is not remapped.
+        The queried `topic_name` is not remapped.
 
-        :param topic_name: The topic_name on which to find the publishers.
-        :param no_mangle: If ``True``, ``topic_name`` needs to be a valid middleware topic
-            name, otherwise it should be a valid ROS topic name. Defaults to ``False``.
+        :param topic_name: the topic_name on which to find the publishers.
+        :param no_mangle: no_mangle if `true`, `topic_name` needs to be a valid middleware topic
+            name, otherwise it should be a valid ROS topic name. Defaults to `false`.
         :return: a list of TopicEndpointInfo for all the publishers on this topic.
         """
         return self._get_info_by_topic(
@@ -2138,49 +1931,21 @@ class Node:
         The returned parameter is a list of TopicEndpointInfo objects, where each will contain
         the node name, node namespace, topic type, topic endpoint's GID, and its QoS profile.
 
-        When the ``no_mangle`` parameter is ``True``, the provided ``topic_name`` should be a valid
-        topic name for the middleware (useful when combining ROS with native middleware (e.g. DDS)
-        apps).  When the ``no_mangle`` parameter is ``False``, the provided ``topic_name`` should
-        follow ROS topic name conventions.
+        When the `no_mangle` parameter is `true`, the provided `topic_name` should be a valid topic
+        name for the middleware (useful when combining ROS with native middleware (e.g. DDS) apps).
+        When the `no_mangle` parameter is `false`, the provided `topic_name` should follow
+        ROS topic name conventions.
 
-        ``topic_name`` may be a relative, private, or fully qualified topic name.
+        `topic_name` may be a relative, private, or fully qualified topic name.
         A relative or private topic will be expanded using this node's namespace and name.
-        The queried ``topic_name`` is not remapped.
+        The queried `topic_name` is not remapped.
 
-        :param topic_name: The topic_name on which to find the subscriptions.
-        :param no_mangle: If ``True``, `topic_name` needs to be a valid middleware topic
-            name, otherwise it should be a valid ROS topic name. Defaults to ``False``.
-        :return: A list of TopicEndpointInfo for all the subscriptions on this topic.
+        :param topic_name: the topic_name on which to find the subscriptions.
+        :param no_mangle: no_mangle if `true`, `topic_name` needs to be a valid middleware topic
+            name, otherwise it should be a valid ROS topic name. Defaults to `false`.
+        :return: a list of TopicEndpointInfo for all the subscriptions on this topic.
         """
         return self._get_info_by_topic(
             topic_name,
             no_mangle,
             _rclpy.rclpy_get_subscriptions_info_by_topic)
-
-    def wait_for_node(
-        self,
-        fully_qualified_node_name: str,
-        timeout: float
-    ) -> bool:
-        """
-        Wait until node name is present in the system or timeout.
-
-        The node name should be the full name with namespace.
-
-        :param node_name: Fully qualified name of the node to wait for.
-        :param timeout: Seconds to wait for the node to be present. If negative, the function
-                         won't timeout.
-        :return: ``True`` if the node was found, ``False`` if timeout.
-        """
-        if not fully_qualified_node_name.startswith('/'):
-            fully_qualified_node_name = f'/{fully_qualified_node_name}'
-
-        start = time.time()
-        flag = False
-        # TODO refactor this implementation when we can react to guard condition events, or replace
-        # it entirely with an implementation in rcl. see https://github.com/ros2/rclpy/issues/929
-        while time.time() - start < timeout and not flag:
-            fully_qualified_node_names = self.get_fully_qualified_node_names()
-            flag = fully_qualified_node_name in fully_qualified_node_names
-            time.sleep(0.1)
-        return flag

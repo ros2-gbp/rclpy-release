@@ -43,18 +43,13 @@ def clear_config():
     initialize()
 
 
-def set_logger_level(name, level, detailed_error=False):
+def set_logger_level(name, level):
     level = LoggingSeverity(level)
-    return _rclpy.rclpy_logging_set_logger_level(name, level, detailed_error)
+    return _rclpy.rclpy_logging_set_logger_level(name, level)
 
 
 def get_logger_effective_level(name):
     logger_level = _rclpy.rclpy_logging_get_logger_effective_level(name)
-    return LoggingSeverity(logger_level)
-
-
-def get_logger_level(name):
-    logger_level = _rclpy.rclpy_logging_get_logger_level(name)
     return LoggingSeverity(logger_level)
 
 
@@ -67,6 +62,7 @@ def get_logging_directory() -> Path:
     """
     Return the current logging directory being used.
 
-    For more details, :func:`~rcl_logging_interface.rcl_logging_get_logging_directory`
+    For more details, see .. c:function::
+    rcl_logging_ret_t rcl_logging_get_logging_directory(rcutils_allocator_t, char **)
     """
     return Path(_rclpy.rclpy_logging_get_logging_directory())
