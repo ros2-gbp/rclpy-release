@@ -15,12 +15,9 @@
 from inspect import ismethod
 import sys
 import threading
-from types import TracebackType
 from typing import Callable
-from typing import ContextManager
 from typing import List
 from typing import Optional
-from typing import Type
 import weakref
 
 
@@ -28,19 +25,12 @@ g_logging_configure_lock = threading.Lock()
 g_logging_ref_count = 0
 
 
-class Context(ContextManager['Context']):
+class Context:
     """
     Encapsulates the lifecycle of init and shutdown.
 
     Context objects should not be reused, and are finalized in their destructor.
     Wraps the `rcl_context_t` type.
-
-    :Example:
-        >>> from rclpy.context import Context
-        >>> with Context() as context:
-        >>>     context.ok()
-        True
-
     """
 
     def __init__(self):
@@ -159,17 +149,3 @@ class Context(ContextManager['Context']):
             raise RuntimeError('Context must be initialized before it can have a domain id')
         with self.__context, self._lock:
             return self.__context.get_domain_id()
-
-    def __enter__(self) -> 'Context':
-        # We do not accept parameters here. If one wants to customize the init() call,
-        # they would have to call it manaully and not use the ContextManager convenience
-        self.init()
-        return self
-
-    def __exit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
-    ) -> None:
-        self.try_shutdown()

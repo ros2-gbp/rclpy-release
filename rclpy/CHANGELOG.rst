@@ -2,16 +2,10 @@
 Changelog for package rclpy
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-4.2.1 (2023-05-11)
+4.1.1 (2023-05-11)
 ------------------
-* Fix action server crash when the client goes away. (`#1114 <https://github.com/ros2/rclpy/issues/1114>`_)
-* Turn Executor into a ContextManager (`#1118 <https://github.com/ros2/rclpy/issues/1118>`_)
-* Turn Context into a ContextManager (`#1117 <https://github.com/ros2/rclpy/issues/1117>`_)
-* Fix type in Node init args (`#1115 <https://github.com/ros2/rclpy/issues/1115>`_)
-* Contributors: Chris Lalancette, Felix Divo, Russ
-
-4.2.0 (2023-04-27)
-------------------
+* Fix type in Node init args (`#1115 <https://github.com/ros2/rclpy/issues/1115>`_) (`#1122 <https://github.com/ros2/rclpy/issues/1122>`_)
+* Contributors: mergify[bot]
 
 4.1.0 (2023-04-18)
 ------------------
