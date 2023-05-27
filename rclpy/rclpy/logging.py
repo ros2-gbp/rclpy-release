@@ -13,11 +13,25 @@
 # limitations under the License.
 
 
-from pathlib import Path
+from enum import IntEnum
 
-from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
-from rclpy.impl.logging_severity import LoggingSeverity
+from rclpy.impl.implementation_singleton import rclpy_logging_implementation as _rclpy_logging
 import rclpy.impl.rcutils_logger
+
+
+class LoggingSeverity(IntEnum):
+    """
+    Enum for logging severity levels.
+
+    This enum must match the one defined in rcutils/logging.h
+    """
+
+    UNSET = _rclpy_logging.rclpy_get_unset_logging_severity()
+    DEBUG = _rclpy_logging.rclpy_get_debug_logging_severity()
+    INFO = _rclpy_logging.rclpy_get_info_logging_severity()
+    WARN = _rclpy_logging.rclpy_get_warn_logging_severity()
+    ERROR = _rclpy_logging.rclpy_get_error_logging_severity()
+    FATAL = _rclpy_logging.rclpy_get_fatal_logging_severity()
 
 
 _root_logger = rclpy.impl.rcutils_logger.RcutilsLogger()
@@ -30,11 +44,11 @@ def get_logger(name):
 
 
 def initialize():
-    return _rclpy.rclpy_logging_initialize()
+    return _rclpy_logging.rclpy_logging_initialize()
 
 
 def shutdown():
-    return _rclpy.rclpy_logging_shutdown()
+    return _rclpy_logging.rclpy_logging_shutdown()
 
 
 def clear_config():
@@ -43,30 +57,16 @@ def clear_config():
     initialize()
 
 
-def set_logger_level(name, level, detailed_error=False):
+def set_logger_level(name, level):
     level = LoggingSeverity(level)
-    return _rclpy.rclpy_logging_set_logger_level(name, level, detailed_error)
+    return _rclpy_logging.rclpy_logging_set_logger_level(name, level)
 
 
 def get_logger_effective_level(name):
-    logger_level = _rclpy.rclpy_logging_get_logger_effective_level(name)
-    return LoggingSeverity(logger_level)
-
-
-def get_logger_level(name):
-    logger_level = _rclpy.rclpy_logging_get_logger_level(name)
+    logger_level = _rclpy_logging.rclpy_logging_get_logger_effective_level(name)
     return LoggingSeverity(logger_level)
 
 
 def get_logging_severity_from_string(log_severity):
     return LoggingSeverity(
-        _rclpy.rclpy_logging_severity_level_from_string(log_severity))
-
-
-def get_logging_directory() -> Path:
-    """
-    Return the current logging directory being used.
-
-    For more details, :func:`~rcl_logging_interface.rcl_logging_get_logging_directory`
-    """
-    return Path(_rclpy.rclpy_logging_get_logging_directory())
+        _rclpy_logging.rclpy_logging_severity_level_from_string(log_severity))

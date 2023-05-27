@@ -16,10 +16,8 @@ from typing import Callable
 from typing import TypeVar
 
 from rclpy.callback_groups import CallbackGroup
-from rclpy.clock import Clock
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.qos import QoSProfile
-from rclpy.service_introspection import ServiceIntrospectionState
 
 # Used for documentation purposes only
 SrvType = TypeVar('SrvType')
@@ -30,7 +28,7 @@ SrvTypeResponse = TypeVar('SrvTypeResponse')
 class Service:
     def __init__(
         self,
-        service_impl: _rclpy.Service,
+        service_handle,
         srv_type: SrvType,
         srv_name: str,
         callback: Callable[[SrvTypeRequest, SrvTypeResponse], SrvTypeResponse],
@@ -43,16 +41,15 @@ class Service:
         .. warning:: Users should not create a service server with this constuctor, instead they
            should call :meth:`.Node.create_service`.
 
-        :param service_impl: :class:`_rclpy.Service` wrapping the underlying ``rcl_service_t``
-            object.
+        :param context: The context associated with the service server.
+        :param service_handle: Capsule pointing to the underlying ``rcl_service_t`` object.
         :param srv_type: The service type.
         :param srv_name: The name of the service.
-        :param callback: The callback that should be called to handle the request.
         :param callback_group: The callback group for the service server. If ``None``, then the
             nodes default callback group is used.
         :param qos_profile: The quality of service profile to apply the service server.
         """
-        self.__service = service_impl
+        self.__handle = service_handle
         self.srv_type = srv_type
         self.srv_name = srv_name
         self.callback = callback
@@ -66,41 +63,19 @@ class Service:
         Send a service response.
 
         :param response: The service response.
-        :param header: Service header from the original request.
+        :param header: Capsule pointing to the service header from the original request.
         :raises: TypeError if the type of the passed response isn't an instance
           of the Response type of the provided service when the service was
           constructed.
         """
         if not isinstance(response, self.srv_type.Response):
             raise TypeError()
-        with self.handle:
-            if isinstance(header, _rclpy.rmw_service_info_t):
-                self.__service.service_send_response(response, header.request_id)
-            elif isinstance(header, _rclpy.rmw_request_id_t):
-                self.__service.service_send_response(response, header)
-            else:
-                raise TypeError()
-
-    def configure_introspection(
-        self, clock: Clock,
-        service_event_qos_profile: QoSProfile,
-        introspection_state: ServiceIntrospectionState
-    ) -> None:
-        """
-        Configure service introspection.
-
-        :param clock: Clock to use for generating timestamps.
-        :param service_event_qos_profile: QoSProfile to use when creating service event publisher.
-        :param introspection_state: ServiceIntrospectionState to set introspection.
-        """
-        with self.handle:
-            self.__service.configure_introspection(clock.handle,
-                                                   service_event_qos_profile.get_c_qos_profile(),
-                                                   introspection_state)
+        with self.handle as capsule:
+            _rclpy.rclpy_send_response(capsule, response, header)
 
     @property
     def handle(self):
-        return self.__service
+        return self.__handle
 
     def destroy(self):
-        self.__service.destroy_when_not_in_use()
+        self.handle.destroy()

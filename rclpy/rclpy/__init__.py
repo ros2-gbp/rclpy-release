@@ -46,9 +46,6 @@ from typing import TYPE_CHECKING
 
 from rclpy.context import Context
 from rclpy.parameter import Parameter
-from rclpy.signals import install_signal_handlers
-from rclpy.signals import SignalHandlerOptions
-from rclpy.signals import uninstall_signal_handlers
 from rclpy.task import Future
 from rclpy.utilities import get_default_context
 from rclpy.utilities import get_rmw_implementation_identifier  # noqa: F401
@@ -62,31 +59,16 @@ if TYPE_CHECKING:
     from rclpy.node import Node  # noqa: F401
 
 
-def init(
-    *,
-    args: Optional[List[str]] = None,
-    context: Context = None,
-    domain_id: Optional[int] = None,
-    signal_handler_options: Optional[SignalHandlerOptions] = None,
-) -> None:
+def init(*, args: Optional[List[str]] = None, context: Context = None) -> None:
     """
     Initialize ROS communications for a given context.
 
     :param args: List of command line arguments.
     :param context: The context to initialize. If ``None``, then the default context is used
         (see :func:`.get_default_context`).
-    :param domain_id: ROS domain id.
-    :param signal_handler_options: Indicate which signal handlers to install.
-        If `None`, SIGINT and SIGTERM will be installed when initializing the default context.
     """
     context = get_default_context() if context is None else context
-    if signal_handler_options is None:
-        if context is None or context is get_default_context():
-            signal_handler_options = SignalHandlerOptions.ALL
-        else:
-            signal_handler_options = SignalHandlerOptions.NO
-    install_signal_handlers(signal_handler_options)
-    return context.init(args, domain_id=domain_id)
+    return context.init(args)
 
 
 # The global spin functions need an executor to do the work
@@ -100,17 +82,10 @@ def get_global_executor() -> 'Executor':
         # imported locally to avoid loading extensions on module import
         from rclpy.executors import SingleThreadedExecutor
         __executor = SingleThreadedExecutor()
-        context = get_default_context()
-
-        def reset_executor():
-            global __executor
-            __executor.shutdown()
-            __executor = None
-        context.on_shutdown(reset_executor)
     return __executor
 
 
-def shutdown(*, context: Context = None, uninstall_handlers: Optional[bool] = None) -> None:
+def shutdown(*, context: Context = None) -> None:
     """
     Shutdown a previously initialized context.
 
@@ -118,18 +93,12 @@ def shutdown(*, context: Context = None, uninstall_handlers: Optional[bool] = No
 
     :param context: The context to invalidate. If ``None``, then the default context is used
         (see :func:`.get_default_context`).
-    :param uninstall_handlers:
-        If `None`, signal handlers will be uninstalled when shutting down the default context.
-        If `True`, signal handlers will be uninstalled.
-        If not, signal handlers won't be uninstalled.
     """
+    global __executor
+    if __executor is not None:
+        __executor.shutdown()
+        __executor = None
     _shutdown(context=context)
-    if (
-        uninstall_handlers or (
-            uninstall_handlers is None and (
-                context is None or context is get_default_context()))
-    ):
-        uninstall_signal_handlers()
 
 
 def create_node(
@@ -143,8 +112,7 @@ def create_node(
     start_parameter_services: bool = True,
     parameter_overrides: List[Parameter] = None,
     allow_undeclared_parameters: bool = False,
-    automatically_declare_parameters_from_overrides: bool = False,
-    enable_logger_service: bool = False
+    automatically_declare_parameters_from_overrides: bool = False
 ) -> 'Node':
     """
     Create an instance of :class:`.Node`.
@@ -162,13 +130,10 @@ def create_node(
     :param start_parameter_services: ``False`` if the node should not create parameter services.
     :param parameter_overrides: A list of :class:`.Parameter` which are used to override the
         initial values of parameters declared on this node.
-    :param allow_undeclared_parameters: if True undeclared parameters are allowed, default False.
+     :param allow_undeclared_parameters: if True undeclared parameters are allowed, default False.
         This option doesn't affect `parameter_overrides`.
     :param automatically_declare_parameters_from_overrides: If True, the "parameter overrides" will
         be used to implicitly declare parameters on the node during creation, default False.
-    :param enable_logger_service: ``True`` if ROS2 services are created to allow external nodes
-        to get and set logger levels of this node. Otherwise, logger levels are only managed
-        locally. That is, logger levels cannot be changed remotely.
     :return: An instance of the newly created node.
     """
     # imported locally to avoid loading extensions on module import
@@ -182,9 +147,7 @@ def create_node(
         allow_undeclared_parameters=allow_undeclared_parameters,
         automatically_declare_parameters_from_overrides=(
             automatically_declare_parameters_from_overrides
-        ),
-        enable_logger_service=enable_logger_service
-        )
+        ))
 
 
 def spin_once(node: 'Node', *, executor: 'Executor' = None, timeout_sec: float = None) -> None:
