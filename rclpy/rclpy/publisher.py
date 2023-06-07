@@ -15,11 +15,11 @@
 from typing import TypeVar, Union
 
 from rclpy.callback_groups import CallbackGroup
-from rclpy.handle import Handle
+from rclpy.duration import Duration
+from rclpy.event_handler import EventHandler
+from rclpy.event_handler import PublisherEventCallbacks
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.qos import QoSProfile
-from rclpy.qos_event import PublisherEventCallbacks
-from rclpy.qos_event import QoSEventHandler
 
 MsgType = TypeVar('MsgType')
 
@@ -28,7 +28,7 @@ class Publisher:
 
     def __init__(
         self,
-        publisher_handle: Handle,
+        publisher_impl: _rclpy.Publisher,
         msg_type: MsgType,
         topic: str,
         qos_profile: QoSProfile,
@@ -44,18 +44,18 @@ class Publisher:
         A publisher is used as a primary means of communication in a ROS system by publishing
         messages on a ROS topic.
 
-        :param publisher_handle: Capsule pointing to the underlying ``rcl_publisher_t`` object.
+        :param publisher_impl: Publisher wrapping the underlying ``rcl_publisher_t`` object.
         :param msg_type: The type of ROS messages the publisher will publish.
         :param topic: The name of the topic the publisher will publish to.
         :param qos_profile: The quality of service profile to apply to the publisher.
         """
-        self.__handle = publisher_handle
+        self.__publisher = publisher_impl
         self.msg_type = msg_type
         self.topic = topic
         self.qos_profile = qos_profile
 
-        self.event_handlers: QoSEventHandler = event_callbacks.create_event_handlers(
-            callback_group, publisher_handle)
+        self.event_handlers: EventHandler = event_callbacks.create_event_handlers(
+            callback_group, publisher_impl, topic)
 
     def publish(self, msg: Union[MsgType, bytes]) -> None:
         """
@@ -65,39 +65,59 @@ class Publisher:
         :raises: TypeError if the type of the passed message isn't an instance
           of the provided type when the publisher was constructed.
         """
-        with self.handle as capsule:
+        with self.handle:
             if isinstance(msg, self.msg_type):
-                _rclpy.rclpy_publish(capsule, msg)
+                self.__publisher.publish(msg)
             elif isinstance(msg, bytes):
-                _rclpy.rclpy_publish_raw(capsule, msg)
+                self.__publisher.publish_raw(msg)
             else:
-                raise TypeError()
+                raise TypeError('Expected {}, got {}'.format(self.msg_type, type(msg)))
 
     def get_subscription_count(self) -> int:
         """Get the amount of subscribers that this publisher has."""
-        with self.handle as capsule:
-            return _rclpy.rclpy_publisher_get_subscription_count(capsule)
+        with self.handle:
+            return self.__publisher.get_subscription_count()
 
     @property
     def topic_name(self) -> str:
-        with self.handle as capsule:
-            return _rclpy.rclpy_publisher_get_topic_name(capsule)
+        with self.handle:
+            return self.__publisher.get_topic_name()
 
     @property
     def handle(self):
-        return self.__handle
+        return self.__publisher
 
     def destroy(self):
         for handler in self.event_handlers:
             handler.destroy()
-        self.handle.destroy()
+        self.__publisher.destroy_when_not_in_use()
 
     def assert_liveliness(self) -> None:
         """
         Manually assert that this Publisher is alive.
 
-        If the QoS Liveliness policy is set to RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC, the
+        If the QoS Liveliness policy is set to MANUAL_BY_TOPIC, the
         application must call this at least as often as ``QoSProfile.liveliness_lease_duration``.
         """
-        with self.handle as capsule:
-            _rclpy.rclpy_assert_liveliness(capsule)
+        with self.handle:
+            _rclpy.rclpy_assert_liveliness(self.handle)
+
+    def wait_for_all_acked(self, timeout: Duration = Duration(seconds=-1)) -> bool:
+        """
+        Wait until all published message data is acknowledged or until the timeout elapses.
+
+        If the timeout is negative then this function will block indefinitely until all published
+        message data is acknowledged.
+        If the timeout is 0 then it will check if all published message has been acknowledged
+        without waiting.
+        If the timeout is greater than 0 then it will return after that period of time has elapsed
+        or all published message data is acknowledged.
+        This function only waits for acknowledgments if the publisher's QOS profile is RELIABLE.
+        Otherwise this function will immediately return true.
+
+        :param timeout: the duration to wait for all published message data to be acknowledged.
+        :returns: true if all published message data is acknowledged before the timeout, otherwise
+            false.
+        """
+        with self.handle:
+            return self.__publisher.wait_for_all_acked(timeout._duration_handle)
