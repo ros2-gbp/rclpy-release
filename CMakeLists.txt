@@ -102,6 +102,7 @@ pybind11_add_module(_rclpy_pybind11 SHARED
   src/rclpy/subscription.cpp
   src/rclpy/time_point.cpp
   src/rclpy/timer.cpp
+  src/rclpy/type_description_service.cpp
   src/rclpy/utils.cpp
   src/rclpy/wait_set.cpp
 )
@@ -203,6 +204,7 @@ if(BUILD_TESTING)
       test/test_topic_or_service_is_hidden.py
       test/test_topic_endpoint_info.py
       test/test_type_support.py
+      test/test_type_hash.py
       test/test_utilities.py
       test/test_validate_full_topic_name.py
       test/test_validate_namespace.py
