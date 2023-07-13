@@ -50,7 +50,6 @@
 #include "subscription.hpp"
 #include "time_point.hpp"
 #include "timer.hpp"
-#include "type_description_service.hpp"
 #include "utils.hpp"
 #include "wait_set.hpp"
 
@@ -133,8 +132,6 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
   rclpy::define_publisher(m);
 
   rclpy::define_service(m);
-
-  rclpy::define_type_description_service(m);
 
   rclpy::define_service_info(m);
 

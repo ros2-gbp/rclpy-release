@@ -102,7 +102,6 @@ pybind11_add_module(_rclpy_pybind11 SHARED
   src/rclpy/subscription.cpp
   src/rclpy/time_point.cpp
   src/rclpy/timer.cpp
-  src/rclpy/type_description_service.cpp
   src/rclpy/utils.cpp
   src/rclpy/wait_set.cpp
 )
