@@ -32,7 +32,7 @@ class TimeSource:
     def __init__(self, *, node=None):
         self._clock_sub = None
         self._node_weak_ref = None
-        self._associated_clocks = []
+        self._associated_clocks = set()
         # Zero time is a special value that means time is uninitialzied
         self._last_time_set = Time(clock_type=ClockType.ROS_TIME)
         self._ros_time_is_active = False
@@ -113,7 +113,7 @@ class TimeSource:
 
         clock.set_ros_time_override(self._last_time_set)
         clock._set_ros_time_is_active(self.ros_time_is_active)
-        self._associated_clocks.append(clock)
+        self._associated_clocks.add(clock)
 
     def clock_callback(self, msg):
         # Cache the last message in case a new clock is attached.
@@ -123,19 +123,24 @@ class TimeSource:
             clock.set_ros_time_override(time_from_msg)
 
     def _on_parameter_event(self, parameter_list):
+        successful = True
+        reason = ''
+
         for parameter in parameter_list:
             if parameter.name == USE_SIM_TIME_NAME:
                 if parameter.type_ == Parameter.Type.BOOL:
                     self.ros_time_is_active = parameter.value
                 else:
+                    successful = False
+                    reason = '{} parameter set to something besides a bool'.format(
+                        USE_SIM_TIME_NAME)
+
                     node = self._get_node()
                     if node:
-                        node.get_logger().error(
-                            '{} parameter set to something besides a bool'
-                            .format(USE_SIM_TIME_NAME))
+                        node.get_logger().error(reason)
                 break
 
-        return SetParametersResult(successful=True)
+        return SetParametersResult(successful=successful, reason=reason)
 
     def _get_node(self):
         if self._node_weak_ref is not None:
