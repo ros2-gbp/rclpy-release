@@ -120,9 +120,9 @@ class Node:
         self,
         node_name: str,
         *,
-        context: Optional[Context] = None,
+        context: Context = None,
         cli_args: List[str] = None,
-        namespace: Optional[str] = None,
+        namespace: str = None,
         use_global_arguments: bool = True,
         enable_rosout: bool = True,
         start_parameter_services: bool = True,
@@ -456,19 +456,13 @@ class Node:
             # Get the values from the tuple, checking its types.
             # Use defaults if the tuple doesn't contain value and / or descriptor.
             name = parameter_tuple[0]
+            second_arg = parameter_tuple[1] if 1 < len(parameter_tuple) else None
+            descriptor = parameter_tuple[2] if 2 < len(parameter_tuple) else ParameterDescriptor()
+
             if not isinstance(name, str):
                 raise TypeError(
                         f'First element {name} at index {index} in parameters list '
                         'is not a str.')
-            if namespace:
-                name = f'{namespace}.{name}'
-
-            # Note(jubeira): declare_parameters verifies the name, but set_parameters doesn't.
-            validate_parameter_name(name)
-
-            second_arg = parameter_tuple[1] if 1 < len(parameter_tuple) else None
-            descriptor = parameter_tuple[2] if 2 < len(parameter_tuple) else ParameterDescriptor()
-
             if not isinstance(descriptor, ParameterDescriptor):
                 raise TypeError(
                     f'Third element {descriptor} at index {index} in parameters list '
@@ -511,6 +505,12 @@ class Node:
             # Get value from parameter overrides, of from tuple if it doesn't exist.
             if not ignore_override and name in self._parameter_overrides:
                 value = self._parameter_overrides[name].value
+
+            if namespace:
+                name = f'{namespace}.{name}'
+
+            # Note(jubeira): declare_parameters verifies the name, but set_parameters doesn't.
+            validate_parameter_name(name)
 
             parameter_list.append(Parameter(name, value=value))
             descriptors.update({name: descriptor})
@@ -1593,7 +1593,7 @@ class Node:
         srv_name: str,
         *,
         qos_profile: QoSProfile = qos_profile_services_default,
-        callback_group: Optional[CallbackGroup] = None
+        callback_group: CallbackGroup = None
     ) -> Client:
         """
         Create a new service client.
@@ -1636,7 +1636,7 @@ class Node:
         callback: Callable[[SrvTypeRequest, SrvTypeResponse], SrvTypeResponse],
         *,
         qos_profile: QoSProfile = qos_profile_services_default,
-        callback_group: Optional[CallbackGroup] = None
+        callback_group: CallbackGroup = None
     ) -> Service:
         """
         Create a new service server.
@@ -1677,34 +1677,27 @@ class Node:
         self,
         timer_period_sec: float,
         callback: Callable,
-        callback_group: Optional[CallbackGroup] = None,
-        clock: Optional[Clock] = None,
-        autostart: bool = True,
+        callback_group: CallbackGroup = None,
+        clock: Clock = None,
     ) -> Timer:
         """
         Create a new timer.
 
-        If autostart is ``True`` (the default), the timer will be started and every
-        ``timer_period_sec`` number of seconds the provided callback function will be called.
-        If autostart is ``False``, the timer will be created but not started; it can then be
-        started by calling ``reset()`` on the timer object.
+        The timer will be started and every ``timer_period_sec`` number of seconds the provided
+        callback function will be called.
 
-        :param timer_period_sec: The period (in seconds) of the timer.
+        :param timer_period_sec: The period (s) of the timer.
         :param callback: A user-defined callback function that is called when the timer expires.
         :param callback_group: The callback group for the timer. If ``None``, then the
             default callback group for the node is used.
         :param clock: The clock which the timer gets time from.
-        :param autostart: Whether to automatically start the timer after creation; defaults to
-            ``True``.
         """
         timer_period_nsec = int(float(timer_period_sec) * S_TO_NS)
         if callback_group is None:
             callback_group = self.default_callback_group
         if clock is None:
             clock = self._clock
-        timer = Timer(
-            callback, callback_group, timer_period_nsec, clock, context=self.context,
-            autostart=autostart)
+        timer = Timer(callback, callback_group, timer_period_nsec, clock, context=self.context)
 
         callback_group.add_entity(timer)
         self._timers.append(timer)
@@ -1714,7 +1707,7 @@ class Node:
     def create_guard_condition(
         self,
         callback: Callable,
-        callback_group: Optional[CallbackGroup] = None
+        callback_group: CallbackGroup = None
     ) -> GuardCondition:
         """Create a new guard condition."""
         if callback_group is None:
@@ -1729,7 +1722,7 @@ class Node:
     def create_rate(
         self,
         frequency: float,
-        clock: Optional[Clock] = None,
+        clock: Clock = None,
     ) -> Rate:
         """
         Create a Rate object.

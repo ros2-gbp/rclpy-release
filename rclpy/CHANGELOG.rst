@@ -2,48 +2,22 @@
 Changelog for package rclpy
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-5.1.0 (2023-09-07)
+4.1.3 (2023-09-08)
 ------------------
-* Support to get remapped service name (`#1156 <https://github.com/ros2/rclpy/issues/1156>`_)
-* a couple of typo fixes. (`#1158 <https://github.com/ros2/rclpy/issues/1158>`_)
-* Fix get_type_description service bug and add a unit test (`#1155 <https://github.com/ros2/rclpy/issues/1155>`_)
-* Fix an inherent race in execution vs. destruction. (`#1150 <https://github.com/ros2/rclpy/issues/1150>`_)
-* Cleanup of test_node.py. (`#1153 <https://github.com/ros2/rclpy/issues/1153>`_)
-* Contributors: Barry Xu, Chris Lalancette, Emerson Knapp, Tomoya Fujita
+* Fix get_type_description service bug and add a unit test (`#1157 <https://github.com/ros2/rclpy/issues/1157>`_)
+* Avoid generating the exception when rcl_send_response times out. (`#1151 <https://github.com/ros2/rclpy/issues/1151>`_)
+* get_type_description service (`#1140 <https://github.com/ros2/rclpy/issues/1140>`_)
+* Contributors: Emerson Knapp, Tomoya Fujita
 
-5.0.1 (2023-08-21)
+4.1.2 (2023-07-14)
 ------------------
-* Avoid generating the exception when rcl_send_response times out. (`#1136 <https://github.com/ros2/rclpy/issues/1136>`_)
-* Store time source clocks in a set (`#1146 <https://github.com/ros2/rclpy/issues/1146>`_)
-* Fix spin_once_until_future_complete to quit when the future finishes. (`#1143 <https://github.com/ros2/rclpy/issues/1143>`_)
-* Contributors: Chris Lalancette, Luca Della Vedova, Tomoya Fujita
+* Include type hash in topic endpoint info (`#1134 <https://github.com/ros2/rclpy/issues/1134>`_)
+* Contributors: Hans-Joachim Krauch
 
-5.0.0 (2023-07-11)
+4.1.1 (2023-05-11)
 ------------------
-* get_type_description service (`#1139 <https://github.com/ros2/rclpy/issues/1139>`_)
-* Add in the ability to start timers paused. (`#1138 <https://github.com/ros2/rclpy/issues/1138>`_)
-* Modifies ros_timer_init for ros_timer_init2 (`#999 <https://github.com/ros2/rclpy/issues/999>`_)
-* Fix/param namespace association 894 (`#1132 <https://github.com/ros2/rclpy/issues/1132>`_)
-* Include type hash in topic endpoint info (`#1104 <https://github.com/ros2/rclpy/issues/1104>`_)
-* Contributors: Chris Lalancette, Eloy Briceno, Emerson Knapp, Hans-Joachim Krauch, M. Hofstätter
-
-4.2.2 (2023-06-07)
-------------------
-* Fix iteration over modified list (`#1129 <https://github.com/ros2/rclpy/issues/1129>`_)
-* making optional things Optional (`#974 <https://github.com/ros2/rclpy/issues/974>`_)
-* Fix type signature of Client.wait_for_service (`#1128 <https://github.com/ros2/rclpy/issues/1128>`_)
-* Contributors: Brian, Felix Divo
-
-4.2.1 (2023-05-11)
-------------------
-* Fix action server crash when the client goes away. (`#1114 <https://github.com/ros2/rclpy/issues/1114>`_)
-* Turn Executor into a ContextManager (`#1118 <https://github.com/ros2/rclpy/issues/1118>`_)
-* Turn Context into a ContextManager (`#1117 <https://github.com/ros2/rclpy/issues/1117>`_)
-* Fix type in Node init args (`#1115 <https://github.com/ros2/rclpy/issues/1115>`_)
-* Contributors: Chris Lalancette, Felix Divo, Russ
-
-4.2.0 (2023-04-27)
-------------------
+* Fix type in Node init args (`#1115 <https://github.com/ros2/rclpy/issues/1115>`_) (`#1122 <https://github.com/ros2/rclpy/issues/1122>`_)
+* Contributors: mergify[bot]
 
 4.1.0 (2023-04-18)
 ------------------

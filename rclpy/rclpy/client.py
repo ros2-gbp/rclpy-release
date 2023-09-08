@@ -15,7 +15,6 @@
 import threading
 import time
 from typing import Dict
-from typing import Optional
 from typing import TypeVar
 
 from rclpy.callback_groups import CallbackGroup
@@ -45,7 +44,7 @@ class Client:
         """
         Create a container for a ROS service client.
 
-        .. warning:: Users should not create a service client with this constructor, instead they
+        .. warning:: Users should not create a service client with this constuctor, instead they
            should call :meth:`.Node.create_client`.
 
         :param context: The context associated with the service client.
@@ -162,7 +161,7 @@ class Client:
         with self.handle:
             return self.__client.service_server_is_available()
 
-    def wait_for_service(self, timeout_sec: Optional[float] = None) -> bool:
+    def wait_for_service(self, timeout_sec: float = None) -> bool:
         """
         Wait for a service server to become ready.
 
@@ -203,11 +202,6 @@ class Client:
     @property
     def handle(self):
         return self.__client
-
-    @property
-    def service_name(self) -> str:
-        with self.handle:
-            return self.__client.service_name
 
     def destroy(self):
         self.__client.destroy_when_not_in_use()
