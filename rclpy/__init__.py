@@ -140,7 +140,7 @@ def create_node(
     node_name: str,
     *,
     context: Optional[Context] = None,
-    cli_args: List[str] = None,
+    cli_args: Optional[List[str]] = None,
     namespace: Optional[str] = None,
     use_global_arguments: bool = True,
     enable_rosout: bool = True,
@@ -206,6 +206,9 @@ def spin_once(
     If no executor is provided (ie. ``None``), then the global executor is used.
     It is possible the work done is for a node other than the one provided if the global executor
     has a partially completed coroutine.
+
+    This method should not be called from multiple threads with the same node or executor
+    argument.
 
     :param node: A node to add to the executor to check for work.
     :param executor: The executor to use, or the global executor if ``None``.
