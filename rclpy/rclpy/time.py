@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Tuple
-
 import builtin_interfaces.msg
 from rclpy.duration import Duration
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
@@ -23,14 +21,6 @@ CONVERSION_CONSTANT = 10 ** 9
 
 
 class Time:
-    """
-    Represents a point in time.
-
-    A ``Time`` object is the combination of a duration since an epoch, and a
-    clock type.
-    ``Time`` objects are only comparable with other time points from the same
-    type of clock.
-    """
 
     def __init__(
             self, *,
@@ -51,22 +41,21 @@ class Time:
         self._time_handle = _rclpy.rcl_time_point_t(total_nanoseconds, clock_type)
 
     @property
-    def nanoseconds(self) -> int:
-        """:return: the total number of nanoseconds since the clock's epoch."""
+    def nanoseconds(self):
         return self._time_handle.nanoseconds
 
-    def seconds_nanoseconds(self) -> Tuple[int, int]:
+    def seconds_nanoseconds(self):
         """
-        Get time separated into seconds and nanoseconds components.
+        Get time as separate seconds and nanoseconds components.
 
-        :return: 2-tuple seconds and nanoseconds
+        :returns: 2-tuple seconds and nanoseconds
+        :rtype: tuple(int, int)
         """
         nanoseconds = self.nanoseconds
         return (nanoseconds // CONVERSION_CONSTANT, nanoseconds % CONVERSION_CONSTANT)
 
     @property
-    def clock_type(self) -> _rclpy.ClockType:
-        """:return: the type of clock that produced this instance."""
+    def clock_type(self):
         return self._time_handle.clock_type
 
     def __repr__(self):
@@ -110,12 +99,14 @@ class Time:
             if self.clock_type != other.clock_type:
                 raise TypeError("Can't compare times with different clock types")
             return self.nanoseconds == other.nanoseconds
-        return NotImplemented
+        # Raise instead of returning NotImplemented to prevent comparison with invalid types,
+        # e.g. ints.
+        # Otherwise `Time(nanoseconds=5) == 5` will return False instead of raising, and this
+        # could lead to hard-to-find bugs.
+        raise TypeError("Can't compare time with object of type: ", type(other))
 
     def __ne__(self, other):
-        if isinstance(other, Time):
-            return not self.__eq__(other)
-        return NotImplemented
+        return not self.__eq__(other)
 
     def __lt__(self, other):
         if isinstance(other, Time):
@@ -145,27 +136,12 @@ class Time:
             return self.nanoseconds >= other.nanoseconds
         return NotImplemented
 
-    def to_msg(self) -> builtin_interfaces.msg.Time:
-        """
-        Create a ROS message instance from a ``Time`` object.
-
-        :rtype: builtin_interfaces.msg.Time
-        """
+    def to_msg(self):
         seconds, nanoseconds = self.seconds_nanoseconds()
         return builtin_interfaces.msg.Time(sec=seconds, nanosec=nanoseconds)
 
     @classmethod
-    def from_msg(
-        cls, msg: builtin_interfaces.msg.Time,
-        clock_type: _rclpy.ClockType = _rclpy.ClockType.ROS_TIME
-    ) -> 'Time':
-        """
-        Create a ``Time`` instance from a ROS message.
-
-        :param msg: the message instance to convert.
-        :type msg: builtin_interfaces.msg.Time
-        :rtype: Time
-        """
+    def from_msg(cls, msg, clock_type: _rclpy.ClockType = _rclpy.ClockType.ROS_TIME):
         if not isinstance(msg, builtin_interfaces.msg.Time):
             raise TypeError('Must pass a builtin_interfaces.msg.Time object')
         return cls(seconds=msg.sec, nanoseconds=msg.nanosec, clock_type=clock_type)

@@ -15,7 +15,6 @@
 from enum import IntEnum
 
 from rclpy.qos import QoSHistoryPolicy, QoSPresetProfiles, QoSProfile
-from rclpy.type_hash import TypeHash
 
 
 class TopicEndpointTypeEnum(IntEnum):
@@ -37,7 +36,6 @@ class TopicEndpointInfo:
         '_node_name',
         '_node_namespace',
         '_topic_type',
-        '_topic_type_hash',
         '_endpoint_type',
         '_endpoint_gid',
         '_qos_profile'
@@ -50,7 +48,6 @@ class TopicEndpointInfo:
         self.node_name = kwargs.get('node_name', '')
         self.node_namespace = kwargs.get('node_namespace', '')
         self.topic_type = kwargs.get('topic_type', '')
-        self.topic_type_hash = kwargs.get('topic_type_hash', TypeHash())
         self.endpoint_type = kwargs.get('endpoint_type', TopicEndpointTypeEnum.INVALID)
         self.endpoint_gid = kwargs.get('endpoint_gid', [])
         self.qos_profile = kwargs.get('qos_profile', QoSPresetProfiles.UNKNOWN.value)
@@ -99,25 +96,6 @@ class TopicEndpointInfo:
     def topic_type(self, value):
         assert isinstance(value, str)
         self._topic_type = value
-
-    @property
-    def topic_type_hash(self):
-        """
-        Get field 'topic_type_hash'.
-
-        :returns: topic_type_hash attribute
-        :rtype: TypeHash
-        """
-        return self._topic_type_hash
-
-    @topic_type_hash.setter
-    def topic_type_hash(self, value):
-        if isinstance(value, TypeHash):
-            self._topic_type_hash = value
-        elif isinstance(value, dict):
-            self._topic_type_hash = TypeHash(**value)
-        else:
-            assert False
 
     @property
     def endpoint_type(self):
@@ -189,7 +167,6 @@ class TopicEndpointInfo:
             f'Node name: {self.node_name}',
             f'Node namespace: {self.node_namespace}',
             f'Topic type: {self.topic_type}',
-            f'Topic type hash: {self.topic_type_hash}',
             f'Endpoint type: {self.endpoint_type.name}',
             f'GID: {gid}',
             'QoS profile:',
