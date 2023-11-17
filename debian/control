@@ -1,0 +1,12 @@
+Source: ros-iron-rclpy
+Section: misc
+Priority: optional
+Maintainer: Shane Loretz <sloretz@openrobotics.org>
+Build-Depends: debhelper (>= 9.0.0), python3-pytest <!nocheck>, ros-iron-ament-cmake, ros-iron-ament-cmake-gtest <!nocheck>, ros-iron-ament-cmake-pytest <!nocheck>, ros-iron-ament-lint-auto <!nocheck>, ros-iron-ament-lint-common <!nocheck>, ros-iron-lifecycle-msgs, ros-iron-pybind11-vendor, ros-iron-python-cmake-module, ros-iron-rcl, ros-iron-rcl-action, ros-iron-rcl-interfaces, ros-iron-rcl-lifecycle, ros-iron-rcl-logging-interface, ros-iron-rcl-yaml-param-parser, ros-iron-rcpputils, ros-iron-rcutils, ros-iron-rmw, ros-iron-rmw-implementation, ros-iron-rmw-implementation-cmake, ros-iron-rosidl-generator-py <!nocheck>, ros-iron-rosidl-runtime-c, ros-iron-test-msgs <!nocheck>, ros-iron-unique-identifier-msgs, ros-iron-ros-workspace
+Homepage: 
+Standards-Version: 3.9.2
+
+Package: ros-iron-rclpy
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, ros-iron-action-msgs, ros-iron-ament-index-python, ros-iron-builtin-interfaces, ros-iron-lifecycle-msgs, ros-iron-rcl, ros-iron-rcl-action, ros-iron-rcl-interfaces, ros-iron-rcl-lifecycle, ros-iron-rcl-logging-interface, ros-iron-rcl-yaml-param-parser, ros-iron-rmw, ros-iron-rmw-implementation, ros-iron-rosgraph-msgs, ros-iron-rosidl-runtime-c, ros-iron-rpyutils, ros-iron-unique-identifier-msgs, ros-iron-ros-workspace
+Description: Package containing the Python client.
