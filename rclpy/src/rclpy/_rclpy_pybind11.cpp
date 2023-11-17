@@ -15,6 +15,7 @@
 #include <pybind11/pybind11.h>
 
 #include <rcl/domain_id.h>
+#include <rcl/service_introspection.h>
 #include <rcl/time.h>
 #include <rcl_action/types.h>
 
@@ -30,6 +31,7 @@
 #include "destroyable.hpp"
 #include "duration.hpp"
 #include "clock_event.hpp"
+#include "event_handle.hpp"
 #include "exceptions.hpp"
 #include "graph.hpp"
 #include "guard_condition.hpp"
@@ -40,14 +42,15 @@
 #include "node.hpp"
 #include "publisher.hpp"
 #include "qos.hpp"
-#include "qos_event.hpp"
 #include "serialization.hpp"
 #include "service.hpp"
 #include "service_info.hpp"
+#include "service_introspection.hpp"
 #include "signal_handler.hpp"
 #include "subscription.hpp"
 #include "time_point.hpp"
 #include "timer.hpp"
+#include "type_description_service.hpp"
 #include "utils.hpp"
 #include "wait_set.hpp"
 
@@ -73,6 +76,10 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
 
   m.attr("RCL_DEFAULT_DOMAIN_ID") = py::int_(RCL_DEFAULT_DOMAIN_ID);
   m.attr("RMW_DURATION_INFINITE") = py::int_(rmw_time_total_nsec(RMW_DURATION_INFINITE));
+  m.attr("RMW_QOS_DEADLINE_BEST_AVAILABLE") = py::int_(
+    rmw_time_total_nsec(RMW_QOS_DEADLINE_BEST_AVAILABLE));
+  m.attr("RMW_QOS_LIVELINESS_LEASE_DURATION_BEST_AVAILABLE") = py::int_(
+    rmw_time_total_nsec(RMW_QOS_LIVELINESS_LEASE_DURATION_BEST_AVAILABLE));
 
   py::enum_<rcl_clock_change_t>(m, "ClockChange")
   .value(
@@ -115,6 +122,8 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
   py::register_exception<rclpy::InvalidHandle>(
     m, "InvalidHandle", PyExc_RuntimeError);
 
+  rclpy::define_service_introspection(m);
+
   rclpy::define_client(m);
 
   rclpy::define_context(m);
@@ -124,6 +133,8 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
   rclpy::define_publisher(m);
 
   rclpy::define_service(m);
+
+  rclpy::define_type_description_service(m);
 
   rclpy::define_service_info(m);
 
@@ -208,7 +219,7 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
     "Deserialize a ROS message.");
 
   rclpy::define_node(m);
-  rclpy::define_qos_event(m);
+  rclpy::define_event_handle(m);
 
   m.def(
     "rclpy_get_rmw_implementation_identifier",
