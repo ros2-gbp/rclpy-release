@@ -1,3 +1,26 @@
+## rclpy (rolling) - 7.0.0-1
+
+The packages in the `rclpy` repository were released into the `rolling` distro by running `/usr/bin/bloom-release --track rolling --rosdistro rolling rclpy` on `Tue, 26 Dec 2023 17:11:54 -0000`
+
+The `rclpy` package was released.
+
+Version of package(s) in repository `rclpy`:
+
+- upstream repository: https://github.com/ros2/rclpy.git
+- release repository: https://github.com/ros2-gbp/rclpy-release.git
+- rosdistro version: `6.0.0-1`
+- old version: `6.0.0-1`
+- new version: `7.0.0-1`
+
+Versions of tools used:
+
+- bloom version: `0.11.2`
+- catkin_pkg version: `1.0.0`
+- rosdep version: `0.22.2`
+- rosdistro version: `0.9.0`
+- vcstools version: `0.1.42`
+
+
 ## rclpy (iron) - 4.1.4-1
 
 The packages in the `rclpy` repository were released into the `iron` distro by running `/usr/bin/bloom-release --rosdistro iron rclpy` on `Fri, 17 Nov 2023 03:39:08 -0000`
