@@ -31,7 +31,7 @@ from rcl_interfaces.msg import ParameterValue
 from rcl_interfaces.msg import SetParametersResult
 from rcl_interfaces.srv import GetParameters
 import rclpy
-from rclpy.clock import ClockType
+from rclpy.clock_type import ClockType
 from rclpy.duration import Duration
 from rclpy.exceptions import InvalidParameterException
 from rclpy.exceptions import InvalidParameterTypeException
@@ -731,6 +731,16 @@ class TestNode(unittest.TestCase):
         with self.assertRaises(TypeError):
             self.node.declare_parameter(
                 'wrong_parameter_descriptor_type', 1, ParameterValue())
+
+        with self.assertRaises(ValueError):
+            self.node.declare_parameter(
+                'static_typing_wo_default_value',
+                descriptor=ParameterDescriptor(type=ParameterType.PARAMETER_NOT_SET))
+
+        with self.assertRaises(ValueError):
+            self.node.declare_parameter(
+                'static_typing_wo_default_value',
+                descriptor=ParameterDescriptor(type=ParameterType.PARAMETER_STRING))
 
         with self.assertRaises(ValueError):
             self.node.declare_parameter(
