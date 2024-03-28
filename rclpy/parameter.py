@@ -17,6 +17,9 @@ from enum import Enum
 from typing import Dict
 from typing import List
 from typing import Optional
+from typing import Tuple
+from typing import TYPE_CHECKING
+from typing import Union
 
 from rcl_interfaces.msg import Parameter as ParameterMsg
 from rcl_interfaces.msg import ParameterType
@@ -24,6 +27,14 @@ from rcl_interfaces.msg import ParameterValue
 import yaml
 
 PARAMETER_SEPARATOR_STRING = '.'
+
+if TYPE_CHECKING:
+    AllowableParameterValue = Union[None, bool, int, float, str,
+                                    List[bytes], Tuple[bytes, ...],
+                                    List[bool], Tuple[bool, ...],
+                                    List[int], Tuple[int, ...], array.array[int],
+                                    List[float], Tuple[float, ...], array.array[float],
+                                    List[str], Tuple[str, ...], array.array[str]]
 
 
 class Parameter:
@@ -308,7 +319,7 @@ def parameter_dict_from_yaml_file(
 
         for n in param_keys:
             value = param_file[n]
-            if type(value) != dict or 'ros__parameters' not in value:
+            if not isinstance(value, dict) or 'ros__parameters' not in value:
                 raise RuntimeError(f'YAML file is not a valid ROS parameter file for node {n}')
             param_dict.update(value['ros__parameters'])
         return _unpack_parameter_dict(namespace, param_dict)
@@ -326,7 +337,7 @@ def _unpack_parameter_dict(namespace, parameter_dict):
     for param_name, param_value in parameter_dict.items():
         full_param_name = namespace + param_name
         # Unroll nested parameters
-        if type(param_value) == dict:
+        if isinstance(param_value, dict):
             parameters.update(_unpack_parameter_dict(
                     namespace=full_param_name + PARAMETER_SEPARATOR_STRING,
                     parameter_dict=param_value))
