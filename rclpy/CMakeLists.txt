@@ -188,7 +188,6 @@ if(BUILD_TESTING)
       test/test_parameter.py
       test/test_parameter_client.py
       test/test_parameter_service.py
-      test/test_parameter_event_handler.py
       test/test_publisher.py
       test/test_qos.py
       test/test_qos_event.py
@@ -196,7 +195,6 @@ if(BUILD_TESTING)
       test/test_rate.py
       test/test_rosout_subscription.py
       test/test_serialization.py
-      test/test_service.py
       test/test_service_introspection.py
       test/test_subscription.py
       test/test_task.py
