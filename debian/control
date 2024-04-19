@@ -1,0 +1,12 @@
+Source: ros-jazzy-rclpy
+Section: misc
+Priority: optional
+Maintainer: Shane Loretz <sloretz@openrobotics.org>
+Build-Depends: debhelper (>= 9.0.0), ament-cmake, ament-cmake-copyright <!nocheck>, ament-cmake-cppcheck <!nocheck>, ament-cmake-cpplint <!nocheck>, ament-cmake-flake8 <!nocheck>, ament-cmake-googletest <!nocheck>, ament-cmake-lint-cmake <!nocheck>, ament-cmake-pep257 <!nocheck>, ament-cmake-pytest <!nocheck>, ament-cmake-uncrustify <!nocheck>, ament-cmake-xmllint <!nocheck>, ament-lint <!nocheck>, librcpputils-dev, librcutils-dev, librosidl-runtime-c-cpp-dev, pybind11-dev, python3-pytest <!nocheck>, python3-rcutils, ros-jazzy-lifecycle-msgs, ros-jazzy-python-cmake-module, ros-jazzy-rcl, ros-jazzy-rcl-action, ros-jazzy-rcl-interfaces, ros-jazzy-rcl-lifecycle, ros-jazzy-rcl-logging-interface, ros-jazzy-rcl-yaml-param-parser, ros-jazzy-rmw, ros-jazzy-rmw-implementation, ros-jazzy-rmw-implementation-cmake, ros-jazzy-rosidl-generator-py <!nocheck>, ros-jazzy-test-msgs <!nocheck>, ros-jazzy-unique-identifier-msgs, ros-jazzy-ros-workspace
+Homepage: 
+Standards-Version: 3.9.2
+
+Package: ros-jazzy-rclpy
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, libros-rosgraph-msgs-dev, librosidl-runtime-c-cpp-dev, python3-ament-index, python3-rosgraph-msgs, python3-yaml, ros-jazzy-action-msgs, ros-jazzy-builtin-interfaces, ros-jazzy-lifecycle-msgs, ros-jazzy-rcl, ros-jazzy-rcl-action, ros-jazzy-rcl-interfaces, ros-jazzy-rcl-lifecycle, ros-jazzy-rcl-logging-interface, ros-jazzy-rcl-yaml-param-parser, ros-jazzy-rmw, ros-jazzy-rmw-implementation, ros-jazzy-rpyutils, ros-jazzy-unique-identifier-msgs, ros-rosgraph-msgs, ros-jazzy-ros-workspace
+Description: Package containing the Python client.
