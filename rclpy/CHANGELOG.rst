@@ -2,6 +2,9 @@
 Changelog for package rclpy
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+7.2.0 (2024-04-26)
+------------------
+
 7.1.1 (2024-04-16)
 ------------------
 * Clock.py types. (`#1244 <https://github.com/ros2/rclpy/issues/1244>`_)
