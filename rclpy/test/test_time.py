@@ -14,7 +14,7 @@
 
 import unittest
 
-from rclpy.clock_type import ClockType
+from rclpy.clock import ClockType
 from rclpy.duration import Duration
 from rclpy.duration import Infinite
 from rclpy.time import Time
@@ -146,10 +146,13 @@ class TestTime(unittest.TestCase):
 
         # Invalid combinations
         time1 = Time(nanoseconds=1)
-        self.assertFalse(time1 == 1)
-        duration = Duration(nanoseconds=1)
-        self.assertFalse(time1 == duration)
-        self.assertTrue(time1 != duration)
+        with self.assertRaises(TypeError):
+            time1 == 1
+        duration = Duration()
+        with self.assertRaises(TypeError):
+            time1 == duration
+        with self.assertRaises(TypeError):
+            time1 != duration
         with self.assertRaises(TypeError):
             time1 > duration
         with self.assertRaises(TypeError):
@@ -175,10 +178,13 @@ class TestTime(unittest.TestCase):
 
         # Invalid combinations
         duration1 = Duration(nanoseconds=1)
-        self.assertFalse(duration1 == 1)
-        time = Time(nanoseconds=1)
-        self.assertFalse(duration1 == time)
-        self.assertTrue(duration1 != time)
+        with self.assertRaises(TypeError):
+            duration1 == 1
+        time = Time()
+        with self.assertRaises(TypeError):
+            duration1 == time
+        with self.assertRaises(TypeError):
+            duration1 != time
         with self.assertRaises(TypeError):
             duration1 > time
         with self.assertRaises(TypeError):

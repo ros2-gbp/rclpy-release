@@ -16,10 +16,10 @@ from typing import TypeVar, Union
 
 from rclpy.callback_groups import CallbackGroup
 from rclpy.duration import Duration
-from rclpy.event_handler import EventHandler
-from rclpy.event_handler import PublisherEventCallbacks
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.qos import QoSProfile
+from rclpy.qos_event import PublisherEventCallbacks
+from rclpy.qos_event import QoSEventHandler
 
 MsgType = TypeVar('MsgType')
 
@@ -38,7 +38,7 @@ class Publisher:
         """
         Create a container for a ROS publisher.
 
-        .. warning:: Users should not create a publisher with this constructor, instead they should
+        .. warning:: Users should not create a publisher with this constuctor, instead they should
            call :meth:`.Node.create_publisher`.
 
         A publisher is used as a primary means of communication in a ROS system by publishing
@@ -54,7 +54,7 @@ class Publisher:
         self.topic = topic
         self.qos_profile = qos_profile
 
-        self.event_handlers: EventHandler = event_callbacks.create_event_handlers(
+        self.event_handlers: QoSEventHandler = event_callbacks.create_event_handlers(
             callback_group, publisher_impl, topic)
 
     def publish(self, msg: Union[MsgType, bytes]) -> None:
@@ -88,12 +88,6 @@ class Publisher:
         return self.__publisher
 
     def destroy(self):
-        """
-        Destroy a container for a ROS publisher.
-
-        .. warning:: Users should not destroy a publisher with this method, instead they should
-           call :meth:`.Node.destroy_publisher`.
-        """
         for handler in self.event_handlers:
             handler.destroy()
         self.__publisher.destroy_when_not_in_use()
