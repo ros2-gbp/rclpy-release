@@ -12,28 +12,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Callable
-from typing import TypeVar
+
+from enum import Enum
+import inspect
+from types import TracebackType
+from typing import Callable, Generic, List, Optional, Type, TypeVar
 
 from rclpy.callback_groups import CallbackGroup
+from rclpy.event_handler import EventHandler, SubscriptionEventCallbacks
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.qos import QoSProfile
-from rclpy.qos_event import QoSEventHandler
-from rclpy.qos_event import SubscriptionEventCallbacks
+from rclpy.type_support import MsgT
 
 
-# For documentation only
+# Left to support Legacy TypeVars.
 MsgType = TypeVar('MsgType')
 
 
-class Subscription:
+class Subscription(Generic[MsgT]):
+
+    class CallbackType(Enum):
+        MessageOnly = 0
+        WithMessageInfo = 1
 
     def __init__(
          self,
          subscription_impl: _rclpy.Subscription,
-         msg_type: MsgType,
+         msg_type: Type[MsgT],
          topic: str,
-         callback: Callable,
+         callback: Callable[[MsgT], None],
          callback_group: CallbackGroup,
          qos_profile: QoSProfile,
          raw: bool,
@@ -67,14 +74,25 @@ class Subscription:
         self.qos_profile = qos_profile
         self.raw = raw
 
-        self.event_handlers: QoSEventHandler = event_callbacks.create_event_handlers(
+        self.event_handlers: List[EventHandler] = event_callbacks.create_event_handlers(
             callback_group, subscription_impl, topic)
+
+    def get_publisher_count(self) -> int:
+        """Get the number of publishers that this subscription has."""
+        with self.handle:
+            return self.__subscription.get_publisher_count()
 
     @property
     def handle(self):
         return self.__subscription
 
     def destroy(self):
+        """
+        Destroy a container for a ROS subscription.
+
+        .. warning:: Users should not destroy a subscription with this method, instead they
+           should call :meth:`.Node.destroy_subscription`.
+        """
         for handler in self.event_handlers:
             handler.destroy()
         self.handle.destroy_when_not_in_use()
@@ -83,3 +101,37 @@ class Subscription:
     def topic_name(self):
         with self.handle:
             return self.__subscription.get_topic_name()
+
+    @property
+    def callback(self) -> Callable[[MsgT], None]:
+        return self._callback
+
+    @callback.setter
+    def callback(self, value: Callable[[MsgT], None]) -> None:
+        self._callback = value
+        self._callback_type = Subscription.CallbackType.MessageOnly
+        try:
+            inspect.signature(value).bind(object())
+            return
+        except TypeError:
+            pass
+        try:
+            inspect.signature(value).bind(object(), object())
+            self._callback_type = Subscription.CallbackType.WithMessageInfo
+            return
+        except TypeError:
+            pass
+        raise RuntimeError(
+            'Subscription.__init__(): callback should be either be callable with one argument'
+            '(to get only the message) or two (to get message and message info)')
+
+    def __enter__(self) -> 'Subscription':
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
+        self.destroy()
