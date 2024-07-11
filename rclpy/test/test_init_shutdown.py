@@ -22,7 +22,6 @@ from rclpy.signals import SignalHandlerOptions
 def test_init():
     context = rclpy.context.Context()
     rclpy.init(context=context)
-    assert context.ok()
     rclpy.shutdown(context=context)
 
 
@@ -48,19 +47,15 @@ def test_init_with_non_utf8_arguments():
 def test_init_shutdown_sequence():
     context = rclpy.context.Context()
     rclpy.init(context=context)
-    assert context.ok()
     rclpy.shutdown(context=context)
     context = rclpy.context.Context()  # context cannot be reused but should not interfere
     rclpy.init(context=context)
-    assert context.ok()
     rclpy.shutdown(context=context)
 
     # global
     rclpy.init()
-    assert rclpy.ok()
     rclpy.shutdown()
     rclpy.init()
-    assert rclpy.ok()
     rclpy.shutdown()
 
 
@@ -77,7 +72,6 @@ def test_double_init():
 def test_double_shutdown():
     context = rclpy.context.Context()
     rclpy.init(context=context)
-    assert context.ok()
     rclpy.shutdown(context=context)
     with pytest.raises(RuntimeError):
         rclpy.shutdown(context=context)
@@ -109,9 +103,3 @@ def test_signal_handlers():
 def test_init_with_invalid_domain_id():
     with pytest.raises(RuntimeError):
         rclpy.init(domain_id=-1)
-
-
-def test_managed_init():
-    with rclpy.init(domain_id=123) as init:
-        assert init.context.get_domain_id() == 123
-        assert init.context.ok()

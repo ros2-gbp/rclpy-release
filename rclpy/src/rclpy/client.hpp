@@ -105,10 +105,6 @@ public:
   void
   destroy() override;
 
-  /// Get the service name.
-  const char *
-  get_service_name();
-
 private:
   Node node_;
   std::shared_ptr<rcl_client_t> rcl_client_;

@@ -12,10 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from types import TracebackType
 from typing import Callable
-from typing import Optional
-from typing import Type
 from typing import TypeVar
 
 from rclpy.callback_groups import CallbackGroup
@@ -43,7 +40,7 @@ class Service:
         """
         Create a container for a ROS service server.
 
-        .. warning:: Users should not create a service server with this constructor, instead they
+        .. warning:: Users should not create a service server with this constuctor, instead they
            should call :meth:`.Node.create_service`.
 
         :param service_impl: :class:`_rclpy.Service` wrapping the underlying ``rcl_service_t``
@@ -105,27 +102,5 @@ class Service:
     def handle(self):
         return self.__service
 
-    @property
-    def service_name(self) -> str:
-        with self.handle:
-            return self.__service.name
-
     def destroy(self):
-        """
-        Destroy a container for a ROS service server.
-
-        .. warning:: Users should not destroy a service server with this destructor, instead they
-           should call :meth:`.Node.destroy_service`.
-        """
         self.__service.destroy_when_not_in_use()
-
-    def __enter__(self) -> 'Service':
-        return self
-
-    def __exit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
-    ) -> None:
-        self.destroy()

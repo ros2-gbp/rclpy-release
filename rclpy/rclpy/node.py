@@ -15,7 +15,6 @@
 import math
 import time
 
-from types import TracebackType
 from typing import Any
 from typing import Callable
 from typing import Dict
@@ -33,14 +32,12 @@ import weakref
 
 from rcl_interfaces.msg import FloatingPointRange
 from rcl_interfaces.msg import IntegerRange
-from rcl_interfaces.msg import ListParametersResult
 from rcl_interfaces.msg import Parameter as ParameterMsg
 from rcl_interfaces.msg import ParameterDescriptor
 from rcl_interfaces.msg import ParameterEvent
 from rcl_interfaces.msg import ParameterType
 from rcl_interfaces.msg import ParameterValue
 from rcl_interfaces.msg import SetParametersResult
-from rcl_interfaces.srv import ListParameters
 
 from rclpy.callback_groups import CallbackGroup
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
@@ -84,7 +81,6 @@ from rclpy.topic_endpoint_info import TopicEndpointInfo
 from rclpy.type_description_service import TypeDescriptionService
 from rclpy.type_support import check_is_valid_msg_type
 from rclpy.type_support import check_is_valid_srv_type
-from rclpy.type_support import MsgT
 from rclpy.utilities import get_default_context
 from rclpy.validate_full_topic_name import validate_full_topic_name
 from rclpy.validate_namespace import validate_namespace
@@ -95,9 +91,8 @@ from rclpy.waitable import Waitable
 
 HIDDEN_NODE_PREFIX = '_'
 
-# Left to support Legacy TypeVar.
+# Used for documentation purposes only
 MsgType = TypeVar('MsgType')
-
 SrvType = TypeVar('SrvType')
 SrvTypeRequest = TypeVar('SrvTypeRequest')
 SrvTypeResponse = TypeVar('SrvTypeResponse')
@@ -125,9 +120,9 @@ class Node:
         self,
         node_name: str,
         *,
-        context: Optional[Context] = None,
-        cli_args: Optional[List[str]] = None,
-        namespace: Optional[str] = None,
+        context: Context = None,
+        cli_args: List[str] = None,
+        namespace: str = None,
         use_global_arguments: bool = True,
         enable_rosout: bool = True,
         start_parameter_services: bool = True,
@@ -246,8 +241,6 @@ class Node:
             self._logger_service = LoggingService(self)
 
         self._type_description_service = TypeDescriptionService(self)
-
-        self._context.track_node(self)
 
     @property
     def publishers(self) -> Iterator[Publisher]:
@@ -463,19 +456,13 @@ class Node:
             # Get the values from the tuple, checking its types.
             # Use defaults if the tuple doesn't contain value and / or descriptor.
             name = parameter_tuple[0]
+            second_arg = parameter_tuple[1] if 1 < len(parameter_tuple) else None
+            descriptor = parameter_tuple[2] if 2 < len(parameter_tuple) else ParameterDescriptor()
+
             if not isinstance(name, str):
                 raise TypeError(
                         f'First element {name} at index {index} in parameters list '
                         'is not a str.')
-            if namespace:
-                name = f'{namespace}.{name}'
-
-            # Note(jubeira): declare_parameters verifies the name, but set_parameters doesn't.
-            validate_parameter_name(name)
-
-            second_arg = parameter_tuple[1] if 1 < len(parameter_tuple) else None
-            descriptor = parameter_tuple[2] if 2 < len(parameter_tuple) else ParameterDescriptor()
-
             if not isinstance(descriptor, ParameterDescriptor):
                 raise TypeError(
                     f'Third element {descriptor} at index {index} in parameters list '
@@ -504,20 +491,26 @@ class Node:
                 descriptor.type = second_arg.value
             else:
                 value = second_arg
-                if not descriptor.dynamic_typing:
+                if not descriptor.dynamic_typing and value is not None:
                     # infer type from default value
-                    if isinstance(value, ParameterValue):
-                        descriptor.type = value.type
-                    else:
+                    if not isinstance(value, ParameterValue):
                         descriptor.type = Parameter.Type.from_parameter_value(value).value
-                    if descriptor.type == ParameterType.PARAMETER_NOT_SET:
-                        raise ValueError(
-                            'Cannot declare a statically typed parameter with default value '
-                            'of type PARAMETER_NOT_SET')
+                    else:
+                        if value.type == ParameterType.PARAMETER_NOT_SET:
+                            raise ValueError(
+                                'Cannot declare a statically typed parameter with default value '
+                                'of type PARAMETER_NOT_SET')
+                        descriptor.type = value.type
 
             # Get value from parameter overrides, of from tuple if it doesn't exist.
             if not ignore_override and name in self._parameter_overrides:
                 value = self._parameter_overrides[name].value
+
+            if namespace:
+                name = f'{namespace}.{name}'
+
+            # Note(jubeira): declare_parameters verifies the name, but set_parameters doesn't.
+            validate_parameter_name(name)
 
             parameter_list.append(Parameter(name, value=value))
             descriptors.update({name: descriptor})
@@ -960,66 +953,6 @@ class Node:
 
             # call post set parameter registered callbacks
             self._call_post_set_parameters_callback(parameter_list)
-
-        return result
-
-    def list_parameters(
-        self,
-        prefixes: List[str],
-        depth: int
-    ) -> ListParametersResult:
-        """
-        Get a list of parameter names and their prefixes.
-
-        :param prefixes: A list of prefixes to filter the parameter names.
-            Only the parameter names that start with any of the prefixes are returned.
-            If empty, all parameter names are returned.
-        :param depth: The depth of nested parameter names to include.
-        :return: The list of parameter names and their prefixes.
-        :raises: TypeError if the type of any of the passed arguments is not an expected type.
-        :raises: ValueError if depth is a negative integer.
-        """
-        if not isinstance(prefixes, list):
-            raise TypeError('The prefixes argument must be a list')
-        if not all(isinstance(prefix, str) for prefix in prefixes):
-            raise TypeError('All prefixes must be instances of type str')
-        if not isinstance(depth, int):
-            raise TypeError('The depth must be instance of type int')
-        if depth < 0:
-            raise ValueError('The depth must be greater than or equal to zero')
-
-        result = ListParametersResult()
-
-        separator_less_than_depth: Callable[[str], bool] = \
-            lambda s: s.count(PARAMETER_SEPARATOR_STRING) < depth
-
-        recursive: bool = \
-            (len(prefixes) == 0) and (depth == ListParameters.Request.DEPTH_RECURSIVE)
-
-        for param_name in self._parameters.keys():
-            if not recursive:
-                get_all: bool = (len(prefixes) == 0) and (separator_less_than_depth(param_name))
-                if not get_all:
-                    prefix_matches = any(
-                        param_name == prefix or
-                        (
-                            param_name.startswith(prefix+PARAMETER_SEPARATOR_STRING) and
-                            (
-                                depth == ListParameters.Request.DEPTH_RECURSIVE or
-                                separator_less_than_depth(param_name[len(prefix)+1:])
-                            )
-                        )
-                        for prefix in prefixes
-                    )
-                    if not prefix_matches:
-                        continue
-
-            result.names.append(param_name)
-            last_separator = param_name.rfind(PARAMETER_SEPARATOR_STRING)
-            if last_separator != -1:
-                prefix = param_name[:last_separator]
-                if prefix not in result.prefixes:
-                    result.prefixes.append(prefix)
 
         return result
 
@@ -1504,7 +1437,7 @@ class Node:
 
     def create_publisher(
         self,
-        msg_type: Type[MsgT],
+        msg_type,
         topic: str,
         qos_profile: Union[QoSProfile, int],
         *,
@@ -1512,7 +1445,7 @@ class Node:
         event_callbacks: Optional[PublisherEventCallbacks] = None,
         qos_overriding_options: Optional[QoSOverridingOptions] = None,
         publisher_class: Type[Publisher] = Publisher,
-    ) -> Publisher[MsgT]:
+    ) -> Publisher:
         """
         Create a new publisher.
 
@@ -1578,16 +1511,16 @@ class Node:
 
     def create_subscription(
         self,
-        msg_type: Type[MsgT],
+        msg_type,
         topic: str,
-        callback: Callable[[MsgT], None],
+        callback: Callable[[MsgType], None],
         qos_profile: Union[QoSProfile, int],
         *,
         callback_group: Optional[CallbackGroup] = None,
         event_callbacks: Optional[SubscriptionEventCallbacks] = None,
         qos_overriding_options: Optional[QoSOverridingOptions] = None,
         raw: bool = False
-    ) -> Subscription[MsgT]:
+    ) -> Subscription:
         """
         Create a new subscription.
 
@@ -1660,7 +1593,7 @@ class Node:
         srv_name: str,
         *,
         qos_profile: QoSProfile = qos_profile_services_default,
-        callback_group: Optional[CallbackGroup] = None
+        callback_group: CallbackGroup = None
     ) -> Client:
         """
         Create a new service client.
@@ -1703,7 +1636,7 @@ class Node:
         callback: Callable[[SrvTypeRequest, SrvTypeResponse], SrvTypeResponse],
         *,
         qos_profile: QoSProfile = qos_profile_services_default,
-        callback_group: Optional[CallbackGroup] = None
+        callback_group: CallbackGroup = None
     ) -> Service:
         """
         Create a new service server.
@@ -1744,34 +1677,27 @@ class Node:
         self,
         timer_period_sec: float,
         callback: Callable,
-        callback_group: Optional[CallbackGroup] = None,
-        clock: Optional[Clock] = None,
-        autostart: bool = True,
+        callback_group: CallbackGroup = None,
+        clock: Clock = None,
     ) -> Timer:
         """
         Create a new timer.
 
-        If autostart is ``True`` (the default), the timer will be started and every
-        ``timer_period_sec`` number of seconds the provided callback function will be called.
-        If autostart is ``False``, the timer will be created but not started; it can then be
-        started by calling ``reset()`` on the timer object.
+        The timer will be started and every ``timer_period_sec`` number of seconds the provided
+        callback function will be called.
 
-        :param timer_period_sec: The period (in seconds) of the timer.
+        :param timer_period_sec: The period (s) of the timer.
         :param callback: A user-defined callback function that is called when the timer expires.
         :param callback_group: The callback group for the timer. If ``None``, then the
             default callback group for the node is used.
         :param clock: The clock which the timer gets time from.
-        :param autostart: Whether to automatically start the timer after creation; defaults to
-            ``True``.
         """
         timer_period_nsec = int(float(timer_period_sec) * S_TO_NS)
         if callback_group is None:
             callback_group = self.default_callback_group
         if clock is None:
             clock = self._clock
-        timer = Timer(
-            callback, callback_group, timer_period_nsec, clock, context=self.context,
-            autostart=autostart)
+        timer = Timer(callback, callback_group, timer_period_nsec, clock, context=self.context)
 
         callback_group.add_entity(timer)
         self._timers.append(timer)
@@ -1781,14 +1707,9 @@ class Node:
     def create_guard_condition(
         self,
         callback: Callable,
-        callback_group: Optional[CallbackGroup] = None
+        callback_group: CallbackGroup = None
     ) -> GuardCondition:
-        """
-        Create a new guard condition.
-
-        .. warning:: Users should call :meth:`.Node.destroy_guard_condition` to destroy
-           the GuardCondition object.
-        """
+        """Create a new guard condition."""
         if callback_group is None:
             callback_group = self.default_callback_group
         guard = GuardCondition(callback, callback_group, context=self.context)
@@ -1801,12 +1722,10 @@ class Node:
     def create_rate(
         self,
         frequency: float,
-        clock: Optional[Clock] = None,
+        clock: Clock = None,
     ) -> Rate:
         """
         Create a Rate object.
-
-        .. warning:: Users should call :meth:`.Node.destroy_rate` to destroy the Rate object.
 
         :param frequency: The frequency the Rate runs at (Hz).
         :param clock: The clock the Rate gets time from.
@@ -1946,8 +1865,6 @@ class Node:
         * :func:`create_guard_condition`
 
         """
-        self._context.untrack_node(self)
-
         # Drop extra reference to parameter event publisher.
         # It will be destroyed with other publishers below.
         self._parameter_event_publisher = None
@@ -2165,42 +2082,6 @@ class Node:
             return self._count_publishers_or_subscribers(
                 topic_name, self.handle.get_count_subscribers)
 
-    def _count_clients_or_servers(self, service_name, func):
-        fq_service_name = expand_topic_name(service_name, self.get_name(), self.get_namespace())
-        validate_full_topic_name(fq_service_name, is_service=True)
-        with self.handle:
-            return func(fq_service_name)
-
-    def count_clients(self, service_name: str) -> int:
-        """
-        Return the number of clients on a given service.
-
-        `service_name` may be a relative, private, or fully qualified service name.
-        A relative or private service is expanded using this node's namespace and name.
-        The queried service name is not remapped.
-
-        :param service_name: the service_name on which to count the number of clients.
-        :return: the number of clients on the service.
-        """
-        with self.handle:
-            return self._count_clients_or_servers(
-                service_name, self.handle.get_count_clients)
-
-    def count_services(self, service_name: str) -> int:
-        """
-        Return the number of servers on a given service.
-
-        `service_name` may be a relative, private, or fully qualified service name.
-        A relative or private service is expanded using this node's namespace and name.
-        The queried service name is not remapped.
-
-        :param service_name: the service_name on which to count the number of clients.
-        :return: the number of servers on the service.
-        """
-        with self.handle:
-            return self._count_clients_or_servers(
-                service_name, self.handle.get_count_services)
-
     def _get_info_by_topic(
         self,
         topic_name: str,
@@ -2307,14 +2188,3 @@ class Node:
             flag = fully_qualified_node_name in fully_qualified_node_names
             time.sleep(0.1)
         return flag
-
-    def __enter__(self) -> 'Node':
-        return self
-
-    def __exit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
-    ) -> None:
-        self.destroy_node()

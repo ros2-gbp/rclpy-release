@@ -21,7 +21,6 @@ import warnings
 
 import rclpy
 from rclpy.callback_groups import ReentrantCallbackGroup
-from rclpy.executors import Executor
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.executors import ShutdownException
 from rclpy.executors import SingleThreadedExecutor
@@ -39,7 +38,6 @@ class TestExecutor(unittest.TestCase):
     def tearDown(self):
         self.node.destroy_node()
         rclpy.shutdown(context=self.context)
-        self.context.destroy()
 
     def func_execution(self, executor):
         got_callback = False
@@ -506,78 +504,6 @@ class TestExecutor(unittest.TestCase):
         t.start()
         self.assertTrue(shutdown_event.wait(120))
         self.node.destroy_timer(tmr)
-
-    def test_context_manager(self):
-        self.assertIsNotNone(self.node.handle)
-
-        executor: Executor = SingleThreadedExecutor(context=self.context)
-
-        with executor as the_executor:
-            # Make sure the correct instance is returned
-            assert the_executor is executor
-
-            assert not executor._is_shutdown, 'the executor should not be shut down'
-
-        assert executor._is_shutdown, 'the executor should now be shut down'
-
-        # Make sure it does not raise (smoke test)
-        executor.shutdown()
-
-    def test_single_threaded_spin_once_until_future(self):
-        self.assertIsNotNone(self.node.handle)
-        executor = SingleThreadedExecutor(context=self.context)
-
-        future = Future(executor=executor)
-
-        # Setup a thread to spin_once_until_future_complete, which will spin
-        # for a maximum of 10 seconds.
-        start = time.time()
-        thread = threading.Thread(target=executor.spin_once_until_future_complete,
-                                  args=(future, 10))
-        thread.start()
-
-        # Mark the future as complete immediately
-        future.set_result(True)
-
-        thread.join()
-        end = time.time()
-
-        time_spent = end - start
-
-        # Since we marked the future as complete immediately, the amount of
-        # time we spent should be *substantially* less than the 10 second
-        # timeout we set on the spin.
-        assert time_spent < 10
-
-        executor.shutdown()
-
-    def test_multi_threaded_spin_once_until_future(self):
-        self.assertIsNotNone(self.node.handle)
-        executor = MultiThreadedExecutor(context=self.context)
-
-        future = Future(executor=executor)
-
-        # Setup a thread to spin_once_until_future_complete, which will spin
-        # for a maximum of 10 seconds.
-        start = time.time()
-        thread = threading.Thread(target=executor.spin_once_until_future_complete,
-                                  args=(future, 10))
-        thread.start()
-
-        # Mark the future as complete immediately
-        future.set_result(True)
-
-        thread.join()
-        end = time.time()
-
-        time_spent = end - start
-
-        # Since we marked the future as complete immediately, the amount of
-        # time we spent should be *substantially* less than the 10 second
-        # timeout we set on the spin.
-        assert time_spent < 10
-
-        executor.shutdown()
 
     def test_not_lose_callback(self):
         self.assertIsNotNone(self.node.handle)

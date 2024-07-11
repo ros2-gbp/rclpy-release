@@ -14,10 +14,7 @@
 
 import threading
 import time
-from types import TracebackType
 from typing import Dict
-from typing import Optional
-from typing import Type
 from typing import TypeVar
 
 from rclpy.callback_groups import CallbackGroup
@@ -47,7 +44,7 @@ class Client:
         """
         Create a container for a ROS service client.
 
-        .. warning:: Users should not create a service client with this constructor, instead they
+        .. warning:: Users should not create a service client with this constuctor, instead they
            should call :meth:`.Node.create_client`.
 
         :param context: The context associated with the service client.
@@ -71,19 +68,14 @@ class Client:
 
         self._lock = threading.Lock()
 
-    def call(
-        self,
-        request: SrvTypeRequest,
-        timeout_sec: Optional[float] = None
-    ) -> Optional[SrvTypeResponse]:
+    def call(self, request: SrvTypeRequest) -> SrvTypeResponse:
         """
         Make a service request and wait for the result.
 
-        .. warning:: Do not call this method in a callback, or a deadlock or timeout may occur.
+        .. warning:: Do not call this method in a callback or a deadlock may occur.
 
         :param request: The service request.
-        :param timeout_sec: Seconds to wait. If ``None``, then wait forever.
-        :return: The service response, or None if timed out.
+        :return: The service response.
         :raises: TypeError if the type of the passed request isn't an instance
           of the Request type of the provided service when the client was
           constructed.
@@ -104,9 +96,7 @@ class Client:
         # The callback might have been added after the future is completed,
         # resulting in the event never being set.
         if not future.done():
-            if not event.wait(timeout_sec):
-                # Timed out. remove_pending_request() to free resources
-                self.remove_pending_request(future)
+            event.wait()
         if future.exception() is not None:
             raise future.exception()
         return future.result()
@@ -171,7 +161,7 @@ class Client:
         with self.handle:
             return self.__client.service_server_is_available()
 
-    def wait_for_service(self, timeout_sec: Optional[float] = None) -> bool:
+    def wait_for_service(self, timeout_sec: float = None) -> bool:
         """
         Wait for a service server to become ready.
 
@@ -213,27 +203,5 @@ class Client:
     def handle(self):
         return self.__client
 
-    @property
-    def service_name(self) -> str:
-        with self.handle:
-            return self.__client.service_name
-
     def destroy(self):
-        """
-        Destroy a container for a ROS service client.
-
-        .. warning:: Users should not destroy a service client with this destructor, instead they
-           should call :meth:`.Node.destroy_client`.
-        """
         self.__client.destroy_when_not_in_use()
-
-    def __enter__(self) -> 'Client':
-        return self
-
-    def __exit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
-    ) -> None:
-        self.destroy()

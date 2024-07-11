@@ -14,14 +14,6 @@
 
 import threading
 
-from types import TracebackType
-from typing import Callable
-from typing import Optional
-from typing import Type
-
-from rclpy.callback_groups import CallbackGroup
-from rclpy.clock import Clock
-from rclpy.context import Context
 from rclpy.exceptions import InvalidHandle, ROSInterruptException
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.utilities import get_default_context
@@ -29,41 +21,12 @@ from rclpy.utilities import get_default_context
 
 class Timer:
 
-    def __init__(
-        self,
-        callback: Callable,
-        callback_group: CallbackGroup,
-        timer_period_ns: int,
-        clock: Clock,
-        *,
-        context: Optional[Context] = None,
-        autostart: bool = True
-    ):
-        """
-        Create a Timer.
-
-        If autostart is ``True`` (the default), the timer will be started and every
-        ``timer_period_sec`` number of seconds the provided callback function will be called.
-        If autostart is ``False``, the timer will be created but not started; it can then be
-        started by calling ``reset()`` on the timer object.
-
-        .. warning:: Users should not create a timer with this constructor, instead they
-           should call :meth:`.Node.create_timer`.
-
-        :param callback: A user-defined callback function that is called when the timer expires.
-        :param callback_group: The callback group for the timer. If ``None``, then the
-            default callback group for the node is used.
-        :param timer_period_ns: The period (in nanoseconds) of the timer.
-        :param clock: The clock which the timer gets time from.
-        :param context: The context to be associated with.
-        :param autostart: Whether to automatically start the timer after creation; defaults to
-            ``True``.
-        """
+    def __init__(self, callback, callback_group, timer_period_ns, clock, *, context=None):
         self._context = get_default_context() if context is None else context
         self._clock = clock
         with self._clock.handle, self._context.handle:
             self.__timer = _rclpy.Timer(
-                self._clock.handle, self._context.handle, timer_period_ns, autostart)
+                self._clock.handle, self._context.handle, timer_period_ns)
         self.timer_period_ns = timer_period_ns
         self.callback = callback
         self.callback_group = callback_group
@@ -75,12 +38,6 @@ class Timer:
         return self.__timer
 
     def destroy(self):
-        """
-        Destroy a container for a ROS timer.
-
-        .. warning:: Users should not destroy a timer with this method, instead they should
-           call :meth:`.Node.destroy_timer`.
-        """
         self.__timer.destroy_when_not_in_use()
 
     @property
@@ -125,28 +82,11 @@ class Timer:
         with self.__timer:
             return self.__timer.time_until_next_call()
 
-    def __enter__(self) -> 'Timer':
-        return self
-
-    def __exit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
-    ) -> None:
-        self.destroy()
-
 
 class Rate:
     """A utility for sleeping at a fixed rate."""
 
     def __init__(self, timer: Timer, *, context):
-        """
-        Create a Rate.
-
-        .. warning:: Users should not create a rate with this constructor, instead they
-           should call :meth:`.Node.create_rate`.
-        """
         # Rate is a wrapper around a timer
         self._timer = timer
         self._is_shutdown = False
@@ -168,12 +108,6 @@ class Rate:
         self.destroy()
 
     def destroy(self):
-        """
-        Destroy a container for a ROS rate.
-
-        .. warning:: Users should not destroy a rate with this method, instead they should
-           call :meth:`.Node.destroy_rate`.
-        """
         self._is_destroyed = True
         self._event.set()
 
