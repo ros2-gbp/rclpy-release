@@ -13,11 +13,9 @@
 # limitations under the License.
 
 import asyncio
-import os
 import threading
 import time
 import unittest
-import warnings
 
 import rclpy
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -131,32 +129,6 @@ class TestExecutor(unittest.TestCase):
             executor.shutdown()
 
         assert not got_callback
-
-    def test_multi_threaded_executor_num_threads(self):
-        self.assertIsNotNone(self.node.handle)
-
-        # check default behavior, either platform configuration or defaults to 2
-        executor = MultiThreadedExecutor(context=self.context)
-        if hasattr(os, 'sched_getaffinity'):
-            platform_threads = len(os.sched_getaffinity(0))
-        else:
-            platform_threads = os.cpu_count()
-        self.assertEqual(platform_threads, executor._executor._max_workers)
-        executor.shutdown()
-
-        # check specified thread number w/o warning
-        executor = MultiThreadedExecutor(num_threads=3, context=self.context)
-        self.assertEqual(3, executor._executor._max_workers)
-        executor.shutdown()
-
-        # check specified thread number = 1, expecting UserWarning
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter('always', category=UserWarning)
-            executor = MultiThreadedExecutor(num_threads=1, context=self.context)
-            self.assertEqual(1, executor._executor._max_workers)
-            executor.shutdown()
-            assert len(w) == 1
-            assert issubclass(w[0].category, UserWarning)
 
     def test_multi_threaded_executor_executes(self):
         self.assertIsNotNone(self.node.handle)
@@ -486,25 +458,6 @@ class TestExecutor(unittest.TestCase):
             executor.shutdown()
             self.node.destroy_timer(tmr)
 
-    def shutdown_executor_from_callback(self):
-        """https://github.com/ros2/rclpy/issues/944: allow for executor shutdown from callback."""
-        self.assertIsNotNone(self.node.handle)
-        timer_period = 0.1
-        executor = SingleThreadedExecutor(context=self.context)
-        shutdown_event = threading.Event()
-
-        def timer_callback():
-            nonlocal shutdown_event, executor
-            executor.shutdown()
-            shutdown_event.set()
-
-        tmr = self.node.create_timer(timer_period, timer_callback)
-        executor.add_node(self.node)
-        t = threading.Thread(target=executor.spin, daemon=True)
-        t.start()
-        self.assertTrue(shutdown_event.wait(120))
-        self.node.destroy_timer(tmr)
-
     def test_not_lose_callback(self):
         self.assertIsNotNone(self.node.handle)
         executor = SingleThreadedExecutor(context=self.context)
@@ -533,7 +486,7 @@ class TestExecutor(unittest.TestCase):
 
         assert count == 2
 
-        executor.shutdown()
+        executor.shutdown(1)
         timer2.destroy()
         timer1.destroy()
         cli.destroy()

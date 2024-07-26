@@ -70,7 +70,7 @@ class TestPublisher(unittest.TestCase):
             an effect on the publisher's topic_name.
         """
         for topic, target_topic in test_topics:
-            publisher = node.create_publisher(BasicTypes, topic, 1)
+            publisher = node.create_publisher(BasicTypes, topic, 0)
             assert publisher.topic_name == target_topic
             publisher.destroy()
 
