@@ -12,10 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import time
+
 import pytest
 
 import rclpy
 from rclpy.node import Node
+from rclpy.subscription import Subscription
 
 from test_msgs.msg import Empty
 
@@ -48,6 +51,10 @@ def test_get_subscription_topic_name(topic_name, namespace, expected):
     )
     assert sub.topic_name == expected
 
+    sub.destroy()
+
+    node.destroy_node()
+
 
 @pytest.mark.parametrize('topic_name, namespace, cli_args, expected', [
     ('topic', None, ['--ros-args', '--remap', 'topic:=new_topic'], '/new_topic'),
@@ -66,3 +73,81 @@ def test_get_subscription_topic_name_after_remapping(topic_name, namespace, cli_
         qos_profile=10,
     )
     assert sub.topic_name == expected
+
+    sub.destroy()
+
+    node.destroy_node()
+
+
+def test_subscription_callback_type():
+    node = Node('test_node', namespace='test_subscription/test_subscription_callback_type')
+    sub = node.create_subscription(
+        msg_type=Empty,
+        topic='test_subscription/test_subscription_callback_type/topic',
+        qos_profile=10,
+        callback=lambda _: None)
+    assert sub._callback_type == Subscription.CallbackType.MessageOnly
+    sub.destroy()
+
+    sub = node.create_subscription(
+        msg_type=Empty,
+        topic='test_subscription/test_subscription_callback_type/topic',
+        qos_profile=10,
+        callback=lambda _, _2: None)
+    assert sub._callback_type == Subscription.CallbackType.WithMessageInfo
+    sub.destroy()
+
+    with pytest.raises(RuntimeError):
+        node.create_subscription(
+            msg_type=Empty,
+            topic='test_subscription/test_subscription_callback_type/topic',
+            qos_profile=10,
+            callback=lambda _, _2, _3: None)
+
+    node.destroy_node()
+
+
+def test_subscription_context_manager():
+    node = Node('test_node', namespace='test_subscription/test_subscription_callback_type')
+    with node.create_subscription(
+            msg_type=Empty,
+            topic='test_subscription/test_subscription_callback_type/topic',
+            qos_profile=10,
+            callback=lambda _: None) as sub:
+        assert sub._callback_type == Subscription.CallbackType.MessageOnly
+
+    with node.create_subscription(
+            msg_type=Empty,
+            topic='test_subscription/test_subscription_callback_type/topic',
+            qos_profile=10,
+            callback=lambda _, _2: None) as sub:
+        assert sub._callback_type == Subscription.CallbackType.WithMessageInfo
+
+    node.destroy_node()
+
+
+def test_subscription_publisher_count():
+    topic_name = 'test_subscription/test_subscription_publisher_count/topic'
+    node = Node('test_node', namespace='test_subscription/test_subscription_publisher_count')
+    sub = node.create_subscription(
+        msg_type=Empty,
+        topic=topic_name,
+        qos_profile=10,
+        callback=lambda _: None)
+
+    assert sub.get_publisher_count() == 0
+
+    pub = node.create_publisher(Empty, topic_name, 10)
+
+    max_seconds_to_wait = 5
+    end_time = time.time() + max_seconds_to_wait
+    while sub.get_publisher_count() != 1:
+        time.sleep(0.05)
+        assert time.time() <= end_time  # timeout waiting for pub/sub to discover each other
+
+    assert sub.get_publisher_count() == 1
+
+    pub.destroy()
+    sub.destroy()
+
+    node.destroy_node()

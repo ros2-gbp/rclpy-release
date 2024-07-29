@@ -70,7 +70,7 @@ class TestPublisher(unittest.TestCase):
             an effect on the publisher's topic_name.
         """
         for topic, target_topic in test_topics:
-            publisher = node.create_publisher(BasicTypes, topic, 0)
+            publisher = node.create_publisher(BasicTypes, topic, 1)
             assert publisher.topic_name == target_topic
             publisher.destroy()
 
@@ -124,6 +124,17 @@ class TestPublisher(unittest.TestCase):
 
         pub.destroy()
         sub.destroy()
+
+
+def test_publisher_context_manager():
+    rclpy.init()
+    try:
+        with rclpy.create_node('pub_node', namespace='/pub_node_ns') as node:
+            with node.create_publisher(BasicTypes, 'chatter', 1) as pub:
+                assert pub.get_subscription_count() == 0
+
+    finally:
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':
