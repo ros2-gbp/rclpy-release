@@ -2,35 +2,26 @@
 Changelog for package rclpy
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-7.5.0 (2024-07-29)
+7.1.2 (2024-09-06)
 ------------------
-* Add types to task.py (`#1254 <https://github.com/ros2/rclpy/issues/1254>`_)
-* Fix a bad bug in fetching the lifecycle transitions. (`#1321 <https://github.com/ros2/rclpy/issues/1321>`_)
-* Fix a bug when using multiple rclpy.init context managers. (`#1314 <https://github.com/ros2/rclpy/issues/1314>`_)
-* Executor executes the tasks in FIFO order. (`#1304 <https://github.com/ros2/rclpy/issues/1304>`_)
-* Contributors: Chris Lalancette, Michael Carlstrom, Tomoya Fujita
-
-7.4.0 (2024-06-25)
-------------------
-* Add top-level try_shutdown method. (`#1302 <https://github.com/ros2/rclpy/issues/1302>`_)
-* Make rclpy initialization context-manager aware. (`#1298 <https://github.com/ros2/rclpy/issues/1298>`_)
-* Contributors: Chris Lalancette
-
-7.3.0 (2024-06-17)
-------------------
-* Docstring specifying proper destruction and creation of Rate, Timer and GuardCondition (`#1286 <https://github.com/ros2/rclpy/issues/1286>`_)
-* Make timers context-aware. (`#1296 <https://github.com/ros2/rclpy/issues/1296>`_)
-* Make service lients context-aware. (`#1295 <https://github.com/ros2/rclpy/issues/1295>`_)
-* Make service servers context-manager aware. (`#1294 <https://github.com/ros2/rclpy/issues/1294>`_)
-* Make nodes context-manager aware. (`#1293 <https://github.com/ros2/rclpy/issues/1293>`_)
-* Make subscriptions context-manager aware. (`#1291 <https://github.com/ros2/rclpy/issues/1291>`_)
-* Make publishers context-manager aware. (`#1289 <https://github.com/ros2/rclpy/issues/1289>`_)
-* (NumberOfEntities) improve performance (`#1285 <https://github.com/ros2/rclpy/issues/1285>`_)
-* Using Generics for messages (`#1239 <https://github.com/ros2/rclpy/issues/1239>`_)
-* Contributors: Chris Lalancette, Elian NEPPEL, Matthijs van der Burgh, Michael Carlstrom
-
-7.2.0 (2024-04-26)
-------------------
+* Fixes spin_until_future_complete inside callback (`#1316 <https://github.com/ros2/rclpy/issues/1316>`_) (`#1341 <https://github.com/ros2/rclpy/issues/1341>`_)
+  Closes rclpy:`#1313 <https://github.com/ros2/rclpy/issues/1313>`_
+  Current if spin_unitl_future_complete is called inside a nodes callback it removes the node from the executor
+  This results in any subsiquent waitables to never be checked by the node since the node is no longer in the executor
+  This aims to fix that by only removing the node from the executor if it wasn't already present
+  Co-authored-by: mergify[bot] <37929162+mergify[bot]@users.noreply.github.com>
+  (cherry picked from commit 47346ef9688039b890ae19c499d4b51587a7305b)
+  Co-authored-by: Jonathan <jmblixt3@gmail.com>
+* Install signal handlers after context is initialized. (`#1333 <https://github.com/ros2/rclpy/issues/1333>`_)
+  Co-authored-by: Shane Loretz <shane.loretz@gmail.com>
+* Fix a bad bug in fetching the lifecycle transitions. (`#1321 <https://github.com/ros2/rclpy/issues/1321>`_) (`#1322 <https://github.com/ros2/rclpy/issues/1322>`_)
+  We were fetching one more lifecycle transition than existed
+  in the source list (i.e. we should use < instead of <=).
+  In turn, this allows us to enable the test_lifecycle.py test,
+  and to fix the spurious "empty" string in the expected states.
+  (cherry picked from commit 2a8f23ed1b52ea2355658cce09d7045b955f417a)
+  Co-authored-by: Chris Lalancette <clalancette@gmail.com>
+* Contributors: Tomoya Fujita, mergify[bot]
 
 7.1.1 (2024-04-16)
 ------------------

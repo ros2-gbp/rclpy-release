@@ -12,26 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from types import TracebackType
-from typing import Generic, List, Optional, Type, TypeVar, Union
+from typing import TypeVar, Union
 
 from rclpy.callback_groups import CallbackGroup
 from rclpy.duration import Duration
-from rclpy.event_handler import EventHandler, PublisherEventCallbacks
+from rclpy.event_handler import EventHandler
+from rclpy.event_handler import PublisherEventCallbacks
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.qos import QoSProfile
-from rclpy.type_support import MsgT
 
-# Left to support Legacy TypeVars.
 MsgType = TypeVar('MsgType')
 
 
-class Publisher(Generic[MsgT]):
+class Publisher:
 
     def __init__(
         self,
         publisher_impl: _rclpy.Publisher,
-        msg_type: Type[MsgT],
+        msg_type: MsgType,
         topic: str,
         qos_profile: QoSProfile,
         event_callbacks: PublisherEventCallbacks,
@@ -56,10 +54,10 @@ class Publisher(Generic[MsgT]):
         self.topic = topic
         self.qos_profile = qos_profile
 
-        self.event_handlers: List[EventHandler] = event_callbacks.create_event_handlers(
+        self.event_handlers: EventHandler = event_callbacks.create_event_handlers(
             callback_group, publisher_impl, topic)
 
-    def publish(self, msg: Union[MsgT, bytes]) -> None:
+    def publish(self, msg: Union[MsgType, bytes]) -> None:
         """
         Send a message to the topic for the publisher.
 
@@ -129,14 +127,3 @@ class Publisher(Generic[MsgT]):
         """
         with self.handle:
             return self.__publisher.wait_for_all_acked(timeout._duration_handle)
-
-    def __enter__(self) -> 'Publisher':
-        return self
-
-    def __exit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
-    ) -> None:
-        self.destroy()

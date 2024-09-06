@@ -210,9 +210,6 @@ class Executor(ContextManager['Executor']):
 
         Arguments to this function are passed to the callback.
 
-        .. warning:: Created task is queued in the executor in FIFO order,
-           but users should not rely on the task execution order.
-
         :param callback: A callback to be run in the executor.
         """
         task = Task(callback, args, kwargs, executor=self)
@@ -572,7 +569,7 @@ class Executor(ContextManager['Executor']):
             with self._tasks_lock:
                 tasks = list(self._tasks)
             if tasks:
-                for task, entity, node in tasks:
+                for task, entity, node in reversed(tasks):
                     if (not task.executing() and not task.done() and
                             (node is None or node in nodes_to_use)):
                         yielded_work = True
