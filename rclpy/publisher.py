@@ -30,7 +30,7 @@ class Publisher(Generic[MsgT]):
 
     def __init__(
         self,
-        publisher_impl: _rclpy.Publisher,
+        publisher_impl: '_rclpy.Publisher[MsgT]',
         msg_type: Type[MsgT],
         topic: str,
         qos_profile: QoSProfile,
@@ -86,10 +86,10 @@ class Publisher(Generic[MsgT]):
             return self.__publisher.get_topic_name()
 
     @property
-    def handle(self):
+    def handle(self) -> '_rclpy.Publisher[MsgT]':
         return self.__publisher
 
-    def destroy(self):
+    def destroy(self) -> None:
         """
         Destroy a container for a ROS publisher.
 
@@ -130,7 +130,7 @@ class Publisher(Generic[MsgT]):
         with self.handle:
             return self.__publisher.wait_for_all_acked(timeout._duration_handle)
 
-    def __enter__(self) -> 'Publisher':
+    def __enter__(self) -> 'Publisher[MsgT]':
         return self
 
     def __exit__(

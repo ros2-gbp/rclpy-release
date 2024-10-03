@@ -88,8 +88,12 @@ class InitContextManager:
             self.installed_signal_handlers = False
         else:
             self.installed_signal_handlers = True
-        install_signal_handlers(signal_handler_options)
         self.context.init(args, domain_id=domain_id)
+        # Install signal handlers after initializing the context because the rclpy signal
+        # handler only does something if there is at least one initialized context.
+        # It is desirable for sigint or sigterm to be able to terminate the process if rcl_init
+        # takes a long time, and the default signal handlers work well for that purpose.
+        install_signal_handlers(signal_handler_options)
 
     def __enter__(self) -> 'InitContextManager':
         return self
@@ -327,8 +331,10 @@ def spin_until_future_complete(
         if ``None`` or negative. Don't wait if 0.
     """
     executor = get_global_executor() if executor is None else executor
+    node_added = False
     try:
-        executor.add_node(node)
+        node_added = executor.add_node(node)
         executor.spin_until_future_complete(future, timeout_sec)
     finally:
-        executor.remove_node(node)
+        if node_added:
+            executor.remove_node(node)
