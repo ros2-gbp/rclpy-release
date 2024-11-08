@@ -14,53 +14,51 @@
 
 
 from pathlib import Path
-from typing import Union
 
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.impl.logging_severity import LoggingSeverity
-from rclpy.impl.rcutils_logger import RcutilsLogger
+import rclpy.impl.rcutils_logger
 
 
-_root_logger = RcutilsLogger()
+_root_logger = rclpy.impl.rcutils_logger.RcutilsLogger()
 
 
-def get_logger(name: str) -> RcutilsLogger:
+def get_logger(name):
     if not name:
         raise ValueError('Logger name must not be empty.')
     return _root_logger.get_child(name)
 
 
-def initialize() -> None:
-    _rclpy.rclpy_logging_initialize()
+def initialize():
+    return _rclpy.rclpy_logging_initialize()
 
 
-def shutdown() -> None:
-    _rclpy.rclpy_logging_shutdown()
+def shutdown():
+    return _rclpy.rclpy_logging_shutdown()
 
 
-def clear_config() -> None:
+def clear_config():
     """Clear the configuration of the logging system, e.g. logger levels."""
     shutdown()
     initialize()
 
 
-def set_logger_level(name: str, level: Union[int, LoggingSeverity],
-                     detailed_error: bool = False) -> None:
+def set_logger_level(name, level, detailed_error=False):
     level = LoggingSeverity(level)
-    _rclpy.rclpy_logging_set_logger_level(name, level, detailed_error)
+    return _rclpy.rclpy_logging_set_logger_level(name, level, detailed_error)
 
 
-def get_logger_effective_level(name: str) -> LoggingSeverity:
+def get_logger_effective_level(name):
     logger_level = _rclpy.rclpy_logging_get_logger_effective_level(name)
     return LoggingSeverity(logger_level)
 
 
-def get_logger_level(name: str) -> LoggingSeverity:
+def get_logger_level(name):
     logger_level = _rclpy.rclpy_logging_get_logger_level(name)
     return LoggingSeverity(logger_level)
 
 
-def get_logging_severity_from_string(log_severity: str) -> LoggingSeverity:
+def get_logging_severity_from_string(log_severity):
     return LoggingSeverity(
         _rclpy.rclpy_logging_severity_level_from_string(log_severity))
 

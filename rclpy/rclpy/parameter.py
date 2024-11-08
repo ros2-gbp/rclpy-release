@@ -13,18 +13,10 @@
 # limitations under the License.
 
 import array
-from enum import IntEnum
-import sys
-from typing import Any
+from enum import Enum
 from typing import Dict
-from typing import Generic
 from typing import List
 from typing import Optional
-from typing import overload
-from typing import Tuple
-from typing import TYPE_CHECKING
-from typing import TypeVar
-from typing import Union
 
 from rcl_interfaces.msg import Parameter as ParameterMsg
 from rcl_interfaces.msg import ParameterType
@@ -33,36 +25,10 @@ import yaml
 
 PARAMETER_SEPARATOR_STRING = '.'
 
-if TYPE_CHECKING:
-    # Mypy does not handle string literals of array.array[int/str/float] very well
-    # So if user has newer version of python can use proper array types.
-    if sys.version_info > (3, 9):
-        AllowableParameterValue = Union[None, bool, int, float, str,
-                                        list[bytes], Tuple[bytes, ...],
-                                        list[bool], Tuple[bool, ...],
-                                        list[int], Tuple[int, ...], array.array[int],
-                                        list[float], Tuple[float, ...], array.array[float],
-                                        list[str], Tuple[str, ...], array.array[str]]
-    else:
-        AllowableParameterValue = Union[None, bool, int, float, str,
-                                        List[bytes], Tuple[bytes, ...],
-                                        List[bool], Tuple[bool, ...],
-                                        List[int], Tuple[int, ...], 'array.array[int]',
-                                        List[float], Tuple[float, ...], 'array.array[float]',
-                                        List[str], Tuple[str, ...], 'array.array[str]']
 
-else:
-    # Done to prevent runtime errors of undefined values.
-    # after python3.13 is minimum support this could be removed.
-    AllowableParameterValue = Any
+class Parameter:
 
-AllowableParameterValueT = TypeVar('AllowableParameterValueT',
-                                   bound=AllowableParameterValue)
-
-
-class Parameter(Generic[AllowableParameterValueT]):
-
-    class Type(IntEnum):
+    class Type(Enum):
         NOT_SET = ParameterType.PARAMETER_NOT_SET
         BOOL = ParameterType.PARAMETER_BOOL
         INTEGER = ParameterType.PARAMETER_INTEGER
@@ -75,9 +41,7 @@ class Parameter(Generic[AllowableParameterValueT]):
         STRING_ARRAY = ParameterType.PARAMETER_STRING_ARRAY
 
         @classmethod
-        def from_parameter_value(cls,
-                                 parameter_value: AllowableParameterValueT
-                                 ) -> 'Parameter.Type':
+        def from_parameter_value(cls, parameter_value):
             """
             Get a Parameter.Type from a given variable.
 
@@ -113,7 +77,7 @@ class Parameter(Generic[AllowableParameterValueT]):
                 raise TypeError(
                     f"The given value is not one of the allowed types '{parameter_value}'.")
 
-        def check(self, parameter_value: AllowableParameterValueT) -> bool:
+        def check(self, parameter_value):
             if Parameter.Type.NOT_SET == self:
                 return parameter_value is None
             if Parameter.Type.BOOL == self:
@@ -142,7 +106,7 @@ class Parameter(Generic[AllowableParameterValueT]):
             return False
 
     @classmethod
-    def from_parameter_msg(cls, param_msg: ParameterMsg) -> 'Parameter[AllowableParameterValueT]':
+    def from_parameter_msg(cls, param_msg):
         value = None
         type_ = Parameter.Type(value=param_msg.value.type)
         if Parameter.Type.BOOL == type_:
@@ -165,17 +129,7 @@ class Parameter(Generic[AllowableParameterValueT]):
             value = param_msg.value.string_array_value
         return cls(param_msg.name, type_, value)
 
-    @overload
-    def __init__(self, name: str, type_: Optional['Parameter.Type'] = None) -> None: ...
-
-    @overload
-    def __init__(self, name: str, type_: 'Parameter.Type',
-                 value: AllowableParameterValueT) -> None: ...
-
-    @overload
-    def __init__(self, name: str, *, value: AllowableParameterValueT) -> None: ...
-
-    def __init__(self, name: str, type_: Optional['Parameter.Type'] = None, value=None) -> None:
+    def __init__(self, name, type_=None, value=None):
         if type_ is None:
             # This will raise a TypeError if it is not possible to get a type from the value.
             type_ = Parameter.Type.from_parameter_value(value)
@@ -191,18 +145,18 @@ class Parameter(Generic[AllowableParameterValueT]):
         self._value = value
 
     @property
-    def name(self) -> str:
+    def name(self):
         return self._name
 
     @property
-    def type_(self) -> 'Parameter.Type':
+    def type_(self):
         return self._type_
 
     @property
-    def value(self) -> AllowableParameterValueT:
+    def value(self):
         return self._value
 
-    def get_parameter_value(self) -> ParameterValue:
+    def get_parameter_value(self):
         parameter_value = ParameterValue(type=self.type_.value)
         if Parameter.Type.BOOL == self.type_:
             parameter_value.bool_value = self.value
@@ -224,7 +178,7 @@ class Parameter(Generic[AllowableParameterValueT]):
             parameter_value.string_array_value = self.value
         return parameter_value
 
-    def to_parameter_msg(self) -> ParameterMsg:
+    def to_parameter_msg(self):
         return ParameterMsg(name=self.name, value=self.get_parameter_value())
 
 
@@ -272,7 +226,7 @@ def get_parameter_value(string_value: str) -> ParameterValue:
     return value
 
 
-def parameter_value_to_python(parameter_value: ParameterValue) -> AllowableParameterValue:
+def parameter_value_to_python(parameter_value: ParameterValue):
     """
     Get the value for the Python builtin type from a rcl_interfaces/msg/ParameterValue object.
 
@@ -330,7 +284,7 @@ def parameter_dict_from_yaml_file(
     """
     with open(parameter_file, 'r') as f:
         param_file = yaml.safe_load(f)
-        param_keys: List[str] = []
+        param_keys = []
         param_dict = {}
 
         if use_wildcard and '/**' in param_file:
@@ -354,14 +308,13 @@ def parameter_dict_from_yaml_file(
 
         for n in param_keys:
             value = param_file[n]
-            if not isinstance(value, dict) or 'ros__parameters' not in value:
+            if type(value) != dict or 'ros__parameters' not in value:
                 raise RuntimeError(f'YAML file is not a valid ROS parameter file for node {n}')
             param_dict.update(value['ros__parameters'])
         return _unpack_parameter_dict(namespace, param_dict)
 
 
-def _unpack_parameter_dict(namespace: str,
-                           parameter_dict: Dict[str, ParameterMsg]) -> Dict[str, ParameterMsg]:
+def _unpack_parameter_dict(namespace, parameter_dict):
     """
     Flatten a parameter dictionary recursively.
 
@@ -373,7 +326,7 @@ def _unpack_parameter_dict(namespace: str,
     for param_name, param_value in parameter_dict.items():
         full_param_name = namespace + param_name
         # Unroll nested parameters
-        if isinstance(param_value, dict):
+        if type(param_value) == dict:
             parameters.update(_unpack_parameter_dict(
                     namespace=full_param_name + PARAMETER_SEPARATOR_STRING,
                     parameter_dict=param_value))

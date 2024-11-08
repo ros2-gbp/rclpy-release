@@ -12,21 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from types import TracebackType
-from typing import Any, Generic, List, Optional, Type, TYPE_CHECKING, TypeVar
-
-
-from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
-
-T = TypeVar('T')
-
-
-if TYPE_CHECKING:
-    from typing_extensions import Self
-
-    from rclpy.callback_groups import CallbackGroup
-    from rclpy.task import Future
-
 
 class NumberOfEntities:
 
@@ -39,8 +24,8 @@ class NumberOfEntities:
         'num_events']
 
     def __init__(
-        self, num_subs: int = 0, num_gcs: int = 0, num_timers: int = 0,
-        num_clients: int = 0, num_services: int = 0, num_events: int = 0
+        self, num_subs=0, num_gcs=0, num_timers=0,
+        num_clients=0, num_services=0, num_events=0
     ):
         self.num_subscriptions = num_subs
         self.num_guard_conditions = num_gcs
@@ -49,83 +34,67 @@ class NumberOfEntities:
         self.num_services = num_services
         self.num_events = num_events
 
-    def __add__(self, other: 'NumberOfEntities') -> 'NumberOfEntities':
+    def __add__(self, other):
         result = self.__class__()
-        result.num_subscriptions = self.num_subscriptions + other.num_subscriptions
-        result.num_guard_conditions = self.num_guard_conditions + other.num_guard_conditions
-        result.num_timers = self.num_timers + other.num_timers
-        result.num_clients = self.num_clients + other.num_clients
-        result.num_services = self.num_services + other.num_services
-        result.num_events = self.num_events + other.num_events
+        for attr in result.__slots__:
+            left = getattr(self, attr)
+            right = getattr(other, attr)
+            setattr(result, attr, left + right)
         return result
 
-    def __iadd__(self, other: 'NumberOfEntities') -> 'NumberOfEntities':
-        self.num_subscriptions += other.num_subscriptions
-        self.num_guard_conditions += other.num_guard_conditions
-        self.num_timers += other.num_timers
-        self.num_clients += other.num_clients
-        self.num_services += other.num_services
-        self.num_events += other.num_events
-        return self
-
-    def __repr__(self) -> str:
+    def __repr__(self):
         return '<{0}({1}, {2}, {3}, {4}, {5}, {6})>'.format(
             self.__class__.__name__, self.num_subscriptions,
             self.num_guard_conditions, self.num_timers, self.num_clients,
             self.num_services, self.num_events)
 
 
-class Waitable(Generic[T]):
+class Waitable:
     """
     Add something to a wait set and execute it.
 
     This class wraps a collection of entities which can be added to a wait set.
     """
 
-    def __init__(self, callback_group: 'CallbackGroup'):
+    def __init__(self, callback_group):
         # A callback group to control when this entity can execute (used by Executor)
         self.callback_group = callback_group
         self.callback_group.add_entity(self)
         # Flag set by executor when a handler has been created but not executed (used by Executor)
         self._executor_event = False
         # List of Futures that have callbacks needing execution
-        self._futures: List[Future[Any]] = []
+        self._futures = []
 
-    def __enter__(self) -> 'Self':
+    def __enter__(self):
         """Implement to mark entities as in-use to prevent destruction while waiting on them."""
-        raise NotImplementedError('Must be implemented by subclass')
+        pass
 
-    def __exit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
-    ) -> None:
+    def __exit__(self, t, v, tb):
         """Implement to mark entities as not-in-use to allow destruction after waiting on them."""
-        raise NotImplementedError('Must be implemented by subclass')
+        pass
 
-    def add_future(self, future: 'Future[Any]') -> None:
+    def add_future(self, future):
         self._futures.append(future)
 
-    def remove_future(self, future: 'Future[Any]') -> None:
+    def remove_future(self, future):
         self._futures.remove(future)
 
-    def is_ready(self, wait_set: _rclpy.WaitSet) -> bool:
+    def is_ready(self, wait_set):
         """Return True if entities are ready in the wait set."""
         raise NotImplementedError('Must be implemented by subclass')
 
-    def take_data(self) -> T:
+    def take_data(self):
         """Take stuff from lower level so the wait set doesn't immediately wake again."""
         raise NotImplementedError('Must be implemented by subclass')
 
-    async def execute(self, taken_data: T) -> None:
+    async def execute(self, taken_data):
         """Execute work after data has been taken from a ready wait set."""
         raise NotImplementedError('Must be implemented by subclass')
 
-    def get_num_entities(self) -> NumberOfEntities:
+    def get_num_entities(self):
         """Return number of each type of entity used."""
         raise NotImplementedError('Must be implemented by subclass')
 
-    def add_to_wait_set(self, wait_set: _rclpy.WaitSet) -> None:
+    def add_to_wait_set(self, wait_set):
         """Add entities to wait set."""
         raise NotImplementedError('Must be implemented by subclass')

@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING
 import weakref
 
 from rcl_interfaces.msg import ParameterDescriptor
@@ -30,13 +29,9 @@ from type_description_interfaces.srv import GetTypeDescription
 START_TYPE_DESCRIPTION_SERVICE_PARAM = 'start_type_description_service'
 
 
-if TYPE_CHECKING:
-    from rclpy.node import Node
-
-
 class TypeDescriptionService:
     """
-    Optionally initializes and contains the ~/get_type_description service.
+    Optionally initializes and contaiins the ~/get_type_description service.
 
     The service is implemented in rcl, but should be enabled via parameter and have its
     callbacks handled via end-client execution framework, such as callback groups and waitsets.
@@ -44,7 +39,7 @@ class TypeDescriptionService:
     This is not intended for use by end users, rather it is a component to be used by Node.
     """
 
-    def __init__(self, node: 'Node'):
+    def __init__(self, node):
         """Initialize the service, if the parameter is set to true."""
         self._node_weak_ref = weakref.ref(node)
         node_name = node.get_name()
@@ -78,13 +73,13 @@ class TypeDescriptionService:
         if self.enabled:
             self._start_service()
 
-    def destroy(self) -> None:
+    def destroy(self):
         # Required manual destruction because this is not managed by rclpy.Service
         if self._type_description_srv is not None:
             self._type_description_srv.destroy_when_not_in_use()
             self._type_description_srv = None
 
-    def _start_service(self) -> None:
+    def _start_service(self):
         node = self._get_node()
         self._type_description_srv = _rclpy.TypeDescriptionService(node.handle)
         # Because we are creating our own service wrapper, must manually add the service
@@ -101,15 +96,11 @@ class TypeDescriptionService:
         node._services.append(service)
         node._wake_executor()
 
-    def _service_callback(
-        self,
-        request: GetTypeDescription.Request,
-        response: GetTypeDescription.Response
-    ) -> GetTypeDescription.Response:
+    def _service_callback(self, request, response):
         return self._type_description_srv.handle_request(
             request, GetTypeDescription.Response, self._get_node().handle)
 
-    def _get_node(self) -> 'Node':
+    def _get_node(self):
         node = self._node_weak_ref()
         if node is None:
             raise ReferenceError('Expected valid node weak reference')

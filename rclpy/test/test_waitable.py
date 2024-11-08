@@ -19,7 +19,7 @@ import unittest
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.clock import Clock
-from rclpy.clock_type import ClockType
+from rclpy.clock import ClockType
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.qos import QoSProfile
@@ -49,12 +49,6 @@ class ClientWaitable(Waitable):
 
         self.node = node
         self.future = None
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        pass
 
     def is_ready(self, wait_set):
         """Return True if entities are ready in the wait set."""
@@ -99,12 +93,6 @@ class ServerWaitable(Waitable):
         self.node = node
         self.future = None
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        pass
-
     def is_ready(self, wait_set):
         """Return True if entities are ready in the wait set."""
         if wait_set.is_ready('service', self.server_index):
@@ -143,18 +131,12 @@ class TimerWaitable(Waitable):
         period_nanoseconds = 10000
         with self._clock.handle, node.context.handle:
             self.timer = _rclpy.Timer(
-                self._clock.handle, node.context.handle, period_nanoseconds, True)
+                self._clock.handle, node.context.handle, period_nanoseconds)
         self.timer_index = None
         self.timer_is_ready = False
 
         self.node = node
         self.future = None
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        pass
 
     def is_ready(self, wait_set):
         """Return True if entities are ready in the wait set."""
@@ -166,7 +148,7 @@ class TimerWaitable(Waitable):
         """Take stuff from lower level so the wait set doesn't immediately wake again."""
         if self.timer_is_ready:
             self.timer_is_ready = False
-            self.timer.call_timer_with_info()
+            self.timer.call_timer()
             return 'timer'
         return None
 
@@ -199,12 +181,6 @@ class SubscriptionWaitable(Waitable):
 
         self.node = node
         self.future = None
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        pass
 
     def is_ready(self, wait_set):
         """Return True if entities are ready in the wait set."""
@@ -251,12 +227,6 @@ class GuardConditionWaitable(Waitable):
         self.node = node
         self.future = None
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        pass
-
     def is_ready(self, wait_set):
         """Return True if entities are ready in the wait set."""
         if wait_set.is_ready('guard_condition', self.guard_condition_index):
@@ -290,12 +260,6 @@ class MutuallyExclusiveWaitable(Waitable):
 
     def __init__(self):
         super().__init__(MutuallyExclusiveCallbackGroup())
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        pass
 
     def is_ready(self, wait_set):
         return False

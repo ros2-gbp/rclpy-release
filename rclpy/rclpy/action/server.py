@@ -17,8 +17,6 @@ import functools
 import threading
 import traceback
 
-from typing import Any, TypedDict
-
 from action_msgs.msg import GoalInfo, GoalStatus
 
 from rclpy.executors import await_or_execute
@@ -49,13 +47,6 @@ class CancelResponse(Enum):
 
 
 GoalEvent = _rclpy.GoalEvent
-
-
-class ServerGoalHandleDict(TypedDict, total=False):
-    goal: Any
-    cancel: Any
-    result: Any
-    expired: Any
 
 
 class ServerGoalHandle:
@@ -187,7 +178,7 @@ def default_cancel_callback(cancel_request):
     return CancelResponse.REJECT
 
 
-class ActionServer(Waitable[ServerGoalHandleDict]):
+class ActionServer(Waitable):
     """ROS Action server."""
 
     def __init__(
@@ -206,7 +197,7 @@ class ActionServer(Waitable[ServerGoalHandleDict]):
         cancel_service_qos_profile=qos_profile_services_default,
         feedback_pub_qos_profile=QoSProfile(depth=10),
         status_pub_qos_profile=qos_profile_action_status_default,
-        result_timeout=10
+        result_timeout=900
     ):
         """
         Create an ActionServer.
@@ -455,9 +446,9 @@ class ActionServer(Waitable[ServerGoalHandleDict]):
         self._is_goal_expired = ready_entities[3]
         return any(ready_entities)
 
-    def take_data(self) -> ServerGoalHandleDict:
+    def take_data(self):
         """Take stuff from lower level so the wait set doesn't immediately wake again."""
-        data: ServerGoalHandleDict = {}
+        data = {}
         if self._is_goal_request_ready:
             with self._lock:
                 taken_data = self._handle.take_goal_request(
@@ -491,7 +482,7 @@ class ActionServer(Waitable[ServerGoalHandleDict]):
 
         return data
 
-    async def execute(self, taken_data: ServerGoalHandleDict) -> None:
+    async def execute(self, taken_data):
         """
         Execute work after data has been taken from a ready wait set.
 

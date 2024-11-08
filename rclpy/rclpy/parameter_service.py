@@ -12,26 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-from typing import TYPE_CHECKING
 import weakref
 
-from rcl_interfaces.msg import ListParametersResult
 from rcl_interfaces.msg import SetParametersResult
 from rcl_interfaces.srv import DescribeParameters, GetParameters, GetParameterTypes
 from rcl_interfaces.srv import ListParameters, SetParameters, SetParametersAtomically
 from rclpy.exceptions import ParameterNotDeclaredException, ParameterUninitializedException
-from rclpy.parameter import Parameter
+from rclpy.parameter import Parameter, PARAMETER_SEPARATOR_STRING
 from rclpy.qos import qos_profile_parameters
 from rclpy.validate_topic_name import TOPIC_SEPARATOR_STRING
-
-if TYPE_CHECKING:
-    from rclpy.node import Node
 
 
 class ParameterService:
 
-    def __init__(self, node: 'Node'):
+    def __init__(self, node):
         self._node_weak_ref = weakref.ref(node)
         nodename = node.get_name()
 
@@ -70,11 +64,7 @@ class ParameterService:
             qos_profile=qos_profile_parameters
         )
 
-    def _describe_parameters_callback(
-        self,
-        request: DescribeParameters.Request,
-        response: DescribeParameters.Response
-    ) -> DescribeParameters.Response:
+    def _describe_parameters_callback(self, request, response):
         node = self._get_node()
         for name in request.names:
             try:
@@ -85,11 +75,7 @@ class ParameterService:
             response.descriptors.append(descriptor)
         return response
 
-    def _get_parameters_callback(
-        self,
-        request: GetParameters.Request,
-        response: GetParameters.Response
-    ) -> GetParameters.Response:
+    def _get_parameters_callback(self, request, response):
         node = self._get_node()
         for name in request.names:
             try:
@@ -100,11 +86,7 @@ class ParameterService:
             response.values.append(param.get_parameter_value())
         return response
 
-    def _get_parameter_types_callback(
-        self,
-        request: GetParameterTypes.Request,
-        response: GetParameterTypes.Response
-    ) -> GetParameterTypes.Response:
+    def _get_parameter_types_callback(self, request, response):
         node = self._get_node()
         for name in request.names:
             try:
@@ -115,23 +97,49 @@ class ParameterService:
             response.types.append(value)
         return response
 
-    def _list_parameters_callback(
-        self,
-        request: ListParameters.Response,
-        response: ListParameters.Response
-    ) -> ListParameters.Response:
+    def _list_parameters_callback(self, request, response):
+        names_with_prefixes = []
         node = self._get_node()
-        try:
-            response.result = node.list_parameters(request.prefixes, request.depth)
-        except (TypeError, ValueError):
-            response.result = ListParametersResult()
+        for name in node._parameters.keys():
+            if PARAMETER_SEPARATOR_STRING in name:
+                names_with_prefixes.append(name)
+                continue
+            elif request.prefixes:
+                for prefix in request.prefixes:
+                    if name.startswith(prefix):
+                        response.result.names.append(name)
+                continue
+            else:
+                response.result.names.append(name)
+        if 1 == request.depth:
+            return response
+
+        if not request.DEPTH_RECURSIVE == request.depth:
+            names_with_prefixes = filter(
+                lambda name:
+                    name.count(PARAMETER_SEPARATOR_STRING) < request.depth, names_with_prefixes
+            )
+        for name in names_with_prefixes:
+            if request.prefixes:
+                for prefix in request.prefixes:
+                    if name.startswith(prefix + PARAMETER_SEPARATOR_STRING):
+                        response.result.names.append(name)
+                        full_prefix = PARAMETER_SEPARATOR_STRING.join(
+                            name.split(PARAMETER_SEPARATOR_STRING)[0:-1])
+                        if full_prefix not in response.result.prefixes:
+                            response.result.prefixes.append(full_prefix)
+                        if prefix not in response.result.prefixes:
+                            response.result.prefixes.append(prefix)
+            else:
+                prefix = PARAMETER_SEPARATOR_STRING.join(
+                    name.split(PARAMETER_SEPARATOR_STRING)[0:-1])
+                if prefix not in response.result.prefixes:
+                    response.result.prefixes.append(prefix)
+                response.result.names.append(name)
+
         return response
 
-    def _set_parameters_callback(
-            self,
-            request: SetParameters.Request,
-            response: SetParameters.Response
-            ) -> SetParameters.Response:
+    def _set_parameters_callback(self, request, response):
         node = self._get_node()
         for p in request.parameters:
             param = Parameter.from_parameter_msg(p)
@@ -145,11 +153,7 @@ class ParameterService:
             response.results.append(result)
         return response
 
-    def _set_parameters_atomically_callback(
-            self,
-            request: SetParametersAtomically.Request,
-            response: SetParametersAtomically.Response
-            ) -> SetParametersAtomically.Response:
+    def _set_parameters_atomically_callback(self, request, response):
         node = self._get_node()
         try:
             response.result = node.set_parameters_atomically([
@@ -161,7 +165,7 @@ class ParameterService:
                 )
         return response
 
-    def _get_node(self) -> 'Node':
+    def _get_node(self):
         node = self._node_weak_ref()
         if node is None:
             raise ReferenceError('Expected valid node weak reference')

@@ -15,14 +15,13 @@
 import math
 import time
 
-from types import TracebackType
 from typing import Any
 from typing import Callable
 from typing import Dict
 from typing import Iterator
 from typing import List
 from typing import Optional
-from typing import overload
+from typing import Sequence
 from typing import Tuple
 from typing import Type
 from typing import TypeVar
@@ -33,14 +32,12 @@ import weakref
 
 from rcl_interfaces.msg import FloatingPointRange
 from rcl_interfaces.msg import IntegerRange
-from rcl_interfaces.msg import ListParametersResult
 from rcl_interfaces.msg import Parameter as ParameterMsg
 from rcl_interfaces.msg import ParameterDescriptor
 from rcl_interfaces.msg import ParameterEvent
 from rcl_interfaces.msg import ParameterType
 from rcl_interfaces.msg import ParameterValue
 from rcl_interfaces.msg import SetParametersResult
-from rcl_interfaces.srv import ListParameters
 
 from rclpy.callback_groups import CallbackGroup
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
@@ -65,11 +62,9 @@ from rclpy.executors import Executor
 from rclpy.expand_topic_name import expand_topic_name
 from rclpy.guard_condition import GuardCondition
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
-from rclpy.impl.rcutils_logger import RcutilsLogger
 from rclpy.logging import get_logger
 from rclpy.logging_service import LoggingService
-from rclpy.parameter import (AllowableParameterValue, AllowableParameterValueT, Parameter,
-                             PARAMETER_SEPARATOR_STRING)
+from rclpy.parameter import Parameter, PARAMETER_SEPARATOR_STRING
 from rclpy.parameter_service import ParameterService
 from rclpy.publisher import Publisher
 from rclpy.qos import qos_profile_parameter_events
@@ -78,20 +73,14 @@ from rclpy.qos import QoSProfile
 from rclpy.qos_overriding_options import _declare_qos_parameters
 from rclpy.qos_overriding_options import QoSOverridingOptions
 from rclpy.service import Service
-from rclpy.subscription import MessageInfo
 from rclpy.subscription import Subscription
 from rclpy.time_source import TimeSource
 from rclpy.timer import Rate
-from rclpy.timer import Timer, TimerInfo
+from rclpy.timer import Timer
 from rclpy.topic_endpoint_info import TopicEndpointInfo
 from rclpy.type_description_service import TypeDescriptionService
 from rclpy.type_support import check_is_valid_msg_type
 from rclpy.type_support import check_is_valid_srv_type
-from rclpy.type_support import MsgT
-from rclpy.type_support import Srv
-from rclpy.type_support import SrvEventT
-from rclpy.type_support import SrvRequestT
-from rclpy.type_support import SrvResponseT
 from rclpy.utilities import get_default_context
 from rclpy.validate_full_topic_name import validate_full_topic_name
 from rclpy.validate_namespace import validate_namespace
@@ -102,9 +91,8 @@ from rclpy.waitable import Waitable
 
 HIDDEN_NODE_PREFIX = '_'
 
-# Left to support Legacy TypeVar.
+# Used for documentation purposes only
 MsgType = TypeVar('MsgType')
-
 SrvType = TypeVar('SrvType')
 SrvTypeRequest = TypeVar('SrvTypeRequest')
 SrvTypeResponse = TypeVar('SrvTypeResponse')
@@ -132,13 +120,13 @@ class Node:
         self,
         node_name: str,
         *,
-        context: Optional[Context] = None,
-        cli_args: Optional[List[str]] = None,
-        namespace: Optional[str] = None,
+        context: Context = None,
+        cli_args: List[str] = None,
+        namespace: str = None,
         use_global_arguments: bool = True,
         enable_rosout: bool = True,
         start_parameter_services: bool = True,
-        parameter_overrides: Optional[List[Parameter[Any]]] = None,
+        parameter_overrides: Optional[List[Parameter]] = None,
         allow_undeclared_parameters: bool = False,
         automatically_declare_parameters_from_overrides: bool = False,
         enable_logger_service: bool = False
@@ -169,31 +157,29 @@ class Node:
             to get and set logger levels of this node. Otherwise, logger levels are only managed
             locally. That is, logger levels cannot be changed remotely.
         """
+        self.__handle = None
         self._context = get_default_context() if context is None else context
-        self._parameters: Dict[str, Parameter[Any]] = {}
-        self._publishers: List[Publisher[Any]] = []
-        self._subscriptions: List[Subscription[Any]] = []
-        self._clients: List[Client[Any, Any, Any]] = []
-        self._services: List[Service[Any, Any, Any]] = []
+        self._parameters: dict = {}
+        self._publishers: List[Publisher] = []
+        self._subscriptions: List[Subscription] = []
+        self._clients: List[Client] = []
+        self._services: List[Service] = []
         self._timers: List[Timer] = []
         self._guards: List[GuardCondition] = []
-        self.__waitables: List[Waitable[Any]] = []
+        self.__waitables: List[Waitable] = []
         self._default_callback_group = MutuallyExclusiveCallbackGroup()
-        self._pre_set_parameters_callbacks: List[Callable[[List[Parameter[Any]]],
-                                                          List[Parameter[Any]]]] = []
+        self._pre_set_parameters_callbacks: List[Callable[[List[Parameter]], List[Parameter]]] = []
         self._on_set_parameters_callbacks: \
-            List[Callable[[List[Parameter[Any]]], SetParametersResult]] = []
-        self._post_set_parameters_callbacks: List[Callable[[List[Parameter[Any]]], None]] = []
+            List[Callable[[List[Parameter]], SetParametersResult]] = []
+        self._post_set_parameters_callbacks: List[Callable[[List[Parameter]], None]] = []
         self._rate_group = ReentrantCallbackGroup()
         self._allow_undeclared_parameters = allow_undeclared_parameters
-        self._parameter_overrides: Dict[str, Parameter[Any]] = {}
-        self._descriptors: Dict[str, ParameterDescriptor] = {}
+        self._parameter_overrides = {}
+        self._descriptors = {}
 
         namespace = namespace or ''
-
-        if self._context.handle is None or not self._context.ok():
+        if not self._context.ok():
             raise NotInitializedException('cannot create node')
-
         with self._context.handle:
             try:
                 self.__node = _rclpy.Node(
@@ -218,11 +204,10 @@ class Node:
         with self.handle:
             self._logger = get_logger(self.__node.logger_name())
 
-        self.__executor_weakref: Optional[weakref.ReferenceType[Executor]] = None
+        self.__executor_weakref = None
 
-        self._parameter_event_publisher: Optional[Publisher[ParameterEvent]] = \
-            self.create_publisher(ParameterEvent, '/parameter_events',
-                                  qos_profile_parameter_events)
+        self._parameter_event_publisher = self.create_publisher(
+            ParameterEvent, '/parameter_events', qos_profile_parameter_events)
 
         with self.handle:
             self._parameter_overrides = self.__node.get_parameters(Parameter)
@@ -257,25 +242,23 @@ class Node:
 
         self._type_description_service = TypeDescriptionService(self)
 
-        self._context.track_node(self)
-
     @property
-    def publishers(self) -> Iterator[Publisher[Any]]:
+    def publishers(self) -> Iterator[Publisher]:
         """Get publishers that have been created on this node."""
         yield from self._publishers
 
     @property
-    def subscriptions(self) -> Iterator[Subscription[Any]]:
+    def subscriptions(self) -> Iterator[Subscription]:
         """Get subscriptions that have been created on this node."""
         yield from self._subscriptions
 
     @property
-    def clients(self) -> Iterator[Client[Any, Any, Any]]:
+    def clients(self) -> Iterator[Client]:
         """Get clients that have been created on this node."""
         yield from self._clients
 
     @property
-    def services(self) -> Iterator[Service[Any, Any, Any]]:
+    def services(self) -> Iterator[Service]:
         """Get services that have been created on this node."""
         yield from self._services
 
@@ -290,7 +273,7 @@ class Node:
         yield from self._guards
 
     @property
-    def waitables(self) -> Iterator[Waitable[Any]]:
+    def waitables(self) -> Iterator[Waitable]:
         """Get waitables that have been created on this node."""
         yield from self.__waitables
 
@@ -315,7 +298,7 @@ class Node:
             new_executor.add_node(self)
             self.__executor_weakref = weakref.ref(new_executor)
 
-    def _wake_executor(self) -> None:
+    def _wake_executor(self):
         executor = self.executor
         if executor:
             executor.wake()
@@ -336,7 +319,7 @@ class Node:
         return self._default_callback_group
 
     @property
-    def handle(self) -> _rclpy.Node:
+    def handle(self):
         """
         Get the handle to the underlying `rcl_node_t`.
 
@@ -347,7 +330,7 @@ class Node:
         return self.__node
 
     @handle.setter
-    def handle(self, value: None) -> None:
+    def handle(self, value):
         raise AttributeError('handle cannot be modified after node creation')
 
     def get_name(self) -> str:
@@ -364,30 +347,17 @@ class Node:
         """Get the clock used by the node."""
         return self._clock
 
-    def get_logger(self) -> RcutilsLogger:
+    def get_logger(self):
         """Get the nodes logger."""
         return self._logger
-
-    @overload
-    def declare_parameter(self, name: str, value: Union[AllowableParameterValueT,
-                                                        Parameter.Type, ParameterValue],
-                          descriptor: Optional[ParameterDescriptor] = None,
-                          ignore_override: bool = False
-                          ) -> Parameter[AllowableParameterValueT]: ...
-
-    @overload
-    def declare_parameter(self, name: str,
-                          value: Union[None, Parameter.Type, ParameterValue] = None,
-                          descriptor: Optional[ParameterDescriptor] = None,
-                          ignore_override: bool = False) -> Parameter[None]: ...
 
     def declare_parameter(
         self,
         name: str,
-        value: Union[AllowableParameterValue, Parameter.Type, ParameterValue] = None,
+        value: Any = None,
         descriptor: Optional[ParameterDescriptor] = None,
         ignore_override: bool = False
-    ) -> Parameter[Any]:
+    ) -> Parameter:
         """
         Declare and initialize a parameter.
 
@@ -409,9 +379,7 @@ class Node:
         """
         if value is None and descriptor is None:
             # Temporal patch so we get deprecation warning if only a name is provided.
-            args: Union[Tuple[str], Tuple[str, Union[AllowableParameterValue,
-                                                     Parameter.Type, ParameterValue],
-                                          ParameterDescriptor]] = (name, )
+            args = (name, )
         else:
             descriptor = ParameterDescriptor() if descriptor is None else descriptor
             args = (name, value, descriptor)
@@ -423,11 +391,10 @@ class Node:
         parameters: List[Union[
             Tuple[str],
             Tuple[str, Parameter.Type],
-            Tuple[str, Union[AllowableParameterValue, Parameter.Type, ParameterValue],
-                  ParameterDescriptor],
+            Tuple[str, Any, ParameterDescriptor],
         ]],
         ignore_override: bool = False
-    ) -> List[Parameter[Any]]:
+    ) -> List[Parameter]:
         """
         Declare a list of parameters.
 
@@ -474,8 +441,8 @@ class Node:
         :raises: InvalidParameterValueException if the registered callback rejects any parameter.
         :raises: TypeError if any tuple in **parameters** does not match the annotated type.
         """
-        parameter_list: List[Parameter[Any]] = []
-        descriptors: Dict[str, ParameterDescriptor] = {}
+        parameter_list = []
+        descriptors = {}
         for index, parameter_tuple in enumerate(parameters):
             if len(parameter_tuple) < 1 or len(parameter_tuple) > 3:
                 raise TypeError(
@@ -489,18 +456,13 @@ class Node:
             # Get the values from the tuple, checking its types.
             # Use defaults if the tuple doesn't contain value and / or descriptor.
             name = parameter_tuple[0]
+            second_arg = parameter_tuple[1] if 1 < len(parameter_tuple) else None
+            descriptor = parameter_tuple[2] if 2 < len(parameter_tuple) else ParameterDescriptor()
+
             if not isinstance(name, str):
                 raise TypeError(
                         f'First element {name} at index {index} in parameters list '
                         'is not a str.')
-            if namespace:
-                name = f'{namespace}.{name}'
-
-            # Note(jubeira): declare_parameters verifies the name, but set_parameters doesn't.
-            validate_parameter_name(name)
-
-            second_arg = parameter_tuple[1] if len(parameter_tuple) > 1 else None
-            descriptor = parameter_tuple[2] if len(parameter_tuple) > 2 else ParameterDescriptor()
             if not isinstance(descriptor, ParameterDescriptor):
                 raise TypeError(
                     f'Third element {descriptor} at index {index} in parameters list '
@@ -529,28 +491,27 @@ class Node:
                 descriptor.type = second_arg.value
             else:
                 value = second_arg
-                if not descriptor.dynamic_typing:
+                if not descriptor.dynamic_typing and value is not None:
                     # infer type from default value
-                    if isinstance(value, ParameterValue):
-                        descriptor.type = value.type
-                    else:
+                    if not isinstance(value, ParameterValue):
                         descriptor.type = Parameter.Type.from_parameter_value(value).value
-                    if descriptor.type == ParameterType.PARAMETER_NOT_SET:
-                        raise ValueError(
-                            'Cannot declare a statically typed parameter with default value '
-                            'of type PARAMETER_NOT_SET')
+                    else:
+                        if value.type == ParameterType.PARAMETER_NOT_SET:
+                            raise ValueError(
+                                'Cannot declare a statically typed parameter with default value '
+                                'of type PARAMETER_NOT_SET')
+                        descriptor.type = value.type
 
             # Get value from parameter overrides, of from tuple if it doesn't exist.
             if not ignore_override and name in self._parameter_overrides:
                 value = self._parameter_overrides[name].value
 
-            if isinstance(value, ParameterValue):
-                raise ValueError('Cannot declare a Parameter from a ParameterValue without it '
-                                 'being included in self._parameter_overrides, and ',
-                                 'ignore_override=False')
+            if namespace:
+                name = f'{namespace}.{name}'
 
-            from typing import cast
-            value = cast(AllowableParameterValue, value)
+            # Note(jubeira): declare_parameters verifies the name, but set_parameters doesn't.
+            validate_parameter_name(name)
+
             parameter_list.append(Parameter(name, value=value))
             descriptors.update({name: descriptor})
 
@@ -571,7 +532,7 @@ class Node:
 
     def _declare_parameter_common(
         self,
-        parameter_list: List[Parameter[Any]],
+        parameter_list: List[Parameter],
         descriptors: Optional[Dict[str, ParameterDescriptor]] = None
     ) -> List[SetParametersResult]:
         """
@@ -618,14 +579,13 @@ class Node:
             )
             if not result.successful:
                 if result.reason.startswith('Wrong parameter type'):
-                    if descriptors:
-                        raise InvalidParameterTypeException(
-                            param, Parameter.Type(descriptors[param._name].type).name)
+                    raise InvalidParameterTypeException(
+                        param, Parameter.Type(descriptors[param._name].type).name)
                 raise InvalidParameterValueException(param.name, param.value, result.reason)
             results.append(result)
         return results
 
-    def undeclare_parameter(self, name: str) -> None:
+    def undeclare_parameter(self, name: str):
         """
         Undeclare a previously declared parameter.
 
@@ -683,7 +643,7 @@ class Node:
         else:
             raise ParameterNotDeclaredException(name)
 
-    def get_parameters(self, names: List[str]) -> List[Parameter[Any]]:
+    def get_parameters(self, names: List[str]) -> List[Parameter]:
         """
         Get a list of parameters.
 
@@ -700,7 +660,7 @@ class Node:
             raise TypeError('All names must be instances of type str')
         return [self.get_parameter(name) for name in names]
 
-    def get_parameter(self, name: str) -> Parameter[Any]:
+    def get_parameter(self, name: str) -> Parameter:
         """
         Get a parameter by name.
 
@@ -728,7 +688,7 @@ class Node:
             raise ParameterNotDeclaredException(name)
 
     def get_parameter_or(
-            self, name: str, alternative_value: Optional[Parameter[Any]] = None) -> Parameter[Any]:
+            self, name: str, alternative_value: Optional[Parameter] = None) -> Parameter:
         """
         Get a parameter or the alternative value.
 
@@ -752,7 +712,10 @@ class Node:
 
         return self._parameters[name]
 
-    def get_parameters_by_prefix(self, prefix: str) -> Dict[str, Parameter[Any]]:
+    def get_parameters_by_prefix(self, prefix: str) -> Dict[str, Optional[Union[
+        bool, int, float, str, bytes,
+        Sequence[bool], Sequence[int], Sequence[float], Sequence[str]
+    ]]]:
         """
         Get parameters that have a given prefix in their names as a dictionary.
 
@@ -778,7 +741,7 @@ class Node:
             if param_name.startswith(prefix)
         }
 
-    def set_parameters(self, parameter_list: List[Parameter[Any]]) -> List[SetParametersResult]:
+    def set_parameters(self, parameter_list: List[Parameter]) -> List[SetParametersResult]:
         """
         Set parameters for the node, and return the result for the set action.
 
@@ -830,8 +793,7 @@ class Node:
 
         return results
 
-    def set_parameters_atomically(self, parameter_list: List[Parameter[Any]]
-                                  ) -> SetParametersResult:
+    def set_parameters_atomically(self, parameter_list: List[Parameter]) -> SetParametersResult:
         """
         Set the given parameters, all at one time, and then aggregate result.
 
@@ -876,7 +838,7 @@ class Node:
 
     def _set_parameters_atomically(
         self,
-        parameter_list: List[Parameter[Any]],
+        parameter_list: List[Parameter],
     ) -> SetParametersResult:
 
         modified_parameter_list = self._call_pre_set_parameters_callback(parameter_list)
@@ -896,7 +858,7 @@ class Node:
 
     def _set_parameters_atomically_common(
         self,
-        parameter_list: List[Parameter[Any]],
+        parameter_list: List[Parameter],
         descriptors: Optional[Dict[str, ParameterDescriptor]] = None,
         allow_not_set_type: bool = False
     ) -> SetParametersResult:
@@ -987,75 +949,14 @@ class Node:
                     self._parameters[param.name] = param
 
             parameter_event.stamp = self._clock.now().to_msg()
-            if self._parameter_event_publisher:
-                self._parameter_event_publisher.publish(parameter_event)
+            self._parameter_event_publisher.publish(parameter_event)
 
             # call post set parameter registered callbacks
             self._call_post_set_parameters_callback(parameter_list)
 
         return result
 
-    def list_parameters(
-        self,
-        prefixes: List[str],
-        depth: int
-    ) -> ListParametersResult:
-        """
-        Get a list of parameter names and their prefixes.
-
-        :param prefixes: A list of prefixes to filter the parameter names.
-            Only the parameter names that start with any of the prefixes are returned.
-            If empty, all parameter names are returned.
-        :param depth: The depth of nested parameter names to include.
-        :return: The list of parameter names and their prefixes.
-        :raises: TypeError if the type of any of the passed arguments is not an expected type.
-        :raises: ValueError if depth is a negative integer.
-        """
-        if not isinstance(prefixes, list):
-            raise TypeError('The prefixes argument must be a list')
-        if not all(isinstance(prefix, str) for prefix in prefixes):
-            raise TypeError('All prefixes must be instances of type str')
-        if not isinstance(depth, int):
-            raise TypeError('The depth must be instance of type int')
-        if depth < 0:
-            raise ValueError('The depth must be greater than or equal to zero')
-
-        result = ListParametersResult()
-
-        separator_less_than_depth: Callable[[str], bool] = \
-            lambda s: s.count(PARAMETER_SEPARATOR_STRING) < depth
-
-        recursive: bool = \
-            (len(prefixes) == 0) and (depth == ListParameters.Request.DEPTH_RECURSIVE)
-
-        for param_name in self._parameters.keys():
-            if not recursive:
-                get_all: bool = (len(prefixes) == 0) and (separator_less_than_depth(param_name))
-                if not get_all:
-                    prefix_matches = any(
-                        param_name == prefix or
-                        (
-                            param_name.startswith(prefix+PARAMETER_SEPARATOR_STRING) and
-                            (
-                                depth == ListParameters.Request.DEPTH_RECURSIVE or
-                                separator_less_than_depth(param_name[len(prefix)+1:])
-                            )
-                        )
-                        for prefix in prefixes
-                    )
-                    if not prefix_matches:
-                        continue
-
-            result.names.append(param_name)
-            last_separator = param_name.rfind(PARAMETER_SEPARATOR_STRING)
-            if last_separator != -1:
-                prefix = param_name[:last_separator]
-                if prefix not in result.prefixes:
-                    result.prefixes.append(prefix)
-
-        return result
-
-    def _check_undeclared_parameters(self, parameter_list: List[Parameter[Any]]) -> None:
+    def _check_undeclared_parameters(self, parameter_list: List[Parameter]):
         """
         Check if parameter list has correct types and was declared beforehand.
 
@@ -1071,10 +972,9 @@ class Node:
         if not self._allow_undeclared_parameters and any(undeclared_parameters):
             raise ParameterNotDeclaredException(list(undeclared_parameters))
 
-    def _call_pre_set_parameters_callback(self, parameter_list: List[Parameter[Any]]
-                                          ) -> Optional[List[Parameter[Any]]]:
+    def _call_pre_set_parameters_callback(self, parameter_list: [List[Parameter]]):
         if self._pre_set_parameters_callbacks:
-            modified_parameter_list: List[Parameter[Any]] = []
+            modified_parameter_list = []
             for callback in self._pre_set_parameters_callbacks:
                 modified_parameter_list.extend(callback(parameter_list))
 
@@ -1082,14 +982,14 @@ class Node:
         else:
             return None
 
-    def _call_post_set_parameters_callback(self, parameter_list: List[Parameter[Any]]) -> None:
+    def _call_post_set_parameters_callback(self, parameter_list: [List[Parameter]]):
         if self._post_set_parameters_callbacks:
             for callback in self._post_set_parameters_callbacks:
                 callback(parameter_list)
 
     def add_pre_set_parameters_callback(
             self,
-            callback: Callable[[List[Parameter[Any]]], List[Parameter[Any]]]
+            callback: Callable[[List[Parameter]], List[Parameter]]
     ) -> None:
         """
         Add a callback gets triggered before parameters are validated.
@@ -1125,7 +1025,7 @@ class Node:
 
     def add_on_set_parameters_callback(
             self,
-            callback: Callable[[List[Parameter[Any]]], SetParametersResult]
+            callback: Callable[[List[Parameter]], SetParametersResult]
     ) -> None:
         """
         Add a callback in front to the list of callbacks.
@@ -1142,7 +1042,7 @@ class Node:
 
     def add_post_set_parameters_callback(
             self,
-            callback: Callable[[List[Parameter[Any]]], None]
+            callback: Callable[[List[Parameter]], None]
     ) -> None:
         """
         Add a callback gets triggered after parameters are set successfully.
@@ -1163,7 +1063,7 @@ class Node:
 
     def remove_pre_set_parameters_callback(
             self,
-            callback: Callable[[List[Parameter[Any]]], List[Parameter[Any]]]
+            callback: Callable[[List[Parameter]], List[Parameter]]
     ) -> None:
         """
         Remove a callback from list of callbacks.
@@ -1177,7 +1077,7 @@ class Node:
 
     def remove_on_set_parameters_callback(
             self,
-            callback: Callable[[List[Parameter[Any]]], SetParametersResult]
+            callback: Callable[[List[Parameter]], SetParametersResult]
     ) -> None:
         """
         Remove a callback from list of callbacks.
@@ -1191,7 +1091,7 @@ class Node:
 
     def remove_post_set_parameters_callback(
             self,
-            callback: Callable[[List[Parameter[Any]]], None]
+            callback: Callable[[List[Parameter]], None]
     ) -> None:
         """
         Remove a callback from list of callbacks.
@@ -1205,7 +1105,7 @@ class Node:
 
     def _apply_descriptors(
         self,
-        parameter_list: List[Parameter[Any]],
+        parameter_list: List[Parameter],
         descriptors: Dict[str, ParameterDescriptor],
         check_read_only: bool = True
     ) -> SetParametersResult:
@@ -1231,7 +1131,7 @@ class Node:
 
     def _apply_descriptor(
         self,
-        parameter: Parameter[Any],
+        parameter: Parameter,
         descriptor: Optional[ParameterDescriptor] = None,
         check_read_only: bool = True
     ) -> SetParametersResult:
@@ -1289,7 +1189,7 @@ class Node:
 
     def _apply_integer_range(
         self,
-        parameter: Parameter[Any],
+        parameter: Parameter,
         integer_range: IntegerRange
     ) -> SetParametersResult:
         min_value = min(integer_range.from_value, integer_range.to_value)
@@ -1325,7 +1225,7 @@ class Node:
 
     def _apply_floating_point_range(
         self,
-        parameter: Parameter[Any],
+        parameter: Parameter,
         floating_point_range: FloatingPointRange
     ) -> SetParametersResult:
         min_value = min(floating_point_range.from_value, floating_point_range.to_value)
@@ -1370,7 +1270,7 @@ class Node:
 
     def _apply_descriptor_and_set(
         self,
-        parameter: Parameter[Any],
+        parameter: Parameter,
         descriptor: Optional[ParameterDescriptor] = None,
         check_read_only: bool = True
     ) -> SetParametersResult:
@@ -1471,8 +1371,7 @@ class Node:
         self._descriptors[name] = descriptor
         return self.get_parameter(name).get_parameter_value()
 
-    def _validate_topic_or_service_name(self, topic_or_service_name: str, *,
-                                        is_service: bool = False) -> None:
+    def _validate_topic_or_service_name(self, topic_or_service_name, *, is_service=False):
         name = self.get_name()
         namespace = self.get_namespace()
         validate_node_name(name)
@@ -1481,7 +1380,7 @@ class Node:
         expanded_topic_or_service_name = expand_topic_name(topic_or_service_name, name, namespace)
         validate_full_topic_name(expanded_topic_or_service_name, is_service=is_service)
 
-    def _validate_qos_or_depth_parameter(self, qos_or_depth: Union[QoSProfile, int]) -> QoSProfile:
+    def _validate_qos_or_depth_parameter(self, qos_or_depth) -> QoSProfile:
         if isinstance(qos_or_depth, QoSProfile):
             return qos_or_depth
         elif isinstance(qos_or_depth, int):
@@ -1492,7 +1391,7 @@ class Node:
             raise TypeError(
                 'Expected QoSProfile or int, but received {!r}'.format(type(qos_or_depth)))
 
-    def add_waitable(self, waitable: Waitable[Any]) -> None:
+    def add_waitable(self, waitable: Waitable) -> None:
         """
         Add a class that is capable of adding things to the wait set.
 
@@ -1501,7 +1400,7 @@ class Node:
         self.__waitables.append(waitable)
         self._wake_executor()
 
-    def remove_waitable(self, waitable: Waitable[Any]) -> None:
+    def remove_waitable(self, waitable: Waitable) -> None:
         """
         Remove a Waitable that was previously added to the node.
 
@@ -1538,15 +1437,15 @@ class Node:
 
     def create_publisher(
         self,
-        msg_type: Type[MsgT],
+        msg_type,
         topic: str,
         qos_profile: Union[QoSProfile, int],
         *,
         callback_group: Optional[CallbackGroup] = None,
         event_callbacks: Optional[PublisherEventCallbacks] = None,
         qos_overriding_options: Optional[QoSOverridingOptions] = None,
-        publisher_class: Type[Publisher[MsgT]] = Publisher,
-    ) -> Publisher[MsgT]:
+        publisher_class: Type[Publisher] = Publisher,
+    ) -> Publisher:
         """
         Create a new publisher.
 
@@ -1612,16 +1511,16 @@ class Node:
 
     def create_subscription(
         self,
-        msg_type: Type[MsgT],
+        msg_type,
         topic: str,
-        callback: Union[Callable[[MsgT], None], Callable[[MsgT, MessageInfo], None]],
+        callback: Callable[[MsgType], None],
         qos_profile: Union[QoSProfile, int],
         *,
         callback_group: Optional[CallbackGroup] = None,
         event_callbacks: Optional[SubscriptionEventCallbacks] = None,
         qos_overriding_options: Optional[QoSOverridingOptions] = None,
         raw: bool = False
-    ) -> Subscription[MsgT]:
+    ) -> Subscription:
         """
         Create a new subscription.
 
@@ -1690,12 +1589,12 @@ class Node:
 
     def create_client(
         self,
-        srv_type: Type[Srv[SrvRequestT, SrvResponseT, SrvEventT]],
+        srv_type,
         srv_name: str,
         *,
         qos_profile: QoSProfile = qos_profile_services_default,
-        callback_group: Optional[CallbackGroup] = None
-    ) -> Client[SrvRequestT, SrvResponseT, SrvEventT]:
+        callback_group: CallbackGroup = None
+    ) -> Client:
         """
         Create a new service client.
 
@@ -1732,13 +1631,13 @@ class Node:
 
     def create_service(
         self,
-        srv_type: Type[Srv[SrvRequestT, SrvResponseT, SrvEventT]],
+        srv_type,
         srv_name: str,
-        callback: Callable[[SrvRequestT, SrvResponseT], SrvResponseT],
+        callback: Callable[[SrvTypeRequest, SrvTypeResponse], SrvTypeResponse],
         *,
         qos_profile: QoSProfile = qos_profile_services_default,
-        callback_group: Optional[CallbackGroup] = None
-    ) -> Service[SrvRequestT, SrvResponseT, SrvEventT]:
+        callback_group: CallbackGroup = None
+    ) -> Service:
         """
         Create a new service server.
 
@@ -1777,35 +1676,28 @@ class Node:
     def create_timer(
         self,
         timer_period_sec: float,
-        callback: Union[Callable[[], None], Callable[[TimerInfo], None], None],
-        callback_group: Optional[CallbackGroup] = None,
-        clock: Optional[Clock] = None,
-        autostart: bool = True,
+        callback: Callable,
+        callback_group: CallbackGroup = None,
+        clock: Clock = None,
     ) -> Timer:
         """
         Create a new timer.
 
-        If autostart is ``True`` (the default), the timer will be started and every
-        ``timer_period_sec`` number of seconds the provided callback function will be called.
-        If autostart is ``False``, the timer will be created but not started; it can then be
-        started by calling ``reset()`` on the timer object.
+        The timer will be started and every ``timer_period_sec`` number of seconds the provided
+        callback function will be called.
 
-        :param timer_period_sec: The period (in seconds) of the timer.
+        :param timer_period_sec: The period (s) of the timer.
         :param callback: A user-defined callback function that is called when the timer expires.
         :param callback_group: The callback group for the timer. If ``None``, then the
             default callback group for the node is used.
         :param clock: The clock which the timer gets time from.
-        :param autostart: Whether to automatically start the timer after creation; defaults to
-            ``True``.
         """
         timer_period_nsec = int(float(timer_period_sec) * S_TO_NS)
         if callback_group is None:
             callback_group = self.default_callback_group
         if clock is None:
             clock = self._clock
-        timer = Timer(
-            callback, callback_group, timer_period_nsec, clock, context=self.context,
-            autostart=autostart)
+        timer = Timer(callback, callback_group, timer_period_nsec, clock, context=self.context)
 
         callback_group.add_entity(timer)
         self._timers.append(timer)
@@ -1814,15 +1706,10 @@ class Node:
 
     def create_guard_condition(
         self,
-        callback: Callable[[], None],
-        callback_group: Optional[CallbackGroup] = None
+        callback: Callable,
+        callback_group: CallbackGroup = None
     ) -> GuardCondition:
-        """
-        Create a new guard condition.
-
-        .. warning:: Users should call :meth:`.Node.destroy_guard_condition` to destroy
-           the GuardCondition object.
-        """
+        """Create a new guard condition."""
         if callback_group is None:
             callback_group = self.default_callback_group
         guard = GuardCondition(callback, callback_group, context=self.context)
@@ -1835,12 +1722,10 @@ class Node:
     def create_rate(
         self,
         frequency: float,
-        clock: Optional[Clock] = None,
+        clock: Clock = None,
     ) -> Rate:
         """
         Create a Rate object.
-
-        .. warning:: Users should call :meth:`.Node.destroy_rate` to destroy the Rate object.
 
         :param frequency: The frequency the Rate runs at (Hz).
         :param clock: The clock the Rate gets time from.
@@ -1856,7 +1741,7 @@ class Node:
         timer = self.create_timer(period, callback, group, clock)
         return Rate(timer, context=self.context)
 
-    def destroy_publisher(self, publisher: Publisher[Any]) -> bool:
+    def destroy_publisher(self, publisher: Publisher) -> bool:
         """
         Destroy a publisher created by the node.
 
@@ -1874,7 +1759,7 @@ class Node:
             return True
         return False
 
-    def destroy_subscription(self, subscription: Subscription[Any]) -> bool:
+    def destroy_subscription(self, subscription: Subscription) -> bool:
         """
         Destroy a subscription created by the node.
 
@@ -1892,7 +1777,7 @@ class Node:
             return True
         return False
 
-    def destroy_client(self, client: Client[Any, Any, Any]) -> bool:
+    def destroy_client(self, client: Client) -> bool:
         """
         Destroy a service client created by the node.
 
@@ -1908,7 +1793,7 @@ class Node:
             return True
         return False
 
-    def destroy_service(self, service: Service[Any, Any, Any]) -> bool:
+    def destroy_service(self, service: Service) -> bool:
         """
         Destroy a service server created by the node.
 
@@ -1966,7 +1851,7 @@ class Node:
         rate.destroy()
         return success
 
-    def destroy_node(self) -> None:
+    def destroy_node(self):
         """
         Destroy the node.
 
@@ -1980,8 +1865,6 @@ class Node:
         * :func:`create_guard_condition`
 
         """
-        self._context.untrack_node(self)
-
         # Drop extra reference to parameter event publisher.
         # It will be destroyed with other publishers below.
         self._parameter_event_publisher = None
@@ -2163,7 +2046,7 @@ class Node:
         with self.handle:
             return self.handle.get_fully_qualified_name()
 
-    def _count_publishers_or_subscribers(self, topic_name: str, func: Callable[[str], int]) -> int:
+    def _count_publishers_or_subscribers(self, topic_name, func):
         fq_topic_name = expand_topic_name(topic_name, self.get_name(), self.get_namespace())
         validate_full_topic_name(fq_topic_name)
         with self.handle:
@@ -2199,47 +2082,11 @@ class Node:
             return self._count_publishers_or_subscribers(
                 topic_name, self.handle.get_count_subscribers)
 
-    def _count_clients_or_servers(self, service_name: str, func: Callable[[str], int]) -> int:
-        fq_service_name = expand_topic_name(service_name, self.get_name(), self.get_namespace())
-        validate_full_topic_name(fq_service_name, is_service=True)
-        with self.handle:
-            return func(fq_service_name)
-
-    def count_clients(self, service_name: str) -> int:
-        """
-        Return the number of clients on a given service.
-
-        `service_name` may be a relative, private, or fully qualified service name.
-        A relative or private service is expanded using this node's namespace and name.
-        The queried service name is not remapped.
-
-        :param service_name: the service_name on which to count the number of clients.
-        :return: the number of clients on the service.
-        """
-        with self.handle:
-            return self._count_clients_or_servers(
-                service_name, self.handle.get_count_clients)
-
-    def count_services(self, service_name: str) -> int:
-        """
-        Return the number of servers on a given service.
-
-        `service_name` may be a relative, private, or fully qualified service name.
-        A relative or private service is expanded using this node's namespace and name.
-        The queried service name is not remapped.
-
-        :param service_name: the service_name on which to count the number of clients.
-        :return: the number of servers on the service.
-        """
-        with self.handle:
-            return self._count_clients_or_servers(
-                service_name, self.handle.get_count_services)
-
     def _get_info_by_topic(
         self,
         topic_name: str,
         no_mangle: bool,
-        func: Callable[[_rclpy.Node, str, bool], List['_rclpy.TopicEndpointInfoDict']]
+        func: Callable[[object, str, bool], List[Dict]]
     ) -> List[TopicEndpointInfo]:
         with self.handle:
             if no_mangle:
@@ -2341,14 +2188,3 @@ class Node:
             flag = fully_qualified_node_name in fully_qualified_node_names
             time.sleep(0.1)
         return flag
-
-    def __enter__(self) -> 'Node':
-        return self
-
-    def __exit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
-    ) -> None:
-        self.destroy_node()

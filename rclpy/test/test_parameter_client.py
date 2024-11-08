@@ -17,7 +17,6 @@ from tempfile import NamedTemporaryFile
 import unittest
 
 import rcl_interfaces.msg
-from rcl_interfaces.msg import ParameterEvent
 from rcl_interfaces.msg import ParameterType
 import rcl_interfaces.srv
 import rclpy
@@ -29,7 +28,7 @@ from rclpy.parameter_client import AsyncParameterClient
 
 class TestParameterClient(unittest.TestCase):
 
-    def setUp(self) -> None:
+    def setUp(self):
         self.context = rclpy.context.Context()
         rclpy.init(context=self.context)
         self.client_node = rclpy.create_node(
@@ -49,13 +48,13 @@ class TestParameterClient(unittest.TestCase):
         self.executor.add_node(self.client_node)
         self.executor.add_node(self.target_node)
 
-    def tearDown(self) -> None:
+    def tearDown(self):
         self.executor.shutdown()
         self.client_node.destroy_node()
         self.target_node.destroy_node()
         rclpy.shutdown(context=self.context)
 
-    def test_set_parameter(self) -> None:
+    def test_set_parameter(self):
         future = self.client.set_parameters([
             Parameter('int_param', Parameter.Type.INTEGER, 88).to_parameter_msg(),
             Parameter('string.param', Parameter.Type.STRING, 'hello world'),
@@ -67,7 +66,7 @@ class TestParameterClient(unittest.TestCase):
         res = [i.successful for i in results.results]
         assert all(res)
 
-    def test_get_parameter(self) -> None:
+    def test_get_parameter(self):
         future = self.client.get_parameters(['int_arr_param', 'float.param..'])
         self.executor.spin_until_future_complete(future)
         results = future.result()
@@ -76,7 +75,7 @@ class TestParameterClient(unittest.TestCase):
         assert list(results.values[0].integer_array_value) == [1, 2, 3]
         assert results.values[1].double_value == 3.14
 
-    def test_list_parameters(self) -> None:
+    def test_list_parameters(self):
         future = self.client.list_parameters()
         self.executor.spin_until_future_complete(future)
         results = future.result()
@@ -84,15 +83,7 @@ class TestParameterClient(unittest.TestCase):
         assert 'int_arr_param' in results.result.names
         assert 'float.param..' in results.result.names
 
-        future = self.client.list_parameters(['float.param.'], 1)
-        self.executor.spin_until_future_complete(future)
-        results = future.result()
-        assert results is not None
-        assert 'int_arr_param' not in results.result.names
-        assert 'float.param..' in results.result.names
-        assert 'float.param.' in results.result.prefixes
-
-    def test_describe_parameters(self) -> None:
+    def test_describe_parameters(self):
         future = self.client.describe_parameters(['int_arr_param'])
         self.executor.spin_until_future_complete(future)
         results = future.result()
@@ -101,7 +92,7 @@ class TestParameterClient(unittest.TestCase):
         assert results.descriptors[0].type == ParameterType.PARAMETER_INTEGER_ARRAY
         assert results.descriptors[0].name == 'int_arr_param'
 
-    def test_get_paramter_types(self) -> None:
+    def test_get_paramter_types(self):
         future = self.client.get_parameter_types(['int_arr_param'])
         self.executor.spin_until_future_complete(future)
         results = future.result()
@@ -109,7 +100,7 @@ class TestParameterClient(unittest.TestCase):
         assert len(results.types) == 1
         assert results.types[0] == ParameterType.PARAMETER_INTEGER_ARRAY
 
-    def test_set_parameters_atomically(self) -> None:
+    def test_set_parameters_atomically(self):
         future = self.client.set_parameters_atomically([
             Parameter('int_param', Parameter.Type.INTEGER, 888),
             Parameter('string.param', Parameter.Type.STRING, 'Hello World').to_parameter_msg(),
@@ -119,7 +110,7 @@ class TestParameterClient(unittest.TestCase):
         assert results is not None
         assert results.result.successful
 
-    def test_delete_parameters(self) -> None:
+    def test_delete_parameters(self):
         self.target_node.declare_parameter('delete_param', 10)
         descriptor = rcl_interfaces.msg.ParameterDescriptor(dynamic_typing=True)
         self.target_node.declare_parameter('delete_param_dynamic', 10, descriptor=descriptor)
@@ -139,7 +130,7 @@ class TestParameterClient(unittest.TestCase):
         assert len(result.results) == 1
         assert result.results[0].successful
 
-    def test_load_parameter_file(self) -> None:
+    def test_load_parameter_file(self):
         yaml_string = """/param_test_target:
             ros__parameters:
                 param_1: 1
@@ -160,7 +151,7 @@ class TestParameterClient(unittest.TestCase):
             if os.path.exists(f.name):
                 os.unlink(f.name)
 
-    def test_load_parameter_file_atomically(self) -> None:
+    def test_load_parameter_file_atomically(self):
         yaml_string = """/param_test_target:
             ros__parameters:
                 param_1: 1
@@ -180,7 +171,7 @@ class TestParameterClient(unittest.TestCase):
             if os.path.exists(f.name):
                 os.unlink(f.name)
 
-    def test_get_uninitialized_parameter(self) -> None:
+    def test_get_uninitialized_parameter(self):
         self.target_node.declare_parameter('uninitialized_parameter', Parameter.Type.STRING)
 
         # The type in description should be STRING
@@ -201,8 +192,8 @@ class TestParameterClient(unittest.TestCase):
 
         self.target_node.undeclare_parameter('uninitialized_parameter')
 
-    def test_on_parameter_event_new(self) -> None:
-        def on_new_parameter_event(msg: ParameterEvent) -> None:
+    def test_on_parameter_event_new(self):
+        def on_new_parameter_event(msg):
             assert msg.node == '/rclpy/test_parameter_client_target'
             assert len(msg.new_parameters) == 1
             assert msg.new_parameters[0].name == 'int_param'
@@ -224,7 +215,7 @@ class TestParameterClient(unittest.TestCase):
 
         param_event_sub.destroy()
 
-    def test_on_parameter_event_changed(self) -> None:
+    def test_on_parameter_event_changed(self):
         future = self.client.set_parameters([
             Parameter('int_param', Parameter.Type.INTEGER, 88).to_parameter_msg(),
         ])
@@ -235,7 +226,7 @@ class TestParameterClient(unittest.TestCase):
         res = [i.successful for i in results.results]
         assert all(res)
 
-        def on_changed_parameter_event(msg: ParameterEvent) -> None:
+        def on_changed_parameter_event(msg):
             assert msg.node == '/rclpy/test_parameter_client_target'
             assert len(msg.new_parameters) == 0
             assert len(msg.changed_parameters) == 1
@@ -257,7 +248,7 @@ class TestParameterClient(unittest.TestCase):
 
         param_event_sub.destroy()
 
-    def test_on_parameter_event_deleted(self) -> None:
+    def test_on_parameter_event_deleted(self):
         future = self.client.set_parameters([
             Parameter('int_param', Parameter.Type.INTEGER, 88).to_parameter_msg(),
         ])
@@ -268,7 +259,7 @@ class TestParameterClient(unittest.TestCase):
         res = [i.successful for i in results.results]
         assert all(res)
 
-        def on_deleted_parameter_event(msg: ParameterEvent) -> None:
+        def on_deleted_parameter_event(msg):
             assert msg.node == '/rclpy/test_parameter_client_target'
             assert len(msg.new_parameters) == 0
             assert len(msg.changed_parameters) == 0

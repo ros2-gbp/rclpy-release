@@ -19,15 +19,17 @@ from unittest.mock import Mock
 import rclpy
 from rclpy.clock import Clock
 from rclpy.clock import ClockChange
+from rclpy.clock import ClockType
 from rclpy.clock import JumpThreshold
 from rclpy.clock import ROSClock
-from rclpy.clock_type import ClockType
 from rclpy.duration import Duration
 from rclpy.parameter import Parameter
 from rclpy.time import Time
 from rclpy.time_source import CLOCK_TOPIC
 from rclpy.time_source import TimeSource
 import rosgraph_msgs.msg
+
+from .mock_compat import __name__ as _  # noqa: ignore=F401
 
 
 class TestTimeSource(unittest.TestCase):

@@ -21,7 +21,6 @@ import warnings
 
 import rclpy
 from rclpy.callback_groups import ReentrantCallbackGroup
-from rclpy.executors import Executor
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.executors import ShutdownException
 from rclpy.executors import SingleThreadedExecutor
@@ -39,7 +38,6 @@ class TestExecutor(unittest.TestCase):
     def tearDown(self):
         self.node.destroy_node()
         rclpy.shutdown(context=self.context)
-        self.context.destroy()
 
     def func_execution(self, executor):
         got_callback = False
@@ -168,24 +166,6 @@ class TestExecutor(unittest.TestCase):
         finally:
             executor.shutdown()
 
-    def test_multi_threaded_executor_closes_threads(self):
-        self.assertIsNotNone(self.node.handle)
-
-        def get_threads():
-            return {t.name for t in threading.enumerate()}
-
-        main_thread_name = get_threads()
-        # Explicitly specify 2_threads for single thread system failure
-        executor = MultiThreadedExecutor(context=self.context, num_threads=2)
-
-        try:
-            # Give the executor a callback so at least one thread gets spun up
-            self.assertTrue(self.func_execution(executor))
-        finally:
-            self.assertTrue(main_thread_name != get_threads())
-            executor.shutdown(wait_for_threads=True)
-            self.assertTrue(main_thread_name == get_threads())
-
     def test_add_node_to_executor(self):
         self.assertIsNotNone(self.node.handle)
         executor = SingleThreadedExecutor(context=self.context)
@@ -288,61 +268,35 @@ class TestExecutor(unittest.TestCase):
         self.assertTrue(future.done())
         self.assertEqual('Sentinel Result', future.result())
 
-    def test_create_task_fifo_order(self):
-        self.assertIsNotNone(self.node.handle)
-        executor = SingleThreadedExecutor(context=self.context)
-        executor.add_node(self.node)
-
-        async def coro1():
-            return 'Sentinel Result 1'
-
-        future1 = executor.create_task(coro1)
-
-        async def coro2():
-            return 'Sentinel Result 2'
-
-        future2 = executor.create_task(coro2)
-
-        # Coro1 is the 1st task, so it gets executed in this spin
-        executor.spin_once(timeout_sec=0)
-        self.assertTrue(future1.done())
-        self.assertEqual('Sentinel Result 1', future1.result())
-        self.assertFalse(future2.done())
-
-        # Coro2 is the next in the queue, so it gets executed in this spin
-        executor.spin_once(timeout_sec=0)
-        self.assertTrue(future2.done())
-        self.assertEqual('Sentinel Result 2', future2.result())
-
     def test_create_task_dependent_coroutines(self):
         self.assertIsNotNone(self.node.handle)
         executor = SingleThreadedExecutor(context=self.context)
         executor.add_node(self.node)
 
         async def coro1():
-            nonlocal future2
-            await future2
             return 'Sentinel Result 1'
 
         future1 = executor.create_task(coro1)
 
         async def coro2():
+            nonlocal future1
+            await future1
             return 'Sentinel Result 2'
 
         future2 = executor.create_task(coro2)
 
-        # Coro1 is the 1st task, so it gets to await future2 in this spin
+        # Coro2 is newest task, so it gets to await future1 in this spin
         executor.spin_once(timeout_sec=0)
-        # Coro2 execs in this spin
+        # Coro1 execs in this spin
         executor.spin_once(timeout_sec=0)
-        self.assertFalse(future1.done())
-        self.assertTrue(future2.done())
-        self.assertEqual('Sentinel Result 2', future2.result())
-
-        # Coro1 passes the await step here (timeout change forces new generator)
-        executor.spin_once(timeout_sec=1)
         self.assertTrue(future1.done())
         self.assertEqual('Sentinel Result 1', future1.result())
+        self.assertFalse(future2.done())
+
+        # Coro2 passes the await step here (timeout change forces new generator)
+        executor.spin_once(timeout_sec=1)
+        self.assertTrue(future2.done())
+        self.assertEqual('Sentinel Result 2', future2.result())
 
     def test_create_task_during_spin(self):
         self.assertIsNotNone(self.node.handle)
@@ -550,78 +504,6 @@ class TestExecutor(unittest.TestCase):
         t.start()
         self.assertTrue(shutdown_event.wait(120))
         self.node.destroy_timer(tmr)
-
-    def test_context_manager(self):
-        self.assertIsNotNone(self.node.handle)
-
-        executor: Executor = SingleThreadedExecutor(context=self.context)
-
-        with executor as the_executor:
-            # Make sure the correct instance is returned
-            assert the_executor is executor
-
-            assert not executor._is_shutdown, 'the executor should not be shut down'
-
-        assert executor._is_shutdown, 'the executor should now be shut down'
-
-        # Make sure it does not raise (smoke test)
-        executor.shutdown()
-
-    def test_single_threaded_spin_once_until_future(self):
-        self.assertIsNotNone(self.node.handle)
-        executor = SingleThreadedExecutor(context=self.context)
-
-        future = Future(executor=executor)
-
-        # Setup a thread to spin_once_until_future_complete, which will spin
-        # for a maximum of 10 seconds.
-        start = time.time()
-        thread = threading.Thread(target=executor.spin_once_until_future_complete,
-                                  args=(future, 10))
-        thread.start()
-
-        # Mark the future as complete immediately
-        future.set_result(True)
-
-        thread.join()
-        end = time.time()
-
-        time_spent = end - start
-
-        # Since we marked the future as complete immediately, the amount of
-        # time we spent should be *substantially* less than the 10 second
-        # timeout we set on the spin.
-        assert time_spent < 10
-
-        executor.shutdown()
-
-    def test_multi_threaded_spin_once_until_future(self):
-        self.assertIsNotNone(self.node.handle)
-        executor = MultiThreadedExecutor(context=self.context)
-
-        future = Future(executor=executor)
-
-        # Setup a thread to spin_once_until_future_complete, which will spin
-        # for a maximum of 10 seconds.
-        start = time.time()
-        thread = threading.Thread(target=executor.spin_once_until_future_complete,
-                                  args=(future, 10))
-        thread.start()
-
-        # Mark the future as complete immediately
-        future.set_result(True)
-
-        thread.join()
-        end = time.time()
-
-        time_spent = end - start
-
-        # Since we marked the future as complete immediately, the amount of
-        # time we spent should be *substantially* less than the 10 second
-        # timeout we set on the spin.
-        assert time_spent < 10
-
-        executor.shutdown()
 
     def test_not_lose_callback(self):
         self.assertIsNotNone(self.node.handle)

@@ -12,70 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import NoReturn, Optional, Protocol, Type, TypeVar, Union
-
 from rclpy.exceptions import NoTypeSupportImportedException
 
 
-class PyCapsule(Protocol):
-    """Alias for PyCapsule Pybind object."""
-
-    pass
-
-
-# Done because metaclasses need to inherit from type
-ProtocolType: Type = type(Protocol)
-
-
-class CommonMsgSrvMetaClass(ProtocolType):
-    """Shared attributes between messages and services."""
-
-    _TYPE_SUPPORT: Optional[PyCapsule]
-
-    @classmethod
-    def __import_type_support__(cls) -> None:
-        ...
-
-
-class MsgMetaClass(CommonMsgSrvMetaClass):
-    """Generic Message Metaclass Alias."""
-
-    _CREATE_ROS_MESSAGE:  Optional[PyCapsule]
-    _CONVERT_FROM_PY:  Optional[PyCapsule]
-    _CONVERT_TO_PY:  Optional[PyCapsule]
-    _DESTROY_ROS_MESSAGE:  Optional[PyCapsule]
-
-
-class Msg(Protocol, metaclass=MsgMetaClass):
-    """Generic Message Alias."""
-
-    pass
-
-
-MsgT = TypeVar('MsgT', bound=Msg, contravariant=True)
-
-SrvRequestT = TypeVar('SrvRequestT', bound=Msg)
-SrvResponseT = TypeVar('SrvResponseT', bound=Msg)
-SrvEventT = TypeVar('SrvEventT', bound=Msg)
-
-
-class Srv(Protocol[SrvRequestT, SrvResponseT, SrvEventT], metaclass=CommonMsgSrvMetaClass):
-    """Generic Service Type Alias."""
-
-    Request: Type[SrvRequestT]
-    Response: Type[SrvResponseT]
-    Event: Type[SrvEventT]
-
-    def __init__(self) -> NoReturn: ...
-
-
-# Can be used if https://github.com/python/typing/issues/548 ever gets approved.
-SrvT = TypeVar('SrvT', bound=Type[Srv])
-
-
-def check_for_type_support(msg_or_srv_type: Type[Union[Msg, Srv]]) -> None:
+def check_for_type_support(msg_or_srv_type):
     try:
-        ts = msg_or_srv_type._TYPE_SUPPORT
+        ts = msg_or_srv_type.__class__._TYPE_SUPPORT
     except AttributeError as e:
         e.args = (
             e.args[0] +
@@ -84,19 +26,19 @@ def check_for_type_support(msg_or_srv_type: Type[Union[Msg, Srv]]) -> None:
             *e.args[1:])
         raise
     if ts is None:
-        msg_or_srv_type.__import_type_support__()
-    if msg_or_srv_type._TYPE_SUPPORT is None:
+        msg_or_srv_type.__class__.__import_type_support__()
+    if msg_or_srv_type.__class__._TYPE_SUPPORT is None:
         raise NoTypeSupportImportedException()
 
 
-def check_is_valid_msg_type(msg_type: Type[Msg]) -> None:
+def check_is_valid_msg_type(msg_type):
     check_for_type_support(msg_type)
     try:
         assert None not in (
-            msg_type._CREATE_ROS_MESSAGE,
-            msg_type._CONVERT_FROM_PY,
-            msg_type._CONVERT_TO_PY,
-            msg_type._DESTROY_ROS_MESSAGE,
+            msg_type.__class__._CREATE_ROS_MESSAGE,
+            msg_type.__class__._CONVERT_FROM_PY,
+            msg_type.__class__._CONVERT_TO_PY,
+            msg_type.__class__._DESTROY_ROS_MESSAGE,
         )
     except (AssertionError, AttributeError):
         raise RuntimeError(
@@ -105,7 +47,7 @@ def check_is_valid_msg_type(msg_type: Type[Msg]) -> None:
         ) from None
 
 
-def check_is_valid_srv_type(srv_type: Type[Srv]) -> None:
+def check_is_valid_srv_type(srv_type):
     check_for_type_support(srv_type)
     try:
         assert None not in (
