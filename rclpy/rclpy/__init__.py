@@ -22,7 +22,7 @@ A typical ROS program consists of the following operations:
 #. Process node callbacks
 #. Shutdown
 
-Inititalization is done by calling :func:`init` for a particular :class:`.Context`.
+Initialization is done by calling :func:`init` for a particular :class:`.Context`.
 This must be done before any ROS nodes can be created.
 
 Creating a ROS node is done by calling :func:`create_node` or by instantiating a
@@ -40,8 +40,10 @@ all ROS nodes associated with the context), the :func:`shutdown` function should
 This will invalidate all entities derived from the context.
 """
 
+from types import TracebackType
 from typing import List
 from typing import Optional
+from typing import Type
 from typing import TYPE_CHECKING
 
 from rclpy.context import Context
@@ -54,7 +56,7 @@ from rclpy.utilities import get_default_context
 from rclpy.utilities import get_rmw_implementation_identifier  # noqa: F401
 from rclpy.utilities import ok  # noqa: F401 forwarding to this module
 from rclpy.utilities import shutdown as _shutdown
-from rclpy.utilities import try_shutdown  # noqa: F401
+from rclpy.utilities import try_shutdown as _try_shutdown
 
 # Avoid loading extensions on module import
 if TYPE_CHECKING:
@@ -62,13 +64,61 @@ if TYPE_CHECKING:
     from rclpy.node import Node  # noqa: F401
 
 
+class InitContextManager:
+    """
+    A proxy object for initialization.
+
+    One of these is returned when calling `rclpy.init`, and can be used with context managers to
+    properly cleanup after initialization.
+    """
+
+    def __init__(self,
+                 args: Optional[List[str]],
+                 context: Optional[Context],
+                 domain_id: Optional[int],
+                 signal_handler_options: Optional[SignalHandlerOptions]) -> None:
+        self.context = get_default_context() if context is None else context
+        if signal_handler_options is None:
+            if context is None or context is get_default_context():
+                signal_handler_options = SignalHandlerOptions.ALL
+            else:
+                signal_handler_options = SignalHandlerOptions.NO
+
+        if signal_handler_options == SignalHandlerOptions.NO:
+            self.installed_signal_handlers = False
+        else:
+            self.installed_signal_handlers = True
+        self.context.init(args, domain_id=domain_id)
+        # Install signal handlers after initializing the context because the rclpy signal
+        # handler only does something if there is at least one initialized context.
+        # It is desirable for sigint or sigterm to be able to terminate the process if rcl_init
+        # takes a long time, and the default signal handlers work well for that purpose.
+        install_signal_handlers(signal_handler_options)
+
+    def __enter__(self) -> 'InitContextManager':
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
+        # The Context class can only be initialized once.  Thus when using the default context,
+        # we have to destroy it every time we are done using it and create a new one.
+        # utilities.try_shutdown will only replace the default context if we pass 'None', so make
+        # sure to do that for the default context.
+        shutdown_context = None if self.context is get_default_context() else self.context
+        try_shutdown(context=shutdown_context, uninstall_handlers=self.installed_signal_handlers)
+
+
 def init(
     *,
     args: Optional[List[str]] = None,
-    context: Context = None,
+    context: Optional[Context] = None,
     domain_id: Optional[int] = None,
     signal_handler_options: Optional[SignalHandlerOptions] = None,
-) -> None:
+) -> InitContextManager:
     """
     Initialize ROS communications for a given context.
 
@@ -78,19 +128,9 @@ def init(
     :param domain_id: ROS domain id.
     :param signal_handler_options: Indicate which signal handlers to install.
         If `None`, SIGINT and SIGTERM will be installed when initializing the default context.
+    :return: an InitContextManager that can be used with Python context managers to cleanup.
     """
-    context = get_default_context() if context is None else context
-    if signal_handler_options is None:
-        if context is get_default_context():
-            signal_handler_options = SignalHandlerOptions.ALL
-        else:
-            signal_handler_options = SignalHandlerOptions.NO
-    context.init(args, domain_id=domain_id)
-    # Install signal handlers after initializing the context because the rclpy signal
-    # handler only does something if there is at least one initialized context.
-    # It is desirable for sigint or sigterm to be able to terminate the process if rcl_init
-    # takes a long time, and the default signal handlers work well for that purpose.
-    install_signal_handlers(signal_handler_options)
+    return InitContextManager(args, context, domain_id, signal_handler_options)
 
 
 # The global spin functions need an executor to do the work
@@ -114,7 +154,11 @@ def get_global_executor() -> 'Executor':
     return __executor
 
 
-def shutdown(*, context: Context = None, uninstall_handlers: Optional[bool] = None) -> None:
+def shutdown(
+    *,
+    context: Optional[Context] = None,
+    uninstall_handlers: Optional[bool] = None
+) -> None:
     """
     Shutdown a previously initialized context.
 
@@ -125,9 +169,35 @@ def shutdown(*, context: Context = None, uninstall_handlers: Optional[bool] = No
     :param uninstall_handlers:
         If `None`, signal handlers will be uninstalled when shutting down the default context.
         If `True`, signal handlers will be uninstalled.
-        If not, signal handlers won't be uninstalled.
+        If `False`, signal handlers won't be uninstalled.
     """
     _shutdown(context=context)
+    if (
+        uninstall_handlers or (
+            uninstall_handlers is None and (
+                context is None or context is get_default_context()))
+    ):
+        uninstall_signal_handlers()
+
+
+def try_shutdown(
+    *,
+    context: Optional[Context] = None,
+    uninstall_handlers: Optional[bool] = None
+) -> None:
+    """
+    Shutdown a previously initialized context if not already shutdown.
+
+    This will also shutdown the global executor.
+
+    :param context: The context to invalidate. If ``None``, then the default context is used
+        (see :func:`.get_default_context`).
+    :param uninstall_handlers:
+        If `None`, signal handlers will be uninstalled when shutting down the default context.
+        If `True`, signal handlers will be uninstalled.
+        If `False`, signal handlers won't be uninstalled.
+    """
+    _try_shutdown(context=context)
     if (
         uninstall_handlers or (
             uninstall_handlers is None and (
@@ -139,13 +209,13 @@ def shutdown(*, context: Context = None, uninstall_handlers: Optional[bool] = No
 def create_node(
     node_name: str,
     *,
-    context: Context = None,
-    cli_args: List[str] = None,
-    namespace: str = None,
+    context: Optional[Context] = None,
+    cli_args: Optional[List[str]] = None,
+    namespace: Optional[str] = None,
     use_global_arguments: bool = True,
     enable_rosout: bool = True,
     start_parameter_services: bool = True,
-    parameter_overrides: List[Parameter] = None,
+    parameter_overrides: Optional[List[Parameter]] = None,
     allow_undeclared_parameters: bool = False,
     automatically_declare_parameters_from_overrides: bool = False,
     enable_logger_service: bool = False
@@ -191,7 +261,12 @@ def create_node(
         )
 
 
-def spin_once(node: 'Node', *, executor: 'Executor' = None, timeout_sec: float = None) -> None:
+def spin_once(
+    node: 'Node',
+    *,
+    executor: Optional['Executor'] = None,
+    timeout_sec: Optional[float] = None
+) -> None:
     """
     Execute one item of work or wait until a timeout expires.
 
@@ -201,6 +276,9 @@ def spin_once(node: 'Node', *, executor: 'Executor' = None, timeout_sec: float =
     If no executor is provided (ie. ``None``), then the global executor is used.
     It is possible the work done is for a node other than the one provided if the global executor
     has a partially completed coroutine.
+
+    This method should not be called from multiple threads with the same node or executor
+    argument.
 
     :param node: A node to add to the executor to check for work.
     :param executor: The executor to use, or the global executor if ``None``.
@@ -214,7 +292,7 @@ def spin_once(node: 'Node', *, executor: 'Executor' = None, timeout_sec: float =
         executor.remove_node(node)
 
 
-def spin(node: 'Node', executor: 'Executor' = None) -> None:
+def spin(node: 'Node', executor: Optional['Executor'] = None) -> None:
     """
     Execute work and block until the context associated with the executor is shutdown.
 
@@ -237,8 +315,8 @@ def spin(node: 'Node', executor: 'Executor' = None) -> None:
 def spin_until_future_complete(
     node: 'Node',
     future: Future,
-    executor: 'Executor' = None,
-    timeout_sec: float = None
+    executor: Optional['Executor'] = None,
+    timeout_sec: Optional[float] = None
 ) -> None:
     """
     Execute work until the future is complete.

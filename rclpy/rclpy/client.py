@@ -14,7 +14,11 @@
 
 import threading
 import time
+from types import TracebackType
 from typing import Dict
+from typing import Generic
+from typing import Optional
+from typing import Type
 from typing import TypeVar
 
 from rclpy.callback_groups import CallbackGroup
@@ -24,19 +28,20 @@ from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.qos import QoSProfile
 from rclpy.service_introspection import ServiceIntrospectionState
 from rclpy.task import Future
+from rclpy.type_support import Srv, SrvEventT, SrvRequestT, SrvResponseT
 
-# Used for documentation purposes only
+# Left To Support Legacy TypeVars
 SrvType = TypeVar('SrvType')
 SrvTypeRequest = TypeVar('SrvTypeRequest')
 SrvTypeResponse = TypeVar('SrvTypeResponse')
 
 
-class Client:
+class Client(Generic[SrvRequestT, SrvResponseT, SrvEventT]):
     def __init__(
         self,
         context: Context,
         client_impl: _rclpy.Client,
-        srv_type: SrvType,
+        srv_type: Type[Srv[SrvRequestT, SrvResponseT, SrvEventT]],
         srv_name: str,
         qos_profile: QoSProfile,
         callback_group: CallbackGroup
@@ -44,7 +49,7 @@ class Client:
         """
         Create a container for a ROS service client.
 
-        .. warning:: Users should not create a service client with this constuctor, instead they
+        .. warning:: Users should not create a service client with this constructor, instead they
            should call :meth:`.Node.create_client`.
 
         :param context: The context associated with the service client.
@@ -61,21 +66,26 @@ class Client:
         self.srv_name = srv_name
         self.qos_profile = qos_profile
         # Key is a sequence number, value is an instance of a Future
-        self._pending_requests: Dict[int, Future] = {}
+        self._pending_requests: Dict[int, Future[SrvResponseT]] = {}
         self.callback_group = callback_group
         # True when the callback is ready to fire but has not been "taken" by an executor
         self._executor_event = False
 
         self._lock = threading.Lock()
 
-    def call(self, request: SrvTypeRequest) -> SrvTypeResponse:
+    def call(
+        self,
+        request: SrvRequestT,
+        timeout_sec: Optional[float] = None
+    ) -> Optional[SrvResponseT]:
         """
         Make a service request and wait for the result.
 
-        .. warning:: Do not call this method in a callback or a deadlock may occur.
+        .. warning:: Do not call this method in a callback, or a deadlock or timeout may occur.
 
         :param request: The service request.
-        :return: The service response.
+        :param timeout_sec: Seconds to wait. If ``None``, then wait forever.
+        :return: The service response, or None if timed out.
         :raises: TypeError if the type of the passed request isn't an instance
           of the Request type of the provided service when the client was
           constructed.
@@ -85,7 +95,7 @@ class Client:
 
         event = threading.Event()
 
-        def unblock(future):
+        def unblock(future: Future[SrvResponseT]) -> None:
             nonlocal event
             event.set()
 
@@ -96,12 +106,16 @@ class Client:
         # The callback might have been added after the future is completed,
         # resulting in the event never being set.
         if not future.done():
-            event.wait()
-        if future.exception() is not None:
-            raise future.exception()
+            if not event.wait(timeout_sec):
+                # Timed out. remove_pending_request() to free resources
+                self.remove_pending_request(future)
+
+        exception = future.exception()
+        if exception is not None:
+            raise exception
         return future.result()
 
-    def call_async(self, request: SrvTypeRequest) -> Future:
+    def call_async(self, request: SrvRequestT) -> Future[SrvResponseT]:
         """
         Make a service request and asynchronously get the result.
 
@@ -120,14 +134,14 @@ class Client:
             if sequence_number in self._pending_requests:
                 raise RuntimeError(f'Sequence ({sequence_number}) conflicts with pending request')
 
-            future = Future()
+            future = Future[SrvResponseT]()
             self._pending_requests[sequence_number] = future
 
             future.add_done_callback(self.remove_pending_request)
 
         return future
 
-    def get_pending_request(self, sequence_number: int) -> Future:
+    def get_pending_request(self, sequence_number: int) -> Future[SrvResponseT]:
         """
         Get a future from the list of pending requests.
 
@@ -138,7 +152,7 @@ class Client:
         with self._lock:
             return self._pending_requests[sequence_number]
 
-    def remove_pending_request(self, future: Future) -> None:
+    def remove_pending_request(self, future: Future[SrvResponseT]) -> None:
         """
         Remove a future from the list of pending requests.
 
@@ -161,7 +175,7 @@ class Client:
         with self.handle:
             return self.__client.service_server_is_available()
 
-    def wait_for_service(self, timeout_sec: float = None) -> bool:
+    def wait_for_service(self, timeout_sec: Optional[float] = None) -> bool:
         """
         Wait for a service server to become ready.
 
@@ -203,5 +217,27 @@ class Client:
     def handle(self):
         return self.__client
 
-    def destroy(self):
+    @property
+    def service_name(self) -> str:
+        with self.handle:
+            return self.__client.service_name
+
+    def destroy(self) -> None:
+        """
+        Destroy a container for a ROS service client.
+
+        .. warning:: Users should not destroy a service client with this destructor, instead they
+           should call :meth:`.Node.destroy_client`.
+        """
         self.__client.destroy_when_not_in_use()
+
+    def __enter__(self) -> 'Client[SrvRequestT, SrvResponseT, SrvEventT]':
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
+        self.destroy()

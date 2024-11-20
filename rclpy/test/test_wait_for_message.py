@@ -17,6 +17,7 @@ import time
 import unittest
 
 import rclpy
+from rclpy.qos import QoSProfile
 from rclpy.wait_for_message import wait_for_message
 from test_msgs.msg import BasicTypes
 
@@ -37,7 +38,7 @@ class TestWaitForMessage(unittest.TestCase):
         cls.node.destroy_node()
         rclpy.shutdown(context=cls.context)
 
-    def _publish_message(self):
+    def _publish_message(self) -> None:
         pub = self.node.create_publisher(BasicTypes, TOPIC_NAME, 1)
         msg = BasicTypes()
         msg.int32_value = MSG_DATA
@@ -48,16 +49,25 @@ class TestWaitForMessage(unittest.TestCase):
             time.sleep(1)
         pub.destroy()
 
-    def test_wait_for_message(self):
+    def test_wait_for_message(self) -> None:
         t = threading.Thread(target=self._publish_message)
         t.start()
-        ret, msg = wait_for_message(BasicTypes, self.node, TOPIC_NAME)
+        ret, msg = wait_for_message(BasicTypes, self.node, TOPIC_NAME, qos_profile=1)
         self.assertTrue(ret)
         self.assertEqual(msg.int32_value, MSG_DATA)
         t.join()
 
-    def test_wait_for_message_timeout(self):
-        ret, _ = wait_for_message(BasicTypes, self.node, TOPIC_NAME, 1)
+    def test_wait_for_message_qos(self) -> None:
+        t = threading.Thread(target=self._publish_message)
+        t.start()
+        ret, msg = wait_for_message(
+            BasicTypes, self.node, TOPIC_NAME, qos_profile=QoSProfile(depth=1))
+        self.assertTrue(ret)
+        self.assertEqual(msg.int32_value, MSG_DATA)
+        t.join()
+
+    def test_wait_for_message_timeout(self) -> None:
+        ret, _ = wait_for_message(BasicTypes, self.node, TOPIC_NAME, time_to_wait=1)
         self.assertFalse(ret)
 
 

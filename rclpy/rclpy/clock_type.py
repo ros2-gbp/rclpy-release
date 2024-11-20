@@ -1,4 +1,4 @@
-# Copyright 2016-2017 Open Source Robotics Foundation, Inc.
+# Copyright 2024 Open Source Robotics Foundation, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,22 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Provide singleton access to the rclpy C modules.
+from enum import IntEnum
 
-For example, you might use it like this:
+from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 
-.. code::
 
-    from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
+class ClockType(IntEnum):
+    """
+    Enum for clock type.
 
-    _rclpy.rclpy_init()
-    while _rclpy.rclpy_ok():
-        # ...
-"""
+    This enum must match the one defined in rclpy/_rclpy_pybind11.cpp.
+    """
 
-from rpyutils import import_c_library
-
-package = 'rclpy'
-
-rclpy_implementation = import_c_library('._rclpy_pybind11', package)
+    UNINITIALIZED = _rclpy.ClockType.UNINITIALIZED
+    ROS_TIME = _rclpy.ClockType.ROS_TIME
+    SYSTEM_TIME = _rclpy.ClockType.SYSTEM_TIME
+    STEADY_TIME = _rclpy.ClockType.STEADY_TIME
