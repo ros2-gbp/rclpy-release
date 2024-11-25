@@ -29,7 +29,7 @@ from test_msgs.action import Fibonacci
 from unique_identifier_msgs.msg import UUID
 
 
-class MockActionClient:
+class MockActionClient():
 
     def __init__(self, node):
         self.reset()
@@ -47,7 +47,7 @@ class MockActionClient:
         self.status_sub = node.create_subscription(
             Fibonacci.Impl.GoalStatusMessage, '/fibonacci/_action/status', self.status_callback, 1)
 
-    def reset(self) -> None:
+    def reset(self):
         self.feedback_msg = None
         self.status_msg = None
 
@@ -71,14 +71,14 @@ class MockActionClient:
 
 class TestActionServer(unittest.TestCase):
 
-    def setUp(self) -> None:
+    def setUp(self):
         self.context = rclpy.context.Context()
         rclpy.init(context=self.context)
         self.executor = SingleThreadedExecutor(context=self.context)
         self.node = rclpy.create_node('TestActionServer', context=self.context)
         self.mock_action_client = MockActionClient(self.node)
 
-    def tearDown(self) -> None:
+    def tearDown(self):
         self.node.destroy_node()
         self.executor.shutdown()
         rclpy.shutdown(context=self.context)
@@ -92,7 +92,7 @@ class TestActionServer(unittest.TestCase):
         goal_handle.succeed()
         return Fibonacci.Result()
 
-    def test_constructor_defaults(self) -> None:
+    def test_constructor_defaults(self):
         # Defaults
         action_server = ActionServer(
             self.node,
@@ -102,7 +102,7 @@ class TestActionServer(unittest.TestCase):
         )
         action_server.destroy()
 
-    def test_constructor_no_defaults(self) -> None:
+    def test_constructor_no_defaults(self):
         action_server = ActionServer(
             self.node,
             Fibonacci,
@@ -121,7 +121,7 @@ class TestActionServer(unittest.TestCase):
         )
         action_server.destroy()
 
-    def test_get_num_entities(self) -> None:
+    def test_get_num_entities(self):
         action_server = ActionServer(
             self.node,
             Fibonacci,
@@ -136,7 +136,7 @@ class TestActionServer(unittest.TestCase):
         self.assertEqual(num_entities.num_services, 3)
         action_server.destroy()
 
-    def test_single_goal_accept(self) -> None:
+    def test_single_goal_accept(self):
         goal_uuid = UUID(uuid=list(uuid.uuid4().bytes))
         goal_order = 10
 
@@ -174,7 +174,7 @@ class TestActionServer(unittest.TestCase):
         self.assertTrue(handle_accepted_callback_triggered)
         action_server.destroy()
 
-    def test_single_goal_reject(self) -> None:
+    def test_single_goal_reject(self):
         goal_order = 10
 
         def goal_callback(goal):
@@ -203,7 +203,7 @@ class TestActionServer(unittest.TestCase):
         self.assertFalse(future.result().accepted)
         action_server.destroy()
 
-    def test_goal_callback_invalid_return(self) -> None:
+    def test_goal_callback_invalid_return(self):
 
         def goal_callback(goal):
             return 'Invalid return type'
@@ -225,7 +225,7 @@ class TestActionServer(unittest.TestCase):
         self.assertFalse(future.result().accepted)
         action_server.destroy()
 
-    def test_multi_goal_accept(self) -> None:
+    def test_multi_goal_accept(self):
         executor = MultiThreadedExecutor(context=self.context)
         action_server = ActionServer(
             self.node,
@@ -253,7 +253,7 @@ class TestActionServer(unittest.TestCase):
         self.assertTrue(future2.result().accepted)
         action_server.destroy()
 
-    def test_duplicate_goal(self) -> None:
+    def test_duplicate_goal(self):
         executor = MultiThreadedExecutor(context=self.context)
         action_server = ActionServer(
             self.node,
@@ -277,7 +277,7 @@ class TestActionServer(unittest.TestCase):
         self.assertNotEqual(future0.result().accepted, future1.result().accepted)
         action_server.destroy()
 
-    def test_cancel_goal_accept(self) -> None:
+    def test_cancel_goal_accept(self):
 
         def execute_callback(goal_handle):
             # Wait, to give the opportunity to cancel
@@ -323,7 +323,7 @@ class TestActionServer(unittest.TestCase):
         action_server.destroy()
         executor.shutdown()
 
-    def test_cancel_goal_reject(self) -> None:
+    def test_cancel_goal_reject(self):
 
         def execute_callback(goal_handle):
             # Wait, to give the opportunity to cancel
@@ -368,7 +368,7 @@ class TestActionServer(unittest.TestCase):
         action_server.destroy()
         executor.shutdown()
 
-    def test_cancel_defered_goal(self) -> None:
+    def test_cancel_defered_goal(self):
         server_goal_handle = None
 
         def handle_accepted_callback(gh):
@@ -427,7 +427,7 @@ class TestActionServer(unittest.TestCase):
         self.assertEqual(server_goal_handle.status, GoalStatus.STATUS_CANCELED)
         action_server.destroy()
 
-    def test_execute_succeed(self) -> None:
+    def test_execute_succeed(self):
 
         def execute_callback(goal_handle):
             self.assertEqual(goal_handle.status, GoalStatus.STATUS_EXECUTING)
@@ -458,7 +458,7 @@ class TestActionServer(unittest.TestCase):
         self.assertEqual(result_response.result.sequence.tolist(), [1, 1, 2, 3, 5])
         action_server.destroy()
 
-    def test_execute_abort(self) -> None:
+    def test_execute_abort(self):
 
         def execute_callback(goal_handle):
             self.assertEqual(goal_handle.status, GoalStatus.STATUS_EXECUTING)
@@ -489,7 +489,7 @@ class TestActionServer(unittest.TestCase):
         self.assertEqual(result_response.result.sequence.tolist(), [1, 1, 2, 3, 5])
         action_server.destroy()
 
-    def test_execute_no_terminal_state(self) -> None:
+    def test_execute_no_terminal_state(self):
 
         def execute_callback(goal_handle):
             # Do not set the goal handles state
@@ -520,7 +520,7 @@ class TestActionServer(unittest.TestCase):
         self.assertEqual(result_response.result.sequence.tolist(), [1, 1, 2, 3, 5])
         action_server.destroy()
 
-    def test_execute_raises_exception(self) -> None:
+    def test_execute_raises_exception(self):
 
         def execute_callback(goal_handle):
             # User callback raises
@@ -549,7 +549,7 @@ class TestActionServer(unittest.TestCase):
         self.assertEqual(result_response.result.sequence.tolist(), [])
         action_server.destroy()
 
-    def test_expire_goals_none(self) -> None:
+    def test_expire_goals_none(self):
 
         # 1 second timeout
         action_server = ActionServer(
@@ -572,7 +572,7 @@ class TestActionServer(unittest.TestCase):
         self.assertEqual(1, len(action_server._goal_handles))
         action_server.destroy()
 
-    def test_expire_goals_one(self) -> None:
+    def test_expire_goals_one(self):
 
         # 1 second timeout
         action_server = ActionServer(
@@ -595,7 +595,7 @@ class TestActionServer(unittest.TestCase):
         self.assertEqual(0, len(action_server._goal_handles))
         action_server.destroy()
 
-    def test_expire_goals_multi(self) -> None:
+    def test_expire_goals_multi(self):
         # 1 second timeout
         action_server = ActionServer(
             self.node,
@@ -622,7 +622,7 @@ class TestActionServer(unittest.TestCase):
         self.assertEqual(0, len(action_server._goal_handles))
         action_server.destroy()
 
-    def test_feedback(self) -> None:
+    def test_feedback(self):
 
         def execute_with_feedback(goal_handle):
             feedback = Fibonacci.Feedback()
@@ -650,7 +650,7 @@ class TestActionServer(unittest.TestCase):
             self.mock_action_client.feedback_msg.feedback.sequence.tolist())
         action_server.destroy()
 
-    def test_different_feedback_type_raises(self) -> None:
+    def test_different_feedback_type_raises(self):
 
         def execute_with_feedback(goal_handle):
             try:

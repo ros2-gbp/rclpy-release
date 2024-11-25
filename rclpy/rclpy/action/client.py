@@ -14,8 +14,6 @@
 
 import threading
 import time
-from typing import Any
-from typing import TypedDict
 import uuid
 import weakref
 
@@ -32,14 +30,6 @@ from rclpy.type_support import check_for_type_support
 from rclpy.waitable import NumberOfEntities, Waitable
 
 from unique_identifier_msgs.msg import UUID
-
-
-class ClientGoalHandleDict(TypedDict, total=False):
-    goal: Any
-    cancel: Any
-    result: Any
-    feedback: Any
-    status: Any
 
 
 class ClientGoalHandle():
@@ -118,7 +108,7 @@ class ClientGoalHandle():
         return self._action_client._get_result_async(self)
 
 
-class ActionClient(Waitable[ClientGoalHandleDict]):
+class ActionClient(Waitable):
     """ROS Action client."""
 
     def __init__(
@@ -190,7 +180,6 @@ class ActionClient(Waitable[ClientGoalHandleDict]):
 
         callback_group.add_entity(self)
         self._node.add_waitable(self)
-        self._logger = self._node.get_logger().get_child('action_client')
 
     def _generate_random_uuid(self):
         return UUID(uuid=list(uuid.uuid4().bytes))
@@ -247,9 +236,9 @@ class ActionClient(Waitable[ClientGoalHandleDict]):
         self._is_result_response_ready = ready_entities[4]
         return any(ready_entities)
 
-    def take_data(self) -> ClientGoalHandleDict:
+    def take_data(self):
         """Take stuff from lower level so the wait set doesn't immediately wake again."""
-        data: ClientGoalHandleDict = {}
+        data = {}
         if self._is_goal_response_ready:
             taken_data = self._client_handle.take_goal_response(
                 self._action_type.Impl.SendGoalService.Response)
@@ -287,7 +276,7 @@ class ActionClient(Waitable[ClientGoalHandleDict]):
 
         return data
 
-    async def execute(self, taken_data: ClientGoalHandleDict) -> None:
+    async def execute(self, taken_data):
         """
         Execute work after data has been taken from a ready wait set.
 
@@ -311,7 +300,7 @@ class ActionClient(Waitable[ClientGoalHandleDict]):
 
                 self._pending_goal_requests[sequence_number].set_result(goal_handle)
             else:
-                self._logger.warning(
+                self._node.get_logger().warning(
                     'Ignoring unexpected goal response. There may be more than '
                     f"one action server for the action '{self._action_name}'"
                 )
@@ -321,7 +310,7 @@ class ActionClient(Waitable[ClientGoalHandleDict]):
             if sequence_number in self._pending_cancel_requests:
                 self._pending_cancel_requests[sequence_number].set_result(cancel_response)
             else:
-                self._logger.warning(
+                self._node.get_logger().warning(
                     'Ignoring unexpected cancel response. There may be more than '
                     f"one action server for the action '{self._action_name}'"
                 )
@@ -331,7 +320,7 @@ class ActionClient(Waitable[ClientGoalHandleDict]):
             if sequence_number in self._pending_result_requests:
                 self._pending_result_requests[sequence_number].set_result(result_response)
             else:
-                self._logger.warning(
+                self._node.get_logger().warning(
                     'Ignoring unexpected result response. There may be more than '
                     f"one action server for the action '{self._action_name}'"
                 )

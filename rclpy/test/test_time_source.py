@@ -19,9 +19,9 @@ from unittest.mock import Mock
 import rclpy
 from rclpy.clock import Clock
 from rclpy.clock import ClockChange
+from rclpy.clock import ClockType
 from rclpy.clock import JumpThreshold
 from rclpy.clock import ROSClock
-from rclpy.clock_type import ClockType
 from rclpy.duration import Duration
 from rclpy.parameter import Parameter
 from rclpy.time import Time
@@ -29,21 +29,23 @@ from rclpy.time_source import CLOCK_TOPIC
 from rclpy.time_source import TimeSource
 import rosgraph_msgs.msg
 
+from .mock_compat import __name__ as _  # noqa: ignore=F401
+
 
 class TestTimeSource(unittest.TestCase):
 
-    def setUp(self) -> None:
+    def setUp(self):
         self.context = rclpy.context.Context()
         rclpy.init(context=self.context)
         self.node = rclpy.create_node(
             'TestTimeSource', namespace='/rclpy', context=self.context,
             allow_undeclared_parameters=True)
 
-    def tearDown(self) -> None:
+    def tearDown(self):
         self.node.destroy_node()
         rclpy.shutdown(context=self.context)
 
-    def publish_clock_messages(self) -> None:
+    def publish_clock_messages(self):
         clock_pub = self.node.create_publisher(rosgraph_msgs.msg.Clock, CLOCK_TOPIC, 1)
         cycle_count = 0
         time_msg = rosgraph_msgs.msg.Clock()
@@ -56,7 +58,7 @@ class TestTimeSource(unittest.TestCase):
             # TODO(dhood): use rate once available
             time.sleep(1)
 
-    def publish_reversed_clock_messages(self) -> None:
+    def publish_reversed_clock_messages(self):
         clock_pub = self.node.create_publisher(rosgraph_msgs.msg.Clock, CLOCK_TOPIC, 1)
         cycle_count = 0
         time_msg = rosgraph_msgs.msg.Clock()
@@ -83,7 +85,7 @@ class TestTimeSource(unittest.TestCase):
             time.sleep(1)
         return use_sim_time_param.value == value
 
-    def test_time_source_attach_clock(self) -> None:
+    def test_time_source_attach_clock(self):
         time_source = TimeSource(node=self.node)
 
         # ROSClock is a specialization of Clock with ROS time methods.
@@ -96,7 +98,7 @@ class TestTimeSource(unittest.TestCase):
         with self.assertRaises(ValueError):
             time_source.attach_clock(Clock(clock_type=ClockType.STEADY_TIME))
 
-    def test_time_source_not_using_sim_time(self) -> None:
+    def test_time_source_not_using_sim_time(self):
         time_source = TimeSource(node=self.node)
         clock = ROSClock()
         time_source.attach_clock(clock)
@@ -122,7 +124,7 @@ class TestTimeSource(unittest.TestCase):
         self.assertFalse(clock2.ros_time_is_active)
         assert time_source._clock_sub is None
 
-    def test_time_source_using_sim_time(self) -> None:
+    def test_time_source_using_sim_time(self):
         time_source = TimeSource(node=self.node)
         clock = ROSClock()
         time_source.attach_clock(clock)
@@ -160,7 +162,7 @@ class TestTimeSource(unittest.TestCase):
         assert time_source._get_node() == node2
         assert time_source._clock_sub is None
 
-    def test_forwards_jump(self) -> None:
+    def test_forwards_jump(self):
         time_source = TimeSource(node=self.node)
         clock = ROSClock()
         time_source.attach_clock(clock)
@@ -180,7 +182,7 @@ class TestTimeSource(unittest.TestCase):
         assert post_cb.call_args[0][0].clock_change == ClockChange.ROS_TIME_NO_CHANGE
         handler.unregister()
 
-    def test_backwards_jump(self) -> None:
+    def test_backwards_jump(self):
         time_source = TimeSource(node=self.node)
         clock = ROSClock()
         time_source.attach_clock(clock)
@@ -200,7 +202,7 @@ class TestTimeSource(unittest.TestCase):
         assert post_cb.call_args[0][0].clock_change == ClockChange.ROS_TIME_NO_CHANGE
         handler.unregister()
 
-    def test_clock_change(self) -> None:
+    def test_clock_change(self):
         time_source = TimeSource(node=self.node)
         clock = ROSClock()
         time_source.attach_clock(clock)
@@ -226,7 +228,7 @@ class TestTimeSource(unittest.TestCase):
         assert post_cb.call_args[0][0].clock_change == ClockChange.ROS_TIME_ACTIVATED
         handler.unregister()
 
-    def test_no_pre_callback(self) -> None:
+    def test_no_pre_callback(self):
         time_source = TimeSource(node=self.node)
         clock = ROSClock()
         time_source.attach_clock(clock)
@@ -242,7 +244,7 @@ class TestTimeSource(unittest.TestCase):
         assert post_cb.call_args[0][0].clock_change == ClockChange.ROS_TIME_DEACTIVATED
         handler.unregister()
 
-    def test_no_post_callback(self) -> None:
+    def test_no_post_callback(self):
         time_source = TimeSource(node=self.node)
         clock = ROSClock()
         time_source.attach_clock(clock)

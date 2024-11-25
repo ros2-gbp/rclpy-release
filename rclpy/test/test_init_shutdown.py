@@ -19,14 +19,13 @@ from rclpy.exceptions import NotInitializedException
 from rclpy.signals import SignalHandlerOptions
 
 
-def test_init() -> None:
+def test_init():
     context = rclpy.context.Context()
     rclpy.init(context=context)
-    assert context.ok()
     rclpy.shutdown(context=context)
 
 
-def test_init_with_unknown_ros_args() -> None:
+def test_init_with_unknown_ros_args():
     from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 
     context = rclpy.context.Context()
@@ -35,7 +34,7 @@ def test_init_with_unknown_ros_args() -> None:
         rclpy.init(context=context, args=['--ros-args', 'unknown'])
 
 
-def test_init_with_non_utf8_arguments() -> None:
+def test_init_with_non_utf8_arguments():
     context = rclpy.context.Context()
     # Embed non decodable characters e.g. due to
     # wrong locale settings.
@@ -45,26 +44,22 @@ def test_init_with_non_utf8_arguments() -> None:
         rclpy.init(context=context, args=args)
 
 
-def test_init_shutdown_sequence() -> None:
+def test_init_shutdown_sequence():
     context = rclpy.context.Context()
     rclpy.init(context=context)
-    assert context.ok()
     rclpy.shutdown(context=context)
     context = rclpy.context.Context()  # context cannot be reused but should not interfere
     rclpy.init(context=context)
-    assert context.ok()
     rclpy.shutdown(context=context)
 
     # global
     rclpy.init()
-    assert rclpy.ok()
     rclpy.shutdown()
     rclpy.init()
-    assert rclpy.ok()
     rclpy.shutdown()
 
 
-def test_double_init() -> None:
+def test_double_init():
     context = rclpy.context.Context()
     rclpy.init(context=context)
     try:
@@ -74,22 +69,21 @@ def test_double_init() -> None:
         rclpy.shutdown(context=context)
 
 
-def test_double_shutdown() -> None:
+def test_double_shutdown():
     context = rclpy.context.Context()
     rclpy.init(context=context)
-    assert context.ok()
     rclpy.shutdown(context=context)
     with pytest.raises(RuntimeError):
         rclpy.shutdown(context=context)
 
 
-def test_create_node_without_init() -> None:
+def test_create_node_without_init():
     context = rclpy.context.Context()
     with pytest.raises(NotInitializedException):
         rclpy.create_node('foo', context=context)
 
 
-def test_init_with_domain_id() -> None:
+def test_init_with_domain_id():
     rclpy.init(domain_id=123)
     assert rclpy.get_default_context().get_domain_id() == 123
     rclpy.shutdown()
@@ -99,19 +93,13 @@ def test_init_with_domain_id() -> None:
     rclpy.shutdown(context=context)
 
 
-def test_signal_handlers() -> None:
+def test_signal_handlers():
     rclpy.init()
     assert SignalHandlerOptions.ALL == signals.get_current_signal_handlers_options()
     rclpy.shutdown()
     assert SignalHandlerOptions.NO == signals.get_current_signal_handlers_options()
 
 
-def test_init_with_invalid_domain_id() -> None:
+def test_init_with_invalid_domain_id():
     with pytest.raises(RuntimeError):
         rclpy.init(domain_id=-1)
-
-
-def test_managed_init() -> None:
-    with rclpy.init(domain_id=123) as init:
-        assert init.context.get_domain_id() == 123
-        assert init.context.ok()

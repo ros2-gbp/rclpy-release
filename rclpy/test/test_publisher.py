@@ -70,11 +70,11 @@ class TestPublisher(unittest.TestCase):
             an effect on the publisher's topic_name.
         """
         for topic, target_topic in test_topics:
-            publisher = node.create_publisher(BasicTypes, topic, 1)
+            publisher = node.create_publisher(BasicTypes, topic, 0)
             assert publisher.topic_name == target_topic
             publisher.destroy()
 
-    def test_topic_name(self) -> None:
+    def test_topic_name(self):
         test_topics = [
             (TEST_TOPIC, '/' + TEST_TOPIC),
             ('/' + TEST_TOPIC, '/' + TEST_TOPIC),
@@ -92,7 +92,7 @@ class TestPublisher(unittest.TestCase):
         ]
         TestPublisher.do_test_topic_name(test_topics, self.node_with_ns)
 
-    def test_topic_name_remapping(self) -> None:
+    def test_topic_name_remapping(self):
         test_topics = [
             (TEST_TOPIC_FROM, '/' + TEST_TOPIC_TO),
             ('/' + TEST_TOPIC_FROM, '/' + TEST_TOPIC_TO),
@@ -102,7 +102,7 @@ class TestPublisher(unittest.TestCase):
         ]
         TestPublisher.do_test_topic_name(test_topics, self.node)
 
-    def test_wait_for_all_acked(self) -> None:
+    def test_wait_for_all_acked(self):
         qos = rclpy.qos.QoSProfile(
             depth=1,
             reliability=rclpy.qos.QoSReliabilityPolicy.RELIABLE)
@@ -124,17 +124,6 @@ class TestPublisher(unittest.TestCase):
 
         pub.destroy()
         sub.destroy()
-
-
-def test_publisher_context_manager() -> None:
-    rclpy.init()
-    try:
-        with rclpy.create_node('pub_node', namespace='/pub_node_ns') as node:
-            with node.create_publisher(BasicTypes, 'chatter', 1) as pub:
-                assert pub.get_subscription_count() == 0
-
-    finally:
-        rclpy.shutdown()
 
 
 if __name__ == '__main__':

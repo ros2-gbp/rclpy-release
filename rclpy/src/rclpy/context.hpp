@@ -101,10 +101,9 @@ public:
 
 private:
   std::shared_ptr<rcl_context_t> rcl_context_;
-  bool already_shutdown_{false};
 };
 
-/// Define a pybind11 wrapper for an rclpy::Context
+/// Define a pybind11 wrapper for an rclpy::Service
 void define_context(py::object module);
 }  // namespace rclpy
 
