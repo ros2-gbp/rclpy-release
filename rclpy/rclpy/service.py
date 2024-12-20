@@ -12,14 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from types import TracebackType
 from typing import Callable
+from typing import Generic
+from typing import Optional
+from typing import Type
 from typing import TypeVar
+from typing import Union
 
 from rclpy.callback_groups import CallbackGroup
 from rclpy.clock import Clock
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.qos import QoSProfile
 from rclpy.service_introspection import ServiceIntrospectionState
+from rclpy.type_support import Srv, SrvEventT, SrvRequestT, SrvResponseT
 
 # Used for documentation purposes only
 SrvType = TypeVar('SrvType')
@@ -27,13 +33,13 @@ SrvTypeRequest = TypeVar('SrvTypeRequest')
 SrvTypeResponse = TypeVar('SrvTypeResponse')
 
 
-class Service:
+class Service(Generic[SrvRequestT, SrvResponseT, SrvEventT]):
     def __init__(
         self,
-        service_impl: _rclpy.Service,
-        srv_type: SrvType,
+        service_impl: '_rclpy.Service[SrvRequestT, SrvResponseT, SrvEventT]',
+        srv_type: Type[Srv[SrvRequestT, SrvResponseT, SrvEventT]],
         srv_name: str,
-        callback: Callable[[SrvTypeRequest, SrvTypeResponse], SrvTypeResponse],
+        callback: Callable[[SrvRequestT, SrvResponseT], SrvResponseT],
         callback_group: CallbackGroup,
         qos_profile: QoSProfile
     ) -> None:
@@ -61,7 +67,8 @@ class Service:
         self._executor_event = False
         self.qos_profile = qos_profile
 
-    def send_response(self, response: SrvTypeResponse, header) -> None:
+    def send_response(self, response: SrvResponseT,
+                      header: Union[_rclpy.rmw_service_info_t, _rclpy.rmw_request_id_t]) -> None:
         """
         Send a service response.
 
@@ -99,7 +106,7 @@ class Service:
                                                    introspection_state)
 
     @property
-    def handle(self):
+    def handle(self) -> '_rclpy.Service[SrvRequestT, SrvResponseT, SrvEventT]':
         return self.__service
 
     @property
@@ -107,7 +114,7 @@ class Service:
         with self.handle:
             return self.__service.name
 
-    def destroy(self):
+    def destroy(self) -> None:
         """
         Destroy a container for a ROS service server.
 
@@ -115,3 +122,14 @@ class Service:
            should call :meth:`.Node.destroy_service`.
         """
         self.__service.destroy_when_not_in_use()
+
+    def __enter__(self) -> 'Service[SrvRequestT, SrvResponseT, SrvEventT]':
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
+        self.destroy()

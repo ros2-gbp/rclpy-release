@@ -11,18 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from typing import Protocol, Union
+import math
+from typing import Union
 
 import builtin_interfaces.msg
 from rclpy.constants import S_TO_NS
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
-
-
-class DurationType(Protocol):
-    """Type alias of _rclpy.rcl_duration_t."""
-
-    nanoseconds: int
 
 
 class Duration:
@@ -41,7 +35,7 @@ class Duration:
             # pybind11 would raise TypeError, but we want OverflowError
             raise OverflowError(
                 'Total nanoseconds value is too large to store in C duration.')
-        self._duration_handle: DurationType = _rclpy.rcl_duration_t(total_nanoseconds)
+        self._duration_handle = _rclpy.rcl_duration_t(total_nanoseconds)
 
     @property
     def nanoseconds(self) -> int:
@@ -54,6 +48,28 @@ class Duration:
         if self == Infinite:
             return 'Infinite'
         return f'{self.nanoseconds} nanoseconds'
+
+    def __add__(self, other: 'Duration') -> 'Duration':
+        if isinstance(other, Duration):
+            return Duration(nanoseconds=other.nanoseconds + self.nanoseconds)
+        return NotImplemented
+
+    def __sub__(self, other: 'Duration') -> 'Duration':
+        if isinstance(other, Duration):
+            return Duration(nanoseconds=self.nanoseconds - other.nanoseconds)
+        return NotImplemented
+
+    def __mul__(self, other: Union[int, float]) -> 'Duration':
+        if isinstance(other, int):
+            return Duration(nanoseconds=self.nanoseconds * other)
+        if isinstance(other, float):
+            if not math.isfinite(other):
+                if other == float('inf'):
+                    return Infinite
+                else:
+                    raise ValueError("Can't multiply duration with nan")
+            return Duration(nanoseconds=int(self.nanoseconds * other))
+        return NotImplemented
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, Duration):
@@ -106,7 +122,7 @@ class Duration:
             raise TypeError('Must pass a builtin_interfaces.msg.Duration object')
         return cls(seconds=msg.sec, nanoseconds=msg.nanosec)
 
-    def get_c_duration(self) -> DurationType:
+    def get_c_duration(self) -> _rclpy.rcl_duration_t:
         return self._duration_handle
 
 
