@@ -73,6 +73,7 @@ from rclpy.parameter import (AllowableParameterValue, AllowableParameterValueT, 
 from rclpy.parameter_service import ParameterService
 from rclpy.publisher import Publisher
 from rclpy.qos import qos_profile_parameter_events
+from rclpy.qos import qos_profile_rosout_default
 from rclpy.qos import qos_profile_services_default
 from rclpy.qos import QoSProfile
 from rclpy.qos_overriding_options import _declare_qos_parameters
@@ -89,7 +90,6 @@ from rclpy.type_support import check_is_valid_msg_type
 from rclpy.type_support import check_is_valid_srv_type
 from rclpy.type_support import MsgT
 from rclpy.type_support import Srv
-from rclpy.type_support import SrvEventT
 from rclpy.type_support import SrvRequestT
 from rclpy.type_support import SrvResponseT
 from rclpy.utilities import get_default_context
@@ -139,6 +139,7 @@ class Node:
         namespace: Optional[str] = None,
         use_global_arguments: bool = True,
         enable_rosout: bool = True,
+        rosout_qos_profile: Optional[Union[QoSProfile, int]] = qos_profile_rosout_default,
         start_parameter_services: bool = True,
         parameter_overrides: Optional[List[Parameter[Any]]] = None,
         allow_undeclared_parameters: bool = False,
@@ -159,6 +160,10 @@ class Node:
         :param use_global_arguments: ``False`` if the node should ignore process-wide command line
             args.
         :param enable_rosout: ``False`` if the node should ignore rosout logging.
+        :param rosout_qos_profile: A QoSProfile or a history depth to apply to rosout publisher.
+            In the case that a history depth is provided, the QoS history is set to KEEP_LAST
+            the QoS history depth is set to the value of the parameter,
+            and all other QoS settings are set to their default value.
         :param start_parameter_services: ``False`` if the node should not create parameter
             services.
         :param parameter_overrides: A list of overrides for initial values for parameters declared
@@ -175,8 +180,8 @@ class Node:
         self._parameters: Dict[str, Parameter[Any]] = {}
         self._publishers: List[Publisher[Any]] = []
         self._subscriptions: List[Subscription[Any]] = []
-        self._clients: List[Client[Any, Any, Any]] = []
-        self._services: List[Service[Any, Any, Any]] = []
+        self._clients: List[Client[Any, Any]] = []
+        self._services: List[Service[Any, Any]] = []
         self._timers: List[Timer] = []
         self._guards: List[GuardCondition] = []
         self.__waitables: List[Waitable[Any]] = []
@@ -196,6 +201,8 @@ class Node:
         if self._context.handle is None or not self._context.ok():
             raise NotInitializedException('cannot create node')
 
+        rosout_qos_profile = self._validate_qos_or_depth_parameter(rosout_qos_profile)
+
         with self._context.handle:
             try:
                 self.__node = _rclpy.Node(
@@ -204,7 +211,8 @@ class Node:
                     self._context.handle,
                     cli_args,
                     use_global_arguments,
-                    enable_rosout
+                    enable_rosout,
+                    rosout_qos_profile.get_c_qos_profile()
                 )
             except ValueError:
                 # these will raise more specific errors if the name or namespace is bad
@@ -272,12 +280,12 @@ class Node:
         yield from self._subscriptions
 
     @property
-    def clients(self) -> Iterator[Client[Any, Any, Any]]:
+    def clients(self) -> Iterator[Client[Any, Any]]:
         """Get clients that have been created on this node."""
         yield from self._clients
 
     @property
-    def services(self) -> Iterator[Service[Any, Any, Any]]:
+    def services(self) -> Iterator[Service[Any, Any]]:
         """Get services that have been created on this node."""
         yield from self._services
 
@@ -1337,7 +1345,7 @@ class Node:
 
     def _apply_integer_range(
         self,
-        parameter: Parameter[Any],
+        parameter: Parameter[int],
         integer_range: IntegerRange
     ) -> SetParametersResult:
         min_value = min(integer_range.from_value, integer_range.to_value)
@@ -1373,7 +1381,7 @@ class Node:
 
     def _apply_floating_point_range(
         self,
-        parameter: Parameter[Any],
+        parameter: Parameter[float],
         floating_point_range: FloatingPointRange
     ) -> SetParametersResult:
         min_value = min(floating_point_range.from_value, floating_point_range.to_value)
@@ -1738,12 +1746,12 @@ class Node:
 
     def create_client(
         self,
-        srv_type: Type[Srv[SrvRequestT, SrvResponseT, SrvEventT]],
+        srv_type: Type[Srv[SrvRequestT, SrvResponseT]],
         srv_name: str,
         *,
         qos_profile: QoSProfile = qos_profile_services_default,
         callback_group: Optional[CallbackGroup] = None
-    ) -> Client[SrvRequestT, SrvResponseT, SrvEventT]:
+    ) -> Client[SrvRequestT, SrvResponseT]:
         """
         Create a new service client.
 
@@ -1780,13 +1788,13 @@ class Node:
 
     def create_service(
         self,
-        srv_type: Type[Srv[SrvRequestT, SrvResponseT, SrvEventT]],
+        srv_type: Type[Srv[SrvRequestT, SrvResponseT]],
         srv_name: str,
         callback: Callable[[SrvRequestT, SrvResponseT], SrvResponseT],
         *,
         qos_profile: QoSProfile = qos_profile_services_default,
         callback_group: Optional[CallbackGroup] = None
-    ) -> Service[SrvRequestT, SrvResponseT, SrvEventT]:
+    ) -> Service[SrvRequestT, SrvResponseT]:
         """
         Create a new service server.
 
@@ -1940,7 +1948,7 @@ class Node:
             return True
         return False
 
-    def destroy_client(self, client: Client[Any, Any, Any]) -> bool:
+    def destroy_client(self, client: Client[Any, Any]) -> bool:
         """
         Destroy a service client created by the node.
 
@@ -1956,7 +1964,7 @@ class Node:
             return True
         return False
 
-    def destroy_service(self, service: Service[Any, Any, Any]) -> bool:
+    def destroy_service(self, service: Service[Any, Any]) -> bool:
         """
         Destroy a service server created by the node.
 
