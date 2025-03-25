@@ -207,7 +207,7 @@ public:
   py::tuple
   is_ready(WaitSet & wait_set);
 
-  /// Add an action entity to a wait set.
+  /// Add an action entitiy to a wait set.
   /**
    * Raises RuntimeError on failure.
    * \param[in] wait_set Capsule pointer to an rcl_wait_set_t.
@@ -230,7 +230,7 @@ private:
   Node node_;
   std::shared_ptr<rcl_action_client_t> rcl_action_client_;
 };
-/// Define a pybind11 wrapper for an rclpy::ActionClient
+/// Define a pybind11 wrapper for an rcl_time_point_t
 /**
  * \param[in] module a pybind11 module to add the definition to
  */

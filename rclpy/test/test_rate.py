@@ -67,19 +67,19 @@ class RateRunner:
 
 class TestRate:
 
-    def setup_method(self) -> None:
+    def setup_method(self):
         self.context = rclpy.context.Context()
         rclpy.init(context=self.context)
         self.node = rclpy.create_node('test_rate', context=self.context)
         self.executor = SingleThreadedExecutor(context=self.context)
         self.executor.add_node(self.node)
 
-    def teardown_method(self) -> None:
+    def teardown_method(self):
         self.executor.shutdown()
         self.node.destroy_node()
         rclpy.shutdown(context=self.context)
 
-    def test_rate_valid_period(self) -> None:
+    def test_rate_valid_period(self):
         rate = self.node.create_rate(FREQ)
 
         runner = RateRunner(rate)
@@ -89,7 +89,7 @@ class TestRate:
         assert runner.max_jitter <= PASS_MAX_SINGLE_JITTER, str(runner)
         assert abs(runner.avg_period - PERIOD) <= PASS_MAX_AVERAGE_JITTER, str(runner)
 
-    def test_rate_invalid_period(self) -> None:
+    def test_rate_invalid_period(self):
         with pytest.raises(TypeError):
             self.node.create_rate(None)
 
@@ -99,11 +99,11 @@ class TestRate:
         with pytest.raises(ValueError):
             self.node.create_rate(-1.0)
 
-    def test_destroy(self) -> None:
+    def test_destroy(self):
         rate = self.node.create_rate(FREQ)
         assert self.node.destroy_rate(rate)
 
-    def test_destroy_wakes_rate(self) -> None:
+    def test_destroy_wakes_rate(self):
         rate = self.node.create_rate(0.0000001)
 
         self._thread = threading.Thread(target=rate.sleep, daemon=True)
@@ -121,7 +121,7 @@ def sleep_check_exception(rate):
         pass
 
 
-def test_shutdown_wakes_rate() -> None:
+def test_shutdown_wakes_rate():
     context = rclpy.context.Context()
     rclpy.init(context=context)
     node = rclpy.create_node('test_rate_shutdown', context=context)

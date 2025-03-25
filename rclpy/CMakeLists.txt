@@ -1,11 +1,10 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.5)
 
 project(rclpy)
 
 # Default to C++17
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
-  set(CMAKE_CXX_STANDARD_REQUIRED ON)
 endif()
 # Default to C11
 if(NOT CMAKE_C_STANDARD)
@@ -15,12 +14,20 @@ if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra)
 endif()
 
+# Figure out Python3 debug/release before anything else can find_package it
+if(WIN32 AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+  find_package(python_cmake_module REQUIRED)
+  find_package(PythonExtra REQUIRED)
+
+  # Force FindPython3 to use the debug interpreter where ROS 2 expects it
+  set(Python3_EXECUTABLE "${PYTHON_EXECUTABLE_DEBUG}")
+endif()
+
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
 find_package(rcl REQUIRED)
 find_package(rcl_action REQUIRED)
-find_package(rcl_interfaces REQUIRED)
 find_package(rcl_lifecycle REQUIRED)
 find_package(rcl_logging_interface REQUIRED)
 find_package(rcl_yaml_param_parser REQUIRED)
@@ -29,21 +36,6 @@ find_package(rcutils REQUIRED)
 find_package(rmw REQUIRED)
 find_package(rmw_implementation_cmake REQUIRED)
 find_package(rosidl_runtime_c REQUIRED)
-
-# By default, without the settings below, find_package(Python3) will attempt
-# to find the newest python version it can, and additionally will find the
-# most specific version.  For instance, on a system that has
-# /usr/bin/python3.10, /usr/bin/python3.11, and /usr/bin/python3, it will find
-# /usr/bin/python3.11, even if /usr/bin/python3 points to /usr/bin/python3.10.
-# The behavior we want is to prefer the "system" installed version unless the
-# user specifically tells us othewise through the Python3_EXECUTABLE hint.
-# Setting CMP0094 to NEW means that the search will stop after the first
-# python version is found.  Setting Python3_FIND_UNVERSIONED_NAMES means that
-# the search will prefer /usr/bin/python3 over /usr/bin/python3.11.  And that
-# latter functionality is only available in CMake 3.20 or later, so we need
-# at least that version.
-cmake_policy(SET CMP0094 NEW)
-set(Python3_FIND_UNVERSIONED_NAMES FIRST)
 
 # Find python before pybind11
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
@@ -78,7 +70,7 @@ function(configure_build_install_location _library_name)
 endfunction()
 
 # Split from main extension and converted to pybind11
-pybind11_add_module(_rclpy_pybind11 SHARED
+pybind11_add_module(_rclpy_pybind11
   src/rclpy/_rclpy_logging.cpp
   src/rclpy/_rclpy_pybind11.cpp
   src/rclpy/action_client.cpp
@@ -99,24 +91,17 @@ pybind11_add_module(_rclpy_pybind11 SHARED
   src/rclpy/node.cpp
   src/rclpy/publisher.cpp
   src/rclpy/qos.cpp
-  src/rclpy/event_handle.cpp
+  src/rclpy/qos_event.cpp
   src/rclpy/serialization.cpp
   src/rclpy/service.cpp
   src/rclpy/service_info.cpp
-  src/rclpy/service_introspection.cpp
   src/rclpy/signal_handler.cpp
   src/rclpy/subscription.cpp
   src/rclpy/time_point.cpp
   src/rclpy/timer.cpp
-  src/rclpy/type_description_service.cpp
   src/rclpy/utils.cpp
   src/rclpy/wait_set.cpp
 )
-
-if(CMAKE_C_COMPILER_ID MATCHES "Clang" AND NOT APPLE)
-  target_link_libraries(_rclpy_pybind11 PRIVATE atomic)
-endif()
-
 target_include_directories(_rclpy_pybind11 PRIVATE
   src/rclpy/
 )
@@ -125,7 +110,6 @@ target_link_libraries(_rclpy_pybind11 PRIVATE
   lifecycle_msgs::lifecycle_msgs__rosidl_typesupport_c
   rcl::rcl
   rcl_action::rcl_action
-  ${rcl_interfaces_TARGETS}
   rcl_lifecycle::rcl_lifecycle
   rcl_logging_interface::rcl_logging_interface
   rcpputils::rcpputils
@@ -189,22 +173,16 @@ if(BUILD_TESTING)
       test/test_lifecycle.py
       test/test_logging.py
       test/test_logging_rosout.py
-      test/test_logging_service.py
       test/test_messages.py
       test/test_node.py
       test/test_parameter.py
-      test/test_parameter_client.py
       test/test_parameter_service.py
-      test/test_parameter_event_handler.py
       test/test_publisher.py
       test/test_qos.py
       test/test_qos_event.py
       test/test_qos_overriding_options.py
       test/test_rate.py
-      test/test_rosout_subscription.py
       test/test_serialization.py
-      test/test_service.py
-      test/test_service_introspection.py
       test/test_subscription.py
       test/test_task.py
       test/test_time_source.py
@@ -213,7 +191,6 @@ if(BUILD_TESTING)
       test/test_topic_or_service_is_hidden.py
       test/test_topic_endpoint_info.py
       test/test_type_support.py
-      test/test_type_hash.py
       test/test_utilities.py
       test/test_validate_full_topic_name.py
       test/test_validate_namespace.py

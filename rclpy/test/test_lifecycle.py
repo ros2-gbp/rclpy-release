@@ -22,6 +22,7 @@ import pytest
 
 import rclpy
 from rclpy.executors import SingleThreadedExecutor
+from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.lifecycle import LifecycleNode
 from rclpy.lifecycle import TransitionCallbackReturn
 from rclpy.node import Node
@@ -30,7 +31,7 @@ from rclpy.publisher import Publisher
 from test_msgs.msg import BasicTypes
 
 
-def test_lifecycle_node_init() -> None:
+def test_lifecycle_node_init():
     rclpy.init()
     node = LifecycleNode('test_lifecycle_node_init_1')
     assert node
@@ -54,7 +55,7 @@ def test_lifecycle_node_init() -> None:
         LifecycleNode('test_lifecycle_node_init_3', enable_communication_interface='asd')
 
 
-def test_lifecycle_state_transitions() -> None:
+def test_lifecycle_state_transitions():
     node = LifecycleNode(
         'test_lifecycle_state_transitions_1', enable_communication_interface=False)
     # normal transitions
@@ -68,7 +69,13 @@ def test_lifecycle_state_transitions() -> None:
         assert node.trigger_deactivate() == TransitionCallbackReturn.SUCCESS
     assert node.trigger_cleanup() == TransitionCallbackReturn.SUCCESS
     # some that are not possible from the current state
+    with pytest.raises(_rclpy.RCLError):
+        node.trigger_activate()
+    with pytest.raises(_rclpy.RCLError):
+        node.trigger_deactivate()
     assert node.trigger_shutdown() == TransitionCallbackReturn.SUCCESS
+    with pytest.raises(_rclpy.RCLError):
+        node.trigger_shutdown()
     node.destroy_node()
     # Again but trigger shutdown from 'inactive' instead of 'unconfigured'
     node = LifecycleNode(
@@ -146,7 +153,7 @@ def test_lifecycle_services(request):
     thread = Thread(target=executor.spin)
     thread.start()
 
-    def cleanup() -> None:
+    def cleanup():
         # Stop executor and join thread.
         # This cleanup is run even if an assertion fails.
         executor.shutdown()
@@ -186,7 +193,7 @@ def test_lifecycle_services(request):
     }
 
 
-def test_lifecycle_publisher() -> None:
+def test_lifecycle_publisher():
     node = LifecycleNode('test_lifecycle_publisher', enable_communication_interface=False)
     with mock.patch.object(Publisher, 'publish') as mock_publish:
         pub = node.create_lifecycle_publisher(BasicTypes, 'test_lifecycle_publisher_topic', 10)

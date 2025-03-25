@@ -12,137 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, ClassVar, Iterable, Optional, Protocol, Type, TypeVar, Union
-
-
-from action_msgs.msg._goal_status_array import GoalStatusArray
-from action_msgs.srv._cancel_goal import CancelGoal
-from builtin_interfaces.msg import Time
 from rclpy.exceptions import NoTypeSupportImportedException
-from service_msgs.msg._service_event_info import ServiceEventInfo
-from typing_extensions import TypeAlias
-from unique_identifier_msgs.msg import UUID
 
 
-class PyCapsule(Protocol):
-    """Alias for PyCapsule Pybind object."""
-
-    pass
-
-
-# Done because metaclasses need to inherit from type
-ProtocolType: Any = type(Protocol)
-
-
-class CommonMsgSrvMetaClass(ProtocolType):
-    """Shared attributes between messages and services."""
-
-    _TYPE_SUPPORT: ClassVar[Optional[PyCapsule]]
-
-    @classmethod
-    def __import_type_support__(cls) -> None:
-        ...
-
-
-class MsgMetaClass(CommonMsgSrvMetaClass):
-    """Generic Message Metaclass Alias."""
-
-    _CREATE_ROS_MESSAGE:  ClassVar[Optional[PyCapsule]]
-    _CONVERT_FROM_PY:  ClassVar[Optional[PyCapsule]]
-    _CONVERT_TO_PY:  ClassVar[Optional[PyCapsule]]
-    _DESTROY_ROS_MESSAGE:  ClassVar[Optional[PyCapsule]]
-
-
-class Msg(Protocol, metaclass=MsgMetaClass):
-    """Generic Message Alias."""
-
-    pass
-
-
-MsgT = TypeVar('MsgT', bound=Msg)
-
-SrvRequestT = TypeVar('SrvRequestT', bound=Msg)
-SrvResponseT = TypeVar('SrvResponseT', bound=Msg)
-
-
-class EventMessage(Msg, Protocol[SrvRequestT, SrvResponseT]):
-    info: ServiceEventInfo
-    request: Iterable[SrvRequestT]
-    response: Iterable[SrvResponseT]
-
-
-class Srv(Protocol[SrvRequestT, SrvResponseT], metaclass=CommonMsgSrvMetaClass):
-    """Generic Service Type Alias."""
-
-    Request: Type[SrvRequestT]
-    Response: Type[SrvResponseT]
-    Event: Type[EventMessage[SrvRequestT, SrvResponseT]]
-
-
-GoalT = TypeVar('GoalT', bound=Msg)
-ResultT = TypeVar('ResultT', bound=Msg)
-FeedbackT = TypeVar('FeedbackT', bound=Msg)
-
-
-class SendGoalServiceRequest(Msg, Protocol[GoalT]):
-    goal_id: UUID
-    goal: GoalT
-
-
-class SendGoalServiceResponse(Msg, Protocol):
-    accepted: bool
-    stamp: Time
-
-
-SendGoalService: TypeAlias = Srv[SendGoalServiceRequest[GoalT], SendGoalServiceResponse]
-
-
-class GetResultServiceRequest(Msg, Protocol):
-    goal_id: UUID
-
-
-class GetResultServiceResponse(Msg, Protocol[ResultT]):
-    status: int
-    result: ResultT
-
-
-GetResultService: TypeAlias = Srv[GetResultServiceRequest, GetResultServiceResponse[ResultT]]
-
-
-class FeedbackMessage(Msg, Protocol[FeedbackT]):
-    goal_id: UUID
-    feedback: FeedbackT
-
-
-class Impl(Protocol[GoalT, ResultT, FeedbackT]):
-
-    SendGoalService: Type[SendGoalService[GoalT]]
-    GetResultService: Type[GetResultService[ResultT]]
-    FeedbackMessage: Type[FeedbackMessage[FeedbackT]]
-    CancelGoalService: ClassVar[Type[CancelGoal]]
-    GoalStatusMessage: ClassVar[Type[GoalStatusArray]]
-
-
-class Action(Protocol[GoalT,
-                      ResultT,
-                      FeedbackT],
-             metaclass=CommonMsgSrvMetaClass):
-    Goal: Type[GoalT]
-    Result: Type[ResultT]
-    Feedback: Type[FeedbackT]
-
-    Impl: Type[Impl[GoalT, ResultT, FeedbackT]]
-
-
-# Can be used if https://github.com/python/typing/issues/548 ever gets approved.
-SrvT = TypeVar('SrvT', bound=Srv[Any, Any])
-ActionT = TypeVar('ActionT', bound=Action[Any, Any, Any])
-
-
-def check_for_type_support(msg_or_srv_type: Type[Union[Msg, Srv[Any, Any],
-                                                       Action[Any, Any, Any]]]) -> None:
+def check_for_type_support(msg_or_srv_type):
     try:
-        ts = msg_or_srv_type._TYPE_SUPPORT
+        ts = msg_or_srv_type.__class__._TYPE_SUPPORT
     except AttributeError as e:
         e.args = (
             e.args[0] +
@@ -151,19 +26,19 @@ def check_for_type_support(msg_or_srv_type: Type[Union[Msg, Srv[Any, Any],
             *e.args[1:])
         raise
     if ts is None:
-        msg_or_srv_type.__import_type_support__()
-    if msg_or_srv_type._TYPE_SUPPORT is None:
+        msg_or_srv_type.__class__.__import_type_support__()
+    if msg_or_srv_type.__class__._TYPE_SUPPORT is None:
         raise NoTypeSupportImportedException()
 
 
-def check_is_valid_msg_type(msg_type: Type[Msg]) -> None:
+def check_is_valid_msg_type(msg_type):
     check_for_type_support(msg_type)
     try:
         assert None not in (
-            msg_type._CREATE_ROS_MESSAGE,
-            msg_type._CONVERT_FROM_PY,
-            msg_type._CONVERT_TO_PY,
-            msg_type._DESTROY_ROS_MESSAGE,
+            msg_type.__class__._CREATE_ROS_MESSAGE,
+            msg_type.__class__._CONVERT_FROM_PY,
+            msg_type.__class__._CONVERT_TO_PY,
+            msg_type.__class__._DESTROY_ROS_MESSAGE,
         )
     except (AssertionError, AttributeError):
         raise RuntimeError(
@@ -172,7 +47,7 @@ def check_is_valid_msg_type(msg_type: Type[Msg]) -> None:
         ) from None
 
 
-def check_is_valid_srv_type(srv_type: Type[Srv[Any, Any]]) -> None:
+def check_is_valid_srv_type(srv_type):
     check_for_type_support(srv_type)
     try:
         assert None not in (

@@ -26,7 +26,7 @@ from rclpy.qos import qos_profile_services_default
 
 class TestParameterService(unittest.TestCase):
 
-    def setUp(self) -> None:
+    def setUp(self):
         self.context = rclpy.context.Context()
         rclpy.init(context=self.context)
         self.test_node = rclpy.create_node(
@@ -47,12 +47,12 @@ class TestParameterService(unittest.TestCase):
         self.executor = SingleThreadedExecutor(context=self.context)
         self.executor.add_node(self.test_node)
 
-    def tearDown(self) -> None:
+    def tearDown(self):
         self.executor.shutdown()
         self.test_node.destroy_node()
         rclpy.shutdown(context=self.context)
 
-    def test_get_uninitialized_parameter(self) -> None:
+    def test_get_uninitialized_parameter(self):
         self.test_node.declare_parameter('uninitialized_parameter', Parameter.Type.STRING)
 
         # The type in description should be STRING
