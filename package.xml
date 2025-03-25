@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format2.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="2">
   <name>rclpy</name>
-  <version>3.3.15</version>
+  <version>3.3.16</version>
   <description>Package containing the Python client.</description>
 
   <maintainer email="sloretz@openrobotics.org">Shane Loretz</maintainer>
@@ -51,5 +51,6 @@
 
   <export>
     <build_type>ament_cmake</build_type>
+    <rosdoc2>rosdoc2.yaml</rosdoc2>
   </export>
 </package>
