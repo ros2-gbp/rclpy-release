@@ -15,27 +15,31 @@
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 import inspect
-import multiprocessing
+import os
 from threading import Condition
 from threading import Lock
 from threading import RLock
 import time
+from types import TracebackType
 from typing import Any
 from typing import Callable
+from typing import ContextManager
 from typing import Coroutine
 from typing import Generator
 from typing import List
 from typing import Optional
 from typing import Set
 from typing import Tuple
+from typing import Type
 from typing import TYPE_CHECKING
 from typing import TypeVar
 from typing import Union
 
+import warnings
 
 from rclpy.client import Client
 from rclpy.clock import Clock
-from rclpy.clock import ClockType
+from rclpy.clock_type import ClockType
 from rclpy.context import Context
 from rclpy.exceptions import InvalidHandle
 from rclpy.guard_condition import GuardCondition
@@ -79,7 +83,7 @@ class _WorkTracker:
             self._num_work_executing -= 1
             self._work_condition.notify_all()
 
-    def wait(self, timeout_sec=None):
+    def wait(self, timeout_sec: Optional[float] = None):
         """
         Wait until all work completes.
 
@@ -87,7 +91,7 @@ class _WorkTracker:
         :type timeout_sec: float or None
         :rtype: bool True if all work completed
         """
-        if timeout_sec is not None and timeout_sec < 0:
+        if timeout_sec is not None and timeout_sec < 0.0:
             timeout_sec = None
         # Wait for all work to complete
         with self._work_condition:
@@ -146,7 +150,7 @@ class TimeoutObject:
         self._timeout = timeout
 
 
-class Executor:
+class Executor(ContextManager['Executor']):
     """
     The base class for an executor.
 
@@ -158,9 +162,19 @@ class Executor:
     If the executor has any cleanup then it should also define :meth:`shutdown`.
 
     :param context: The context to be associated with, or ``None`` for the default global context.
+
+    :Example:
+        >>> from rclpy.executor import Executor
+        >>> from rclpy.node import Node
+        >>>
+        >>> with Executor() as executor:
+        >>>     executor.add_node(Node('example_node'))
+        >>>     executor.spin_once()
+        >>>     len(executor.get_nodes())
+        1
     """
 
-    def __init__(self, *, context: Context = None) -> None:
+    def __init__(self, *, context: Optional[Context] = None) -> None:
         super().__init__()
         self._context = get_default_context() if context is None else context
         self._nodes: Set[Node] = set()
@@ -205,7 +219,7 @@ class Executor:
         # Task inherits from Future
         return task
 
-    def shutdown(self, timeout_sec: float = None) -> bool:
+    def shutdown(self, timeout_sec: Optional[float] = None) -> bool:
         """
         Stop executing callbacks and wait for their completion.
 
@@ -219,9 +233,9 @@ class Executor:
                 self._is_shutdown = True
                 # Tell executor it's been shut down
                 self._guard.trigger()
-
-        if not self._work_tracker.wait(timeout_sec):
-            return False
+        if not self._is_shutdown:
+            if not self._work_tracker.wait(timeout_sec):
+                return False
 
         # Clean up stuff that won't be used anymore
         with self._nodes_lock:
@@ -293,7 +307,11 @@ class Executor:
         while self._context.ok() and not self._is_shutdown:
             self.spin_once()
 
-    def spin_until_future_complete(self, future: Future, timeout_sec: float = None) -> None:
+    def spin_until_future_complete(
+        self,
+        future: Future,
+        timeout_sec: Optional[float] = None
+    ) -> None:
         """Execute callbacks until a given future is done or a timeout occurs."""
         # Make sure the future wakes this executor when it is done
         future.add_done_callback(lambda x: self.wake())
@@ -325,11 +343,13 @@ class Executor:
 
                 timeout_left.timeout = end - now
 
-    def spin_once(self, timeout_sec: float = None) -> None:
+    def spin_once(self, timeout_sec: Optional[float] = None) -> None:
         """
         Wait for and execute a single callback.
 
         A custom executor should use :meth:`wait_for_ready_callbacks` to get work.
+
+        This method should not be called from multiple threads.
 
         :param timeout_sec: Seconds to wait. Block forever if ``None`` or negative.
             Don't wait if 0.
@@ -354,70 +374,119 @@ class Executor:
         raise NotImplementedError()
 
     def _take_timer(self, tmr):
-        with tmr.handle:
-            tmr.handle.call_timer()
+        try:
+            with tmr.handle:
+                tmr.handle.call_timer()
 
-    async def _execute_timer(self, tmr, _):
-        await await_or_execute(tmr.callback)
+                async def _execute():
+                    await await_or_execute(tmr.callback)
+                return _execute
+        except InvalidHandle:
+            # Timer is a Destroyable, which means that on __enter__ it can throw an
+            # InvalidHandle exception if the entity has already been destroyed.  Handle that here
+            # by just returning an empty argument, which means we will skip doing any real work
+            # in _execute_timer below
+            pass
 
-    def _take_subscription(self, sub):
-        with sub.handle:
-            msg_info = sub.handle.take_message(sub.msg_type, sub.raw)
-            if msg_info is not None:
-                return msg_info[0]
         return None
 
-    async def _execute_subscription(self, sub, msg):
-        if msg:
-            await await_or_execute(sub.callback, msg)
+    def _take_subscription(self, sub):
+        try:
+            with sub.handle:
+                msg_info = sub.handle.take_message(sub.msg_type, sub.raw)
+                if msg_info is None:
+                    return None
+
+                if sub._callback_type is Subscription.CallbackType.MessageOnly:
+                    msg_tuple = (msg_info[0], )
+                else:
+                    msg_tuple = msg_info
+
+                async def _execute():
+                    await await_or_execute(sub.callback, *msg_tuple)
+
+                return _execute
+        except InvalidHandle:
+            # Subscription is a Destroyable, which means that on __enter__ it can throw an
+            # InvalidHandle exception if the entity has already been destroyed.  Handle that here
+            # by just returning an empty argument, which means we will skip doing any real work
+            # in _execute_subscription below
+            pass
+
+        return None
 
     def _take_client(self, client):
-        with client.handle:
-            return client.handle.take_response(client.srv_type.Response)
+        try:
+            with client.handle:
+                header_and_response = client.handle.take_response(client.srv_type.Response)
 
-    async def _execute_client(self, client, seq_and_response):
-        header, response = seq_and_response
-        if header is not None:
-            try:
-                sequence = header.request_id.sequence_number
-                future = client.get_pending_request(sequence)
-            except KeyError:
-                # The request was cancelled
-                pass
-            else:
-                future._set_executor(self)
-                future.set_result(response)
+            async def _execute():
+                header, response = header_and_response
+                if header is None:
+                    return
+                try:
+                    sequence = header.request_id.sequence_number
+                    future = client.get_pending_request(sequence)
+                except KeyError:
+                    # The request was cancelled
+                    pass
+                else:
+                    future._set_executor(self)
+                    future.set_result(response)
+            return _execute
+
+        except InvalidHandle:
+            # Client is a Destroyable, which means that on __enter__ it can throw an
+            # InvalidHandle exception if the entity has already been destroyed.  Handle that here
+            # by just returning an empty argument, which means we will skip doing any real work
+            # in _execute_client below
+            pass
+
+        return None
 
     def _take_service(self, srv):
-        with srv.handle:
-            request_and_header = srv.handle.service_take_request(srv.srv_type.Request)
-        return request_and_header
+        try:
+            with srv.handle:
+                request_and_header = srv.handle.service_take_request(srv.srv_type.Request)
 
-    async def _execute_service(self, srv, request_and_header):
-        if request_and_header is None:
-            return
-        (request, header) = request_and_header
-        if request:
-            response = await await_or_execute(srv.callback, request, srv.srv_type.Response())
-            srv.send_response(response, header)
+            async def _execute():
+                (request, header) = request_and_header
+                if header is None:
+                    return
+
+                response = await await_or_execute(srv.callback, request, srv.srv_type.Response())
+                srv.send_response(response, header)
+            return _execute
+        except InvalidHandle:
+            # Service is a Destroyable, which means that on __enter__ it can throw an
+            # InvalidHandle exception if the entity has already been destroyed.  Handle that here
+            # by just returning an empty argument, which means we will skip doing any real work
+            # in _execute_service below
+            pass
+
+        return None
 
     def _take_guard_condition(self, gc):
         gc._executor_triggered = False
 
-    async def _execute_guard_condition(self, gc, _):
-        await await_or_execute(gc.callback)
+        async def _execute():
+            await await_or_execute(gc.callback)
+        return _execute
 
-    async def _execute_waitable(self, waitable, data):
-        for future in waitable._futures:
-            future._set_executor(self)
-        await waitable.execute(data)
+    def _take_waitable(self, waitable):
+        data = waitable.take_data()
+
+        async def _execute():
+            for future in waitable._futures:
+                future._set_executor(self)
+            await waitable.execute(data)
+        return _execute
 
     def _make_handler(
         self,
         entity: WaitableEntityType,
         node: 'Node',
         take_from_wait_list: Callable,
-        call_coroutine: Coroutine
     ) -> Task:
         """
         Make a handler that performs work on an entity.
@@ -425,7 +494,6 @@ class Executor:
         :param entity: An entity to wait on.
         :param node: The node associated with the entity.
         :param take_from_wait_list: Makes the entity to stop appearing in the wait list.
-        :param call_coroutine: Does the work the entity is ready for
         """
         # Mark this so it doesn't get added back to the wait list
         entity._executor_event = True
@@ -437,19 +505,28 @@ class Executor:
                 gc.trigger()
                 return
             with work_tracker:
-                arg = take_from_wait_list(entity)
+                # The take_from_wait_list method here is expected to return either an async def
+                # method or None if there is no work to do.
+                call_coroutine = take_from_wait_list(entity)
 
                 # Signal that this has been 'taken' and can be added back to the wait list
                 entity._executor_event = False
                 gc.trigger()
 
                 try:
-                    await call_coroutine(entity, arg)
+                    if call_coroutine is not None:
+                        await call_coroutine()
                 finally:
                     entity.callback_group.ending_execution(entity)
                     # Signal that work has been done so the next callback in a mutually exclusive
                     # callback group can get executed
-                    gc.trigger()
+
+                    # Catch expected error where calling executor.shutdown()
+                    # from callback causes the GuardCondition to be destroyed
+                    try:
+                        gc.trigger()
+                    except InvalidHandle:
+                        pass
         task = Task(
             handler, (entity, self._guard, self._is_shutdown, self._work_tracker),
             executor=self)
@@ -469,7 +546,7 @@ class Executor:
     def _wait_for_ready_callbacks(
         self,
         timeout_sec: Optional[Union[float, TimeoutObject]] = None,
-        nodes: List['Node'] = None,
+        nodes: Optional[List['Node']] = None,
         condition: Callable[[], bool] = lambda: False,
     ) -> Generator[Tuple[Task, WaitableEntityType, 'Node'], None, None]:
         """
@@ -641,8 +718,7 @@ class Executor:
                         # Only check waitables that were added to the wait set
                         if wt in waitables and wt.is_ready(wait_set):
                             if wt.callback_group.can_execute(wt):
-                                handler = self._make_handler(
-                                    wt, node, lambda e: e.take_data(), self._execute_waitable)
+                                handler = self._make_handler(wt, node, self._take_waitable)
                                 yielded_work = True
                                 yield handler, wt, node
 
@@ -653,41 +729,35 @@ class Executor:
                         # Check timer is ready to workaround rcl issue with cancelled timers
                         if tmr.handle.is_timer_ready():
                             if tmr.callback_group.can_execute(tmr):
-                                handler = self._make_handler(
-                                    tmr, node, self._take_timer, self._execute_timer)
+                                handler = self._make_handler(tmr, node, self._take_timer)
                                 yielded_work = True
                                 yield handler, tmr, node
 
                 for sub in node.subscriptions:
                     if sub.handle.pointer in subs_ready:
                         if sub.callback_group.can_execute(sub):
-                            handler = self._make_handler(
-                                sub, node, self._take_subscription, self._execute_subscription)
+                            handler = self._make_handler(sub, node, self._take_subscription)
                             yielded_work = True
                             yield handler, sub, node
 
                 for gc in node.guards:
                     if gc._executor_triggered:
                         if gc.callback_group.can_execute(gc):
-                            handler = self._make_handler(
-                                gc, node, self._take_guard_condition,
-                                self._execute_guard_condition)
+                            handler = self._make_handler(gc, node, self._take_guard_condition)
                             yielded_work = True
                             yield handler, gc, node
 
                 for client in node.clients:
                     if client.handle.pointer in clients_ready:
                         if client.callback_group.can_execute(client):
-                            handler = self._make_handler(
-                                client, node, self._take_client, self._execute_client)
+                            handler = self._make_handler(client, node, self._take_client)
                             yielded_work = True
                             yield handler, client, node
 
                 for srv in node.services:
                     if srv.handle.pointer in services_ready:
                         if srv.callback_group.can_execute(srv):
-                            handler = self._make_handler(
-                                srv, node, self._take_service, self._execute_service)
+                            handler = self._make_handler(srv, node, self._take_service)
                             yielded_work = True
                             yield handler, srv, node
 
@@ -725,29 +795,47 @@ class Executor:
                 # Generator ran out of work
                 self._cb_iter = None
 
+    def __enter__(self) -> 'Executor':
+        # Nothing to do here
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
+        self.shutdown()
+
 
 class SingleThreadedExecutor(Executor):
     """Runs callbacks in the thread that calls :meth:`Executor.spin`."""
 
-    def __init__(self, *, context: Context = None) -> None:
+    def __init__(self, *, context: Optional[Context] = None) -> None:
         super().__init__(context=context)
 
     def _spin_once_impl(
         self,
-        timeout_sec: Optional[Union[float, TimeoutObject]] = None
+        timeout_sec: Optional[Union[float, TimeoutObject]] = None,
+        wait_condition: Callable[[], bool] = lambda: False
     ) -> None:
         try:
-            handler, entity, node = self.wait_for_ready_callbacks(timeout_sec=timeout_sec)
+            handler, entity, node = self.wait_for_ready_callbacks(
+                timeout_sec, None, wait_condition)
         except ShutdownException:
             pass
         except TimeoutException:
+            pass
+        except ConditionReachedException:
             pass
         else:
             handler()
             if handler.exception() is not None:
                 raise handler.exception()
 
-    def spin_once(self, timeout_sec: float = None) -> None:
+            handler.result()  # raise any exceptions
+
+    def spin_once(self, timeout_sec: Optional[float] = None) -> None:
         self._spin_once_impl(timeout_sec)
 
     def spin_once_until_future_complete(
@@ -755,26 +843,41 @@ class SingleThreadedExecutor(Executor):
         future: Future,
         timeout_sec: Optional[Union[float, TimeoutObject]] = None
     ) -> None:
-        self._spin_once_impl(timeout_sec)
+        future.add_done_callback(lambda x: self.wake())
+        self._spin_once_impl(timeout_sec, future.done)
 
 
 class MultiThreadedExecutor(Executor):
     """
     Runs callbacks in a pool of threads.
 
-    :param num_threads: number of worker threads in the pool. If ``None``, the number of threads
-        will use :func:`multiprocessing.cpu_count`. If that's not implemented the number of threads
-        defaults to 1.
+    :param num_threads: number of worker threads in the pool.
+        If ``None``, the number of threads will be automatically set by querying the underlying OS
+        for the CPU affinity of the process space.
+        If the OS doesn't provide this information, defaults to 2.
     :param context: The context associated with the executor.
     """
 
-    def __init__(self, num_threads: int = None, *, context: Context = None) -> None:
+    def __init__(
+        self,
+        num_threads: Optional[int] = None,
+        *, context: Optional[Context] = None
+    ) -> None:
         super().__init__(context=context)
         if num_threads is None:
-            try:
-                num_threads = multiprocessing.cpu_count()
-            except NotImplementedError:
-                num_threads = 1
+            # On Linux, it will try to use the number of CPU this process has access to.
+            # Other platforms, os.sched_getaffinity() doesn't exist so we use the number of CPUs.
+            if hasattr(os, 'sched_getaffinity'):
+                num_threads = len(os.sched_getaffinity(0))
+            else:
+                num_threads = os.cpu_count()
+            # The calls above may still return None if they aren't supported
+            if num_threads is None:
+                num_threads = 2
+        if num_threads == 1:
+            warnings.warn(
+                'MultiThreadedExecutor is used with a single thread.\n'
+                'Use the SingleThreadedExecutor instead.')
         self._futures = []
         self._executor = ThreadPoolExecutor(num_threads)
 
@@ -797,12 +900,14 @@ class MultiThreadedExecutor(Executor):
         else:
             self._executor.submit(handler)
             self._futures.append(handler)
-            for future in self._futures:  # check for any exceptions
+            # make a copy of the list that we iterate over while modifying it
+            # (https://stackoverflow.com/q/1207406/3753684)
+            for future in self._futures[:]:
                 if future.done():
                     self._futures.remove(future)
-                    future.result()
+                    future.result()  # raise any exceptions
 
-    def spin_once(self, timeout_sec: float = None) -> None:
+    def spin_once(self, timeout_sec: Optional[float] = None) -> None:
         self._spin_once_impl(timeout_sec)
 
     def spin_once_until_future_complete(
@@ -810,4 +915,5 @@ class MultiThreadedExecutor(Executor):
         future: Future,
         timeout_sec: Optional[Union[float, TimeoutObject]] = None
     ) -> None:
+        future.add_done_callback(lambda x: self.wake())
         self._spin_once_impl(timeout_sec, future.done)
