@@ -68,13 +68,13 @@ class TestTimeSource(unittest.TestCase):
             rclpy.spin_once(self.node, timeout_sec=1, executor=executor)
             time.sleep(1)
 
-    def set_use_sim_time_parameter(self, value):
+    def set_use_sim_time_parameter(self, value: bool) -> bool:
         self.node.set_parameters(
             [Parameter('use_sim_time', Parameter.Type.BOOL, value)])
         executor = rclpy.executors.SingleThreadedExecutor(context=self.context)
         cycle_count = 0
         while rclpy.ok(context=self.context) and cycle_count < 5:
-            use_sim_time_param = self.node.get_parameter('use_sim_time')
+            use_sim_time_param: Parameter[bool] = self.node.get_parameter('use_sim_time')
             cycle_count += 1
             if use_sim_time_param.type_ == Parameter.Type.BOOL:
                 break
@@ -91,10 +91,12 @@ class TestTimeSource(unittest.TestCase):
 
         # Other clock types are not supported.
         with self.assertRaises(ValueError):
-            time_source.attach_clock(Clock(clock_type=ClockType.SYSTEM_TIME))
+            time_source.attach_clock(
+                Clock(clock_type=ClockType.SYSTEM_TIME))  # type: ignore[arg-type]
 
         with self.assertRaises(ValueError):
-            time_source.attach_clock(Clock(clock_type=ClockType.STEADY_TIME))
+            time_source.attach_clock(
+                Clock(clock_type=ClockType.STEADY_TIME))  # type: ignore[arg-type]
 
     def test_time_source_not_using_sim_time(self) -> None:
         time_source = TimeSource(node=self.node)
