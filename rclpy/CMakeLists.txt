@@ -78,7 +78,7 @@ function(configure_build_install_location _library_name)
 endfunction()
 
 # Split from main extension and converted to pybind11
-pybind11_add_module(_rclpy_pybind11 SHARED
+pybind11_add_module(_rclpy_pybind11
   src/rclpy/_rclpy_logging.cpp
   src/rclpy/_rclpy_pybind11.cpp
   src/rclpy/action_client.cpp
@@ -90,6 +90,11 @@ pybind11_add_module(_rclpy_pybind11 SHARED
   src/rclpy/destroyable.cpp
   src/rclpy/duration.cpp
   src/rclpy/clock_event.cpp
+  src/rclpy/events_executor/delayed_event_thread.cpp
+  src/rclpy/events_executor/events_executor.cpp
+  src/rclpy/events_executor/events_queue.cpp
+  src/rclpy/events_executor/rcl_support.cpp
+  src/rclpy/events_executor/timers_manager.cpp
   src/rclpy/exceptions.cpp
   src/rclpy/graph.cpp
   src/rclpy/guard_condition.cpp
@@ -182,6 +187,7 @@ if(BUILD_TESTING)
       test/test_create_node.py
       test/test_create_while_spinning.py
       test/test_destruction.py
+      test/test_events_executor.py
       test/test_executor.py
       test/test_expand_topic_name.py
       test/test_guard_condition.py
