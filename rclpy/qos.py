@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from enum import Enum, IntEnum
-from typing import (Callable, Iterable, List, Optional, Tuple, Type,
+from typing import (Any, Callable, Iterable, List, Optional, Tuple, Type,
                     TypeVar, Union)
 import warnings
 
@@ -73,11 +73,14 @@ class QoSProfile:
         '_avoid_ros_namespace_conventions',
     ]
 
-    def __init__(self, history: Optional['QoSHistoryPolicy'] = None, depth: Optional[int] = None,
-                 reliability: Optional['QoSReliabilityPolicy'] = None,
-                 durability: Optional['QoSDurabilityPolicy'] = None,
-                 lifespan: Optional[Duration] = None, deadline: Optional[Duration] = None,
-                 liveliness: Optional['QoSLivelinessPolicy'] = None,
+    def __init__(self,
+                 history: Union['QoSHistoryPolicy', int, None] = None,
+                 depth: Optional[int] = None,
+                 reliability: Union['QoSReliabilityPolicy', int, None] = None,
+                 durability: Union['QoSDurabilityPolicy', int, None] = None,
+                 lifespan: Optional[Duration] = None,
+                 deadline: Optional[Duration] = None,
+                 liveliness: Union['QoSLivelinessPolicy', int, None] = None,
                  liveliness_lease_duration: Optional[Duration] = None,
                  avoid_ros_namespace_conventions: Optional[bool] = None) -> None:
 
@@ -118,8 +121,9 @@ class QoSProfile:
             QoSProfile.__qos_profile_default_dict['avoid_ros_namespace_conventions'] \
             if avoid_ros_namespace_conventions is None else avoid_ros_namespace_conventions
 
+    # Has to be marked Any due to mypy#3004. Return type is actually QoSHistoryPolicy
     @property
-    def history(self) -> 'QoSHistoryPolicy':
+    def history(self) -> Any:
         """
         Get field 'history'.
 
@@ -132,8 +136,9 @@ class QoSProfile:
         assert isinstance(value, QoSHistoryPolicy) or isinstance(value, int)
         self._history = QoSHistoryPolicy(value)
 
+    # Has to be marked Any due to mypy#3004. Return type is actually QoSReliabilityPolicy
     @property
-    def reliability(self) -> 'QoSReliabilityPolicy':
+    def reliability(self) -> Any:
         """
         Get field 'reliability'.
 
@@ -146,8 +151,9 @@ class QoSProfile:
         assert isinstance(value, QoSReliabilityPolicy) or isinstance(value, int)
         self._reliability = QoSReliabilityPolicy(value)
 
+    # Has to be marked Any due to mypy#3004. Return type is actually QoSDurabilityPolicy
     @property
-    def durability(self) -> 'QoSDurabilityPolicy':
+    def durability(self) -> Any:
         """
         Get field 'durability'.
 
@@ -208,8 +214,9 @@ class QoSProfile:
         assert isinstance(value, Duration)
         self._deadline = value
 
+    # Has to be marked Any due to mypy#3004. Return type is actually QoSLivelinessPolicy
     @property
-    def liveliness(self) -> 'QoSLivelinessPolicy':
+    def liveliness(self) -> Any:
         """
         Get field 'liveliness'.
 
@@ -357,7 +364,7 @@ class HistoryPolicy(QoSPolicyEnum):
 
 
 # Alias with the old name, for retrocompatibility
-QoSHistoryPolicy = HistoryPolicy
+QoSHistoryPolicy: TypeAlias = HistoryPolicy
 
 
 @_deprecated_policy_value_aliases((
@@ -381,7 +388,7 @@ class ReliabilityPolicy(QoSPolicyEnum):
 
 
 # Alias with the old name, for retrocompatibility
-QoSReliabilityPolicy = ReliabilityPolicy
+QoSReliabilityPolicy: TypeAlias = ReliabilityPolicy
 
 
 @_deprecated_policy_value_aliases((
@@ -405,7 +412,7 @@ class DurabilityPolicy(QoSPolicyEnum):
 
 
 # Alias with the old name, for retrocompatibility
-QoSDurabilityPolicy = DurabilityPolicy
+QoSDurabilityPolicy: TypeAlias = DurabilityPolicy
 
 
 @_deprecated_policy_value_aliases((
@@ -429,7 +436,7 @@ class LivelinessPolicy(QoSPolicyEnum):
 
 
 # Alias with the old name, for retrocompatibility
-QoSLivelinessPolicy = LivelinessPolicy
+QoSLivelinessPolicy: TypeAlias = LivelinessPolicy
 
 # Deadline policy to match the majority of endpoints while being as strict as possible
 # See `RMW_QOS_DEADLINE_BEST_AVAILABLE` in rmw/types.h for more info.
