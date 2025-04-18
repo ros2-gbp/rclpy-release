@@ -29,7 +29,7 @@ from rclpy.parameter import parameter_value_to_python
 
 class TestParameter(unittest.TestCase):
 
-    def test_create_boolean_parameter(self):
+    def test_create_boolean_parameter(self) -> None:
         p = Parameter('myparam', Parameter.Type.BOOL, True)
         self.assertEqual(p.name, 'myparam')
         self.assertEqual(p.value, True)
@@ -38,7 +38,7 @@ class TestParameter(unittest.TestCase):
         self.assertEqual(p.name, 'myparam')
         self.assertEqual(p.value, True)
 
-    def test_create_bytes_parameter(self):
+    def test_create_bytes_parameter(self) -> None:
         p = Parameter('myparam', Parameter.Type.BYTE_ARRAY, [b'p', b'v', b'a', b'l', b'u', b'e'])
         self.assertEqual(p.name, 'myparam')
         self.assertEqual(p.value, [b'p', b'v', b'a', b'l', b'u', b'e'])
@@ -48,7 +48,7 @@ class TestParameter(unittest.TestCase):
         self.assertEqual(p.type_, Parameter.Type.BYTE_ARRAY)
         self.assertEqual(p.value, [b'p', b'v', b'a', b'l', b'u', b'e'])
 
-    def test_create_float_parameter(self):
+    def test_create_float_parameter(self) -> None:
         p = Parameter('myparam', Parameter.Type.DOUBLE, 2.41)
         self.assertEqual(p.name, 'myparam')
         self.assertEqual(p.value, 2.41)
@@ -58,7 +58,7 @@ class TestParameter(unittest.TestCase):
         self.assertEqual(p.type_, Parameter.Type.DOUBLE)
         self.assertEqual(p.value, 2.41)
 
-    def test_create_integer_parameter(self):
+    def test_create_integer_parameter(self) -> None:
         p = Parameter('myparam', Parameter.Type.INTEGER, 42)
         self.assertEqual(p.name, 'myparam')
         self.assertEqual(p.value, 42)
@@ -68,7 +68,7 @@ class TestParameter(unittest.TestCase):
         self.assertEqual(p.type_, Parameter.Type.INTEGER)
         self.assertEqual(p.value, 42)
 
-    def test_create_string_parameter(self):
+    def test_create_string_parameter(self) -> None:
         p = Parameter('myparam', Parameter.Type.STRING, 'pvalue')
         self.assertEqual(p.name, 'myparam')
         self.assertEqual(p.value, 'pvalue')
@@ -78,7 +78,7 @@ class TestParameter(unittest.TestCase):
         self.assertEqual(p.type_, Parameter.Type.STRING)
         self.assertEqual(p.value, 'pvalue')
 
-    def test_create_boolean_array_parameter(self):
+    def test_create_boolean_array_parameter(self) -> None:
         p = Parameter('myparam', Parameter.Type.BOOL_ARRAY, [True, False, True])
         self.assertEqual(p.value, [True, False, True])
 
@@ -86,7 +86,7 @@ class TestParameter(unittest.TestCase):
         self.assertEqual(p.type_, Parameter.Type.BOOL_ARRAY)
         self.assertEqual(p.value, [True, False, True])
 
-    def test_create_float_array_parameter(self):
+    def test_create_float_array_parameter(self) -> None:
         p = Parameter('myparam', Parameter.Type.DOUBLE_ARRAY, [2.41, 6.28])
         self.assertEqual(p.value, [2.41, 6.28])
 
@@ -94,7 +94,7 @@ class TestParameter(unittest.TestCase):
         self.assertEqual(p.type_, Parameter.Type.DOUBLE_ARRAY)
         self.assertEqual(p.value, [2.41, 6.28])
 
-    def test_create_integer_array_parameter(self):
+    def test_create_integer_array_parameter(self) -> None:
         p = Parameter('myparam', Parameter.Type.INTEGER_ARRAY, [1, 2, 3])
         self.assertEqual(p.value, [1, 2, 3])
 
@@ -102,7 +102,7 @@ class TestParameter(unittest.TestCase):
         self.assertEqual(p.type_, Parameter.Type.INTEGER_ARRAY)
         self.assertEqual(p.value, [1, 2, 3])
 
-    def test_create_string_array_parameter(self):
+    def test_create_string_array_parameter(self) -> None:
         p = Parameter('myparam', Parameter.Type.STRING_ARRAY, ['hello', 'world'])
         self.assertEqual(p.value, ['hello', 'world'])
 
@@ -110,7 +110,7 @@ class TestParameter(unittest.TestCase):
         self.assertEqual(p.type_, Parameter.Type.STRING_ARRAY)
         self.assertEqual(p.value, ['hello', 'world'])
 
-    def test_create_not_set_parameter(self):
+    def test_create_not_set_parameter(self) -> None:
         p = Parameter('myparam', Parameter.Type.NOT_SET)
         self.assertIsNone(p.value)
 
@@ -122,20 +122,20 @@ class TestParameter(unittest.TestCase):
         self.assertIsNone(p.value)
         self.assertEqual(p.type_, Parameter.Type.NOT_SET)
 
-    def test_value_and_type_must_agree(self):
+    def test_value_and_type_must_agree(self) -> None:
         with self.assertRaises(ValueError):
             Parameter('myparam', Parameter.Type.NOT_SET, 42)
         with self.assertRaises(ValueError):
             Parameter('myparam', Parameter.Type.BOOL_ARRAY, 42)
 
-    def test_error_on_illegal_value_type(self):
+    def test_error_on_illegal_value_type(self) -> None:
         with self.assertRaises(TypeError):
-            Parameter('illegaltype', 'mytype', 'myvalue')
+            Parameter('illegaltype', 'mytype', 'myvalue')  # type: ignore[call-overload]
 
         with self.assertRaises(TypeError):
-            Parameter('illegaltype', value={'invalid': 'type'})
+            Parameter('illegaltype', value={'invalid': 'type'})  # type: ignore[call-overload]
 
-    def test_integer_tuple_array(self):
+    def test_integer_tuple_array(self) -> None:
         # list
         int_list = [1, 2, 3]
         self.assertEqual(
@@ -148,7 +148,7 @@ class TestParameter(unittest.TestCase):
             Parameter.Type.INTEGER_ARRAY, Parameter.Type.from_parameter_value(int_tuple))
         self.assertTrue(Parameter.Type.check(Parameter.Type.INTEGER_ARRAY, int_tuple))
 
-    def test_integer_array(self):
+    def test_integer_array(self) -> None:
         int_array = array('i', [1, 2, 3])
         self.assertEqual(
             Parameter.Type.INTEGER_ARRAY, Parameter.Type.from_parameter_value(int_array))
@@ -158,7 +158,7 @@ class TestParameter(unittest.TestCase):
             value=ParameterValue(type=7, integer_array_value=[1, 2, 3])
         ))
 
-    def test_double_array(self):
+    def test_double_array(self) -> None:
         double_array = array('d', [1.0, 2.0, 3.0])
         self.assertEqual(
             Parameter.Type.DOUBLE_ARRAY, Parameter.Type.from_parameter_value(double_array))
@@ -168,7 +168,7 @@ class TestParameter(unittest.TestCase):
             value=ParameterValue(type=8, double_array_value=[1.0, 2.0, 3.0])
         ))
 
-    def test_get_parameter_value(self):
+    def test_get_parameter_value(self) -> None:
         """Test the get_parameter_value function."""
         test_cases = [
             (True, ParameterValue(type=int(ParameterType.PARAMETER_BOOL), bool_value=True)),
@@ -210,7 +210,7 @@ class TestParameter(unittest.TestCase):
                 assert False, f'failed to get param_value, reason: {e}'
             self.assertEqual(p, expected_value)
 
-    def test_parameter_value_to_python(self):
+    def test_parameter_value_to_python(self) -> None:
         """Test the parameter_value_to_python conversion function."""
         test_cases = [
             (ParameterValue(type=int(ParameterType.PARAMETER_NOT_SET)), None),
@@ -246,7 +246,7 @@ class TestParameter(unittest.TestCase):
 
         for input_value, expected_value in test_cases:
             result_value = parameter_value_to_python(input_value)
-            if isinstance(expected_value, list):
+            if isinstance(result_value, list) and isinstance(expected_value, list):
                 assert len(result_value) == len(expected_value)
                 # element-wise comparison for lists
                 assert all(x == y for x, y in zip(result_value, expected_value))
@@ -258,15 +258,60 @@ class TestParameter(unittest.TestCase):
         with pytest.raises(RuntimeError):
             parameter_value_to_python(parameter_value)
 
-    def test_parameter_dict_from_yaml_file(self):
-        yaml_string = """/param_test_target:
-            ros__parameters:
-                param_1: 1
-                param_str: string
+    def test_parameter_dict_from_yaml_file(self) -> None:
+        yaml_string = """
+            /param_test_target:
+                ros__parameters:
+                    abs-nodename: true
+            param_test_target:
+                ros__parameters:
+                    base-nodename: true
+            /foo/param_test_target:
+                ros__parameters:
+                    abs-ns-nodename: true
+            /foo:
+                param_test_target:
+                    ros__parameters:
+                        abs-ns-base-nodename: true
+            /bar/param_test_target:
+                ros__parameters:
+                    abs-ns-nodename: false
+            /bar:
+                param_test_target:
+                    ros__parameters:
+                        abs-ns-base-nodename: false
+            /**:
+                ros__parameters:
+                    wildcard: true
             """
-        expected = {
-            'param_1': Parameter('param_1', Parameter.Type.INTEGER, 1).to_parameter_msg(),
-            'param_str': Parameter('param_str', Parameter.Type.STRING, 'string').to_parameter_msg()
+
+        # target nodes is specified, so it should only parse wildcard
+        expected_no_target_node = {
+            'wildcard': Parameter('wildcard', Parameter.Type.BOOL, True).to_parameter_msg(),
+        }
+        # target nodes is specified with wildcard enabled
+        expected_target_node_wildcard = {
+            'wildcard': Parameter(
+                'wildcard', Parameter.Type.BOOL, True).to_parameter_msg(),
+            'abs-nodename': Parameter(
+                'abs-nodename', Parameter.Type.BOOL, True).to_parameter_msg(),
+            'base-nodename': Parameter(
+                'base-nodename', Parameter.Type.BOOL, True).to_parameter_msg(),
+        }
+        # target nodes is specified with wildcard disabled
+        expected_target_node = {
+            'abs-nodename': Parameter(
+                'abs-nodename', Parameter.Type.BOOL, True).to_parameter_msg(),
+            'base-nodename': Parameter(
+                'base-nodename', Parameter.Type.BOOL, True).to_parameter_msg(),
+        }
+        # target nodes is specified with wildcard and namespace
+        expected_target_node_ns = {
+            'wildcard': Parameter('wildcard', Parameter.Type.BOOL, True).to_parameter_msg(),
+            'abs-ns-nodename': Parameter(
+                'abs-ns-nodename', Parameter.Type.BOOL, True).to_parameter_msg(),
+            'abs-ns-base-nodename': Parameter(
+                'abs-ns-base-nodename', Parameter.Type.BOOL, True).to_parameter_msg(),
         }
 
         try:
@@ -274,8 +319,20 @@ class TestParameter(unittest.TestCase):
                 f.write(yaml_string)
                 f.flush()
                 f.close()
-                parameter_dict = parameter_dict_from_yaml_file(f.name)
-            assert parameter_dict == expected
+                parameter_dict = parameter_dict_from_yaml_file(f.name, True)
+                assert parameter_dict == expected_no_target_node
+                parameter_dict = parameter_dict_from_yaml_file(
+                    f.name, True, target_nodes=[''])
+                assert parameter_dict == expected_no_target_node
+                parameter_dict = parameter_dict_from_yaml_file(
+                    f.name, True, target_nodes=['param_test_target'])
+                assert parameter_dict == expected_target_node_wildcard
+                parameter_dict = parameter_dict_from_yaml_file(
+                    f.name, False, target_nodes=['/param_test_target'])
+                assert parameter_dict == expected_target_node
+                parameter_dict = parameter_dict_from_yaml_file(
+                    f.name, True, target_nodes=['/foo/param_test_target'])
+                assert parameter_dict == expected_target_node_ns
         finally:
             if os.path.exists(f.name):
                 os.unlink(f.name)
