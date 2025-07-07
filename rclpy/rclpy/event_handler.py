@@ -22,6 +22,7 @@ from typing import Optional
 from typing import overload
 from typing import Type
 from typing import Union
+import warnings
 
 import rclpy
 from rclpy.callback_groups import CallbackGroup
@@ -30,6 +31,16 @@ from rclpy.logging import get_logger
 from rclpy.qos import qos_policy_name_from_kind
 from rclpy.waitable import NumberOfEntities
 from rclpy.waitable import Waitable
+
+try:
+    from typing_extensions import deprecated
+except ImportError:
+    # Compatibility with Debian Bookworm
+    def deprecated(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
 from typing_extensions import TypeAlias
 
 
@@ -182,6 +193,16 @@ class EventHandler(Waitable[EventHandlerData]):
         self.__event.destroy_when_not_in_use()
 
 
+@deprecated('QoSEventHandler foo is deprecated, use EventHandler instead.',
+            category=DeprecationWarning, stacklevel=2)
+class QoSEventHandler(EventHandler):
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        warnings.warn('QoSEventHandler is deprecated, use EventHandler instead.',
+                      DeprecationWarning, stacklevel=2)
+        super().__init__(*args, **kwargs)
+
+
 class SubscriptionEventCallbacks:
     """Container to provide middleware event callbacks for a Subscription."""
 
@@ -242,7 +263,7 @@ class SubscriptionEventCallbacks:
             # Register default callback when not specified
             def _default_incompatible_qos_callback(event: QoSRequestedIncompatibleQoSInfo) -> None:
                 policy_name = qos_policy_name_from_kind(event.last_policy_kind)
-                logger.warning(
+                logger.warn(
                     "New publisher discovered on topic '{}', offering incompatible QoS. "
                     'No messages will be received from it. '
                     'Last incompatible policy: {}'.format(topic_name, policy_name))
@@ -278,7 +299,7 @@ class SubscriptionEventCallbacks:
         elif self.use_default_callbacks:
             # Register default callback when not specified
             def _default_incompatible_type_callback(event: Any) -> None:
-                logger.warning(
+                logger.warn(
                     "Incompatible type on topic '{}', no messages will be sent to it."
                     .format(topic_name))
             incompatible_type_callback = _default_incompatible_type_callback
@@ -367,7 +388,7 @@ class PublisherEventCallbacks:
             # Register default callback when not specified
             def _default_incompatible_qos_callback(event: QoSRequestedIncompatibleQoSInfo) -> None:
                 policy_name = qos_policy_name_from_kind(event.last_policy_kind)
-                logger.warning(
+                logger.warn(
                     "New subscription discovered on topic '{}', requesting incompatible QoS. "
                     'No messages will be sent to it. '
                     'Last incompatible policy: {}'.format(topic_name, policy_name))
@@ -389,7 +410,7 @@ class PublisherEventCallbacks:
         elif self.use_default_callbacks:
             # Register default callback when not specified
             def _default_incompatible_type_callback(event: Any) -> None:
-                logger.warning(
+                logger.warn(
                     "Incompatible type on topic '{}', no messages will be sent to it."
                     .format(topic_name))
             incompatible_type_callback = _default_incompatible_type_callback

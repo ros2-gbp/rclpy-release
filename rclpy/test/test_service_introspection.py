@@ -14,11 +14,9 @@
 
 import time
 from typing import List
-from typing import TYPE_CHECKING
 import unittest
 
 import rclpy
-import rclpy.context
 import rclpy.executors
 from rclpy.qos import qos_profile_system_default
 from rclpy.service_introspection import ServiceIntrospectionState
@@ -27,10 +25,6 @@ from test_msgs.srv import BasicTypes
 
 
 class TestServiceEvents(unittest.TestCase):
-
-    if TYPE_CHECKING:
-        context: rclpy.context.Context
-        node: rclpy.node.Node
 
     @classmethod
     def setUpClass(cls):

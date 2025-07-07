@@ -123,7 +123,7 @@ def test_subscription_callback_type() -> None:
             msg_type=Empty,
             topic='test_subscription/test_subscription_callback_type/topic',
             qos_profile=10,
-            callback=lambda _, _2, _3: None)  # type: ignore[arg-type]
+            callback=lambda _, _2, _3: None)
 
     node.destroy_node()
 

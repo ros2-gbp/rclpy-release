@@ -65,7 +65,7 @@ def test_get_service_name(service_name, namespace, expected):
     srv = node.create_service(
         srv_type=Empty,
         srv_name=service_name,
-        callback=lambda _, _1: None
+        callback=lambda _: None
     )
 
     assert srv.service_name == expected
@@ -91,7 +91,7 @@ def test_get_service_name_after_remapping(service_name, namespace, cli_args, exp
     srv = node.create_service(
         srv_type=Empty,
         srv_name=service_name,
-        callback=lambda _, _1: None
+        callback=lambda _: None
     )
 
     assert srv.service_name == expected
@@ -103,5 +103,5 @@ def test_get_service_name_after_remapping(service_name, namespace, cli_args, exp
 def test_service_context_manager() -> None:
     with rclpy.create_node('ctx_mgr_test') as node:
         with node.create_service(
-                srv_type=Empty, srv_name='empty_service', callback=lambda _, _1: None) as srv:
+                srv_type=Empty, srv_name='empty_service', callback=lambda _: None) as srv:
             assert srv.service_name == '/empty_service'

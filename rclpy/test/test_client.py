@@ -16,12 +16,10 @@ import platform
 import threading
 import time
 import traceback
-from typing import TYPE_CHECKING
 import unittest
 
 from rcl_interfaces.srv import GetParameters
 import rclpy
-import rclpy.context
 import rclpy.executors
 import rclpy.node
 from rclpy.utilities import get_rmw_implementation_identifier
@@ -32,10 +30,6 @@ TIME_FUDGE = 0.3
 
 
 class TestClient(unittest.TestCase):
-
-    if TYPE_CHECKING:
-        context: rclpy.context.Context
-        node: rclpy.node.Node
 
     @classmethod
     def setUpClass(cls):
@@ -104,8 +98,7 @@ class TestClient(unittest.TestCase):
 
     def test_wait_for_service_exists(self) -> None:
         cli = self.node.create_client(GetParameters, 'test_wfs_exists')
-        srv = self.node.create_service(GetParameters, 'test_wfs_exists',
-                                       lambda request, response: None)
+        srv = self.node.create_service(GetParameters, 'test_wfs_exists', lambda request: None)
         try:
             start = time.monotonic()
             self.assertTrue(cli.wait_for_service(timeout_sec=1.0))

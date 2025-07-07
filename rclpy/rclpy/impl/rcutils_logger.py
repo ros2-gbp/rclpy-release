@@ -34,6 +34,16 @@ from rclpy.impl.logging_severity import LoggingSeverity
 from typing_extensions import Unpack
 
 
+try:
+    from typing_extensions import deprecated
+except ImportError:
+    # Compatibility with Debian Bookworm
+    def deprecated(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
+
 SupportedFiltersKeys = Literal['throttle', 'skip_first', 'once']
 
 # Known filenames from which logging methods can be called (will be ignored in `_find_caller`).
@@ -422,6 +432,15 @@ class RcutilsLogger:
     def warning(self, message: str, **kwargs: 'Unpack[LoggingArgs]') -> bool:
         """Log a message with `WARN` severity via :py:classmethod:RcutilsLogger.log:."""
         return self.log(message, LoggingSeverity.WARN, **kwargs)
+
+    @deprecated('Deprecated in favor of :py:classmethod:RcutilsLogger.warning:.')
+    def warn(self, message: str, **kwargs: 'Unpack[LoggingArgs]') -> bool:
+        """
+        Log a message with `WARN` severity via :py:classmethod:RcutilsLogger.log:.
+
+        Deprecated in favor of :py:classmethod:RcutilsLogger.warning:.
+        """
+        return self.warning(message, **kwargs)
 
     def error(self, message: str, **kwargs: 'Unpack[LoggingArgs]') -> bool:
         """Log a message with `ERROR` severity via :py:classmethod:RcutilsLogger.log:."""

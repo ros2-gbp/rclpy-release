@@ -91,7 +91,7 @@ class TestRate:
 
     def test_rate_invalid_period(self) -> None:
         with pytest.raises(TypeError):
-            self.node.create_rate(None)  # type: ignore[arg-type]
+            self.node.create_rate(None)
 
         with pytest.raises(ValueError):
             self.node.create_rate(0.0)

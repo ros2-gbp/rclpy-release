@@ -1,4 +1,4 @@
-# Copyright 2019 Open Source Robotics Foundation, Inc.
+# Copyright 2022 Open Source Robotics Foundation, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .client import ActionClient  # noqa: F401
-from .graph import get_action_client_names_and_types_by_node  # noqa: F401
-from .graph import get_action_names_and_types  # noqa
-from .graph import get_action_server_names_and_types_by_node  # noqa: F401
-from .server import ActionServer, CancelResponse, GoalResponse  # noqa: F401
+import warnings
+
+from rclpy.event_handler import *  # noqa: F401, F403
+
+warnings.warn("importing 'qos_event' is deprecated; import 'event_handler' instead")
