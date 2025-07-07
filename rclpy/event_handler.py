@@ -31,7 +31,16 @@ from rclpy.logging import get_logger
 from rclpy.qos import qos_policy_name_from_kind
 from rclpy.waitable import NumberOfEntities
 from rclpy.waitable import Waitable
-from typing_extensions import deprecated
+
+try:
+    from typing_extensions import deprecated
+except ImportError:
+    # Compatibility with Debian Bookworm
+    def deprecated(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
 from typing_extensions import TypeAlias
 
 
