@@ -30,6 +30,7 @@ class MessageInfo(TypedDict):
     received_timestamp: int
     publication_sequence_number: Optional[int]
     reception_sequence_number: Optional[int]
+    publisher_gid: Optional[dict]
 
 
 # Left to support Legacy TypeVars.
@@ -132,6 +133,12 @@ class Subscription(Generic[MsgT]):
         raise RuntimeError(
             'Subscription.__init__(): callback should be either be callable with one argument'
             '(to get only the message) or two (to get message and message info)')
+
+    @property
+    def logger_name(self) -> str:
+        """Get the name of the logger associated with the node of the subscription."""
+        with self.handle:
+            return self.__subscription.get_logger_name()
 
     def __enter__(self) -> 'Subscription[MsgT]':
         return self
