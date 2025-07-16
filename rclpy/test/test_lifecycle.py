@@ -13,24 +13,17 @@
 # limitations under the License.
 
 from threading import Thread
-from typing import Any
-from typing import Literal
 from unittest import mock
 
 import lifecycle_msgs.msg
-from lifecycle_msgs.srv import ChangeState
-from lifecycle_msgs.srv import GetAvailableStates
-from lifecycle_msgs.srv import GetAvailableTransitions
-from lifecycle_msgs.srv import GetState
+import lifecycle_msgs.srv
 
 import pytest
-from pytest import FixtureRequest
 
 import rclpy
-from rclpy.client import Client
 from rclpy.executors import SingleThreadedExecutor
+from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.lifecycle import LifecycleNode
-from rclpy.lifecycle import LifecycleState
 from rclpy.lifecycle import TransitionCallbackReturn
 from rclpy.node import Node
 from rclpy.publisher import Publisher
@@ -38,7 +31,7 @@ from rclpy.publisher import Publisher
 from test_msgs.msg import BasicTypes
 
 
-def test_lifecycle_node_init() -> None:
+def test_lifecycle_node_init():
     rclpy.init()
     node = LifecycleNode('test_lifecycle_node_init_1')
     assert node
@@ -59,11 +52,10 @@ def test_lifecycle_node_init() -> None:
     assert not node._state_machine.service_get_transition_graph
     node.destroy_node()
     with pytest.raises(TypeError):
-        LifecycleNode('test_lifecycle_node_init_3',
-                      enable_communication_interface='asd')  # type: ignore[arg-type]
+        LifecycleNode('test_lifecycle_node_init_3', enable_communication_interface='asd')
 
 
-def test_lifecycle_state_transitions() -> None:
+def test_lifecycle_state_transitions():
     node = LifecycleNode(
         'test_lifecycle_state_transitions_1', enable_communication_interface=False)
     # normal transitions
@@ -77,7 +69,13 @@ def test_lifecycle_state_transitions() -> None:
         assert node.trigger_deactivate() == TransitionCallbackReturn.SUCCESS
     assert node.trigger_cleanup() == TransitionCallbackReturn.SUCCESS
     # some that are not possible from the current state
+    with pytest.raises(_rclpy.RCLError):
+        node.trigger_activate()
+    with pytest.raises(_rclpy.RCLError):
+        node.trigger_deactivate()
     assert node.trigger_shutdown() == TransitionCallbackReturn.SUCCESS
+    with pytest.raises(_rclpy.RCLError):
+        node.trigger_shutdown()
     node.destroy_node()
     # Again but trigger shutdown from 'inactive' instead of 'unconfigured'
     node = LifecycleNode(
@@ -92,10 +90,10 @@ def test_lifecycle_state_transitions() -> None:
 
     class ErrorOnConfigureHandledCorrectlyNode(LifecycleNode):
 
-        def on_configure(self, state: LifecycleState) -> Literal[TransitionCallbackReturn.ERROR]:
+        def on_configure(self):
             return TransitionCallbackReturn.ERROR
 
-        def __init__(self, *args: Any, **kwargs: Any):
+        def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
 
     node = ErrorOnConfigureHandledCorrectlyNode(
@@ -106,13 +104,13 @@ def test_lifecycle_state_transitions() -> None:
 
     class ErrorOnConfigureHandledInCorrectlyNode(LifecycleNode):
 
-        def on_configure(self, state: LifecycleState) -> Literal[TransitionCallbackReturn.ERROR]:
+        def on_configure(self):
             return TransitionCallbackReturn.ERROR
 
-        def on_error(self, state: LifecycleState) -> Literal[TransitionCallbackReturn.ERROR]:
+        def on_error(self):
             return TransitionCallbackReturn.ERROR
 
-        def __init__(self, *args: Any, **kwargs: Any):
+        def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
 
     node = ErrorOnConfigureHandledInCorrectlyNode(
@@ -121,29 +119,24 @@ def test_lifecycle_state_transitions() -> None:
     assert node._state_machine.current_state[1] == 'finalized'
 
 
-def test_lifecycle_services(request: FixtureRequest) -> None:
+def test_lifecycle_services(request):
     lc_node_name = 'test_lifecycle_services_lifecycle'
     lc_node = LifecycleNode(lc_node_name)
     client_node = Node('test_lifecycle_services_client')
-    get_state_cli: Client[GetState.Request, GetState.Response] = client_node.create_client(
-        GetState,
+    get_state_cli = client_node.create_client(
+        lifecycle_msgs.srv.GetState,
         f'/{lc_node_name}/get_state')
-    change_state_cli: Client[ChangeState.Request,
-                             ChangeState.Response] = client_node.create_client(
-        ChangeState,
+    change_state_cli = client_node.create_client(
+        lifecycle_msgs.srv.ChangeState,
         f'/{lc_node_name}/change_state')
-    get_available_states_cli: Client[GetAvailableStates.Request,
-                                     GetAvailableStates.Response] = client_node.create_client(
-        GetAvailableStates,
+    get_available_states_cli = client_node.create_client(
+        lifecycle_msgs.srv.GetAvailableStates,
         f'/{lc_node_name}/get_available_states')
-    get_available_transitions_cli: Client[GetAvailableTransitions.Request,
-                                          GetAvailableTransitions.Response] = \
-        client_node.create_client(
-            GetAvailableTransitions,
-            f'/{lc_node_name}/get_available_transitions')
-    get_transition_graph_cli: Client[GetAvailableTransitions.Request,
-                                     GetAvailableTransitions.Response] = client_node.create_client(
-        GetAvailableTransitions,
+    get_available_transitions_cli = client_node.create_client(
+        lifecycle_msgs.srv.GetAvailableTransitions,
+        f'/{lc_node_name}/get_available_transitions')
+    get_transition_graph_cli = client_node.create_client(
+        lifecycle_msgs.srv.GetAvailableTransitions,
         f'/{lc_node_name}/get_transition_graph')
     for cli in (
         get_state_cli,
@@ -160,7 +153,7 @@ def test_lifecycle_services(request: FixtureRequest) -> None:
     thread = Thread(target=executor.spin)
     thread.start()
 
-    def cleanup() -> None:
+    def cleanup():
         # Stop executor and join thread.
         # This cleanup is run even if an assertion fails.
         executor.shutdown()
@@ -168,30 +161,29 @@ def test_lifecycle_services(request: FixtureRequest) -> None:
     request.addfinalizer(cleanup)
 
     # test all services
-    req = GetState.Request()
+    req = lifecycle_msgs.srv.GetState.Request()
     resp = get_state_cli.call(req)
-    assert resp
     assert resp.current_state.label == 'unconfigured'
-    req = ChangeState.Request()
+    req = lifecycle_msgs.srv.ChangeState.Request()
     req.transition.id = lifecycle_msgs.msg.Transition.TRANSITION_CONFIGURE
     resp = change_state_cli.call(req)
     assert resp.success
-    req = GetState.Request()
+    req = lifecycle_msgs.srv.GetState.Request()
     resp = get_state_cli.call(req)
     assert resp.current_state.label == 'inactive'
-    req = GetAvailableStates.Request()
+    req = lifecycle_msgs.srv.GetAvailableStates.Request()
     resp = get_available_states_cli.call(req)
     states_labels = {state.label for state in resp.available_states}
     assert states_labels == {
         'unknown', 'unconfigured', 'inactive', 'active', 'finalized', 'configuring', 'cleaningup',
         'shuttingdown', 'activating', 'deactivating', 'errorprocessing'
     }
-    req = GetAvailableTransitions.Request()
+    req = lifecycle_msgs.srv.GetAvailableTransitions.Request()
     resp = get_available_transitions_cli.call(req)
     transitions_labels = {
         transition_def.transition.label for transition_def in resp.available_transitions}
     assert transitions_labels == {'activate', 'cleanup', 'shutdown'}
-    req = GetAvailableTransitions.Request()
+    req = lifecycle_msgs.srv.GetAvailableTransitions.Request()
     resp = get_transition_graph_cli.call(req)
     transitions_labels = {
         transition_def.transition.label for transition_def in resp.available_transitions}
@@ -201,7 +193,7 @@ def test_lifecycle_services(request: FixtureRequest) -> None:
     }
 
 
-def test_lifecycle_publisher() -> None:
+def test_lifecycle_publisher():
     node = LifecycleNode('test_lifecycle_publisher', enable_communication_interface=False)
     with mock.patch.object(Publisher, 'publish') as mock_publish:
         pub = node.create_lifecycle_publisher(BasicTypes, 'test_lifecycle_publisher_topic', 10)

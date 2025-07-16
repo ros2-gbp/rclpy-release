@@ -4,22 +4,20 @@ ROS Client Library for the Python language.
 
 ## Building documentation
 
-Documentation can be built for `rclpy` using [Sphinx](http://www.sphinx-doc.org/en/master/), or accessed [online](https://docs.ros.org/en/rolling/p/rclpy/).
+Documentation can be built for `rclpy` using [Sphinx](http://www.sphinx-doc.org/en/master/), or accessed [online](http://docs.ros2.org/latest/api/rclpy/index.html)
 
 For building documentation, you need an installation of ROS 2.
 
 #### Install dependencies
 
-    sudo apt install \
-      python3-sphinx \
-      python3-sphinx-autodoc-typehints \
-      python3-sphinx-rtd-theme
+    sudo apt install python3-sphinx python3-pip
+    sudo -H pip3 install sphinx_autodoc_typehints
 
 #### Build
 
 Source your ROS 2 installation, for example:
 
-    . /opt/ros/rolling/setup.bash
+    . /opt/ros/foxy/setup.bash
 
 Build code:
 

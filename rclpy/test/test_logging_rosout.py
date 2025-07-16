@@ -83,7 +83,7 @@ def test_enable_rosout(
 
     if expected_data:
         assert (rosout_subscription_msg is not None)
-        assert (isinstance(rosout_subscription_msg, Log))
+        assert (type(rosout_subscription_msg) == Log)
         assert (LoggingSeverity(rosout_subscription_msg.level) == LoggingSeverity.INFO)
         assert (len(rosout_subscription_msg.msg) != 0)
         assert (rosout_subscription_msg.msg == message_data)

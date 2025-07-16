@@ -12,10 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any
 from typing import Callable
 from typing import Iterable
-from typing import List
 from typing import Optional
 from typing import Text
 from typing import Type
@@ -30,14 +28,9 @@ from rclpy.duration import Duration
 from rclpy.exceptions import ParameterAlreadyDeclaredException
 from rclpy.parameter import Parameter
 from rclpy.publisher import Publisher
-from rclpy.qos import QoSDurabilityPolicy
-from rclpy.qos import QoSHistoryPolicy
-from rclpy.qos import QoSLivelinessPolicy
 from rclpy.qos import QoSPolicyKind
 from rclpy.qos import QoSProfile
-from rclpy.qos import QoSReliabilityPolicy
 from rclpy.subscription import Subscription
-from typing_extensions import TypeAlias
 
 if TYPE_CHECKING:
     from rclpy.node import Node
@@ -48,7 +41,7 @@ class InvalidQosOverridesError(Exception):
 
 
 # Return type of qos validation callbacks
-QosCallbackResult: TypeAlias = SetParametersResult
+QosCallbackResult = SetParametersResult
 # Qos callback type annotation
 QosCallbackType = Callable[[QoSProfile], QosCallbackResult]
 
@@ -105,12 +98,12 @@ class QoSOverridingOptions:
 
 
 def _declare_qos_parameters(
-    entity_type: Union[Type[Publisher[Any]], Type[Subscription[Any]]],
+    entity_type: Union[Type[Publisher], Type[Subscription]],
     node: 'Node',
     topic_name: Text,
     qos: QoSProfile,
     options: QoSOverridingOptions
-) -> None:
+) -> QoSProfile:
     """
     Declare QoS parameters for a Publisher or a Subscription.
 
@@ -136,7 +129,7 @@ def _declare_qos_parameters(
         descriptor.description = description.format(policy_name)
         descriptor.read_only = True
         try:
-            param: Parameter[Any] = node.declare_parameter(
+            param = node.declare_parameter(
                 name.format(policy_name),
                 _get_qos_policy_parameter(qos, policy),
                 descriptor)
@@ -150,42 +143,37 @@ def _declare_qos_parameters(
                 f"{description.format('Provided QoS overrides')}, are not valid: {result.reason}")
 
 
-def _get_allowed_policies(entity_type: Union[Type[Publisher[Any]],
-                                             Type[Subscription[Any]]]) -> List[QoSPolicyKind]:
+def _get_allowed_policies(entity_type: Union[Type[Publisher], Type[Subscription]]):
     allowed_policies = list(QoSPolicyKind.__members__.values())
     if issubclass(entity_type, Subscription):
         allowed_policies.remove(QoSPolicyKind.LIFESPAN)
     return allowed_policies
 
 
-QoSProfileAttributes = Union[QoSHistoryPolicy, int, QoSReliabilityPolicy, QoSDurabilityPolicy,
-                             Duration, QoSLivelinessPolicy, bool]
-
-
 def _get_qos_policy_parameter(qos: QoSProfile, policy: QoSPolicyKind) -> Union[str, int, bool]:
-    value: QoSProfileAttributes = getattr(qos, policy.name.lower())
-    if isinstance(value, (QoSHistoryPolicy, QoSReliabilityPolicy,
-                  QoSDurabilityPolicy, QoSLivelinessPolicy)):
-        return_value: Union[str, int, bool] = value.name.lower()
-        if return_value == 'unknown':
+    value = getattr(qos, policy.name.lower())
+    if policy in (
+        QoSPolicyKind.LIVELINESS, QoSPolicyKind.RELIABILITY,
+        QoSPolicyKind.HISTORY, QoSPolicyKind.DURABILITY
+    ):
+        value = value.name.lower()
+        if value == 'unknown':
             raise ValueError('User provided QoS profile is invalid')
-    elif isinstance(value, Duration):
-        return_value = value.nanoseconds
-    else:
-        return_value = value
-    return return_value
+    if policy in (
+        QoSPolicyKind.LIFESPAN, QoSPolicyKind.DEADLINE, QoSPolicyKind.LIVELINESS_LEASE_DURATION
+    ):
+        value = value.nanoseconds
+    return value
 
 
-def _override_qos_policy_with_param(qos: QoSProfile,
-                                    policy: QoSPolicyKind,
-                                    param: Parameter[Any]) -> None:
+def _override_qos_policy_with_param(qos: QoSProfile, policy: QoSPolicyKind, param: Parameter):
     value = param.value
     policy_name = policy.name.lower()
     if policy in (
         QoSPolicyKind.LIVELINESS, QoSPolicyKind.RELIABILITY,
         QoSPolicyKind.HISTORY, QoSPolicyKind.DURABILITY
     ):
-        def capitalize_first_letter(x: str) -> str:
+        def capitalize_first_letter(x):
             return x[0].upper() + x[1:]
         # e.g. `policy=QosPolicyKind.LIVELINESS` -> `policy_enum_class=rclpy.qos.LivelinessPolicy`
         policy_enum_class = getattr(

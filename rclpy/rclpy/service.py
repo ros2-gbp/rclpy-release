@@ -12,20 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from types import TracebackType
 from typing import Callable
-from typing import Generic
-from typing import Optional
-from typing import Type
 from typing import TypeVar
-from typing import Union
 
 from rclpy.callback_groups import CallbackGroup
-from rclpy.clock import Clock
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.qos import QoSProfile
-from rclpy.service_introspection import ServiceIntrospectionState
-from rclpy.type_support import Srv, SrvRequestT, SrvResponseT
 
 # Used for documentation purposes only
 SrvType = TypeVar('SrvType')
@@ -33,27 +25,27 @@ SrvTypeRequest = TypeVar('SrvTypeRequest')
 SrvTypeResponse = TypeVar('SrvTypeResponse')
 
 
-class Service(Generic[SrvRequestT, SrvResponseT]):
+class Service:
     def __init__(
         self,
-        service_impl: '_rclpy.Service[SrvRequestT, SrvResponseT]',
-        srv_type: Type[Srv],
+        service_impl: _rclpy.Service,
+        srv_type: SrvType,
         srv_name: str,
-        callback: Callable[[SrvRequestT, SrvResponseT], SrvResponseT],
+        callback: Callable[[SrvTypeRequest, SrvTypeResponse], SrvTypeResponse],
         callback_group: CallbackGroup,
         qos_profile: QoSProfile
     ) -> None:
         """
         Create a container for a ROS service server.
 
-        .. warning:: Users should not create a service server with this constructor, instead they
+        .. warning:: Users should not create a service server with this constuctor, instead they
            should call :meth:`.Node.create_service`.
 
+        :param context: The context associated with the service server.
         :param service_impl: :class:`_rclpy.Service` wrapping the underlying ``rcl_service_t``
             object.
         :param srv_type: The service type.
         :param srv_name: The name of the service.
-        :param callback: The callback that should be called to handle the request.
         :param callback_group: The callback group for the service server. If ``None``, then the
             nodes default callback group is used.
         :param qos_profile: The quality of service profile to apply the service server.
@@ -67,8 +59,7 @@ class Service(Generic[SrvRequestT, SrvResponseT]):
         self._executor_event = False
         self.qos_profile = qos_profile
 
-    def send_response(self, response: SrvResponseT,
-                      header: Union[_rclpy.rmw_service_info_t, _rclpy.rmw_request_id_t]) -> None:
+    def send_response(self, response: SrvTypeResponse, header) -> None:
         """
         Send a service response.
 
@@ -88,31 +79,9 @@ class Service(Generic[SrvRequestT, SrvResponseT]):
             else:
                 raise TypeError()
 
-    def configure_introspection(
-        self, clock: Clock,
-        service_event_qos_profile: QoSProfile,
-        introspection_state: ServiceIntrospectionState
-    ) -> None:
-        """
-        Configure service introspection.
-
-        :param clock: Clock to use for generating timestamps.
-        :param service_event_qos_profile: QoSProfile to use when creating service event publisher.
-        :param introspection_state: ServiceIntrospectionState to set introspection.
-        """
-        with self.handle:
-            self.__service.configure_introspection(clock.handle,
-                                                   service_event_qos_profile.get_c_qos_profile(),
-                                                   introspection_state)
-
     @property
-    def handle(self) -> '_rclpy.Service[SrvRequestT, SrvResponseT]':
+    def handle(self):
         return self.__service
-
-    @property
-    def service_name(self) -> str:
-        with self.handle:
-            return self.__service.name
 
     @property
     def logger_name(self) -> str:
@@ -120,22 +89,5 @@ class Service(Generic[SrvRequestT, SrvResponseT]):
         with self.handle:
             return self.__service.get_logger_name()
 
-    def destroy(self) -> None:
-        """
-        Destroy a container for a ROS service server.
-
-        .. warning:: Users should not destroy a service server with this destructor, instead they
-           should call :meth:`.Node.destroy_service`.
-        """
+    def destroy(self):
         self.__service.destroy_when_not_in_use()
-
-    def __enter__(self) -> 'Service[SrvRequestT, SrvResponseT]':
-        return self
-
-    def __exit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
-    ) -> None:
-        self.destroy()

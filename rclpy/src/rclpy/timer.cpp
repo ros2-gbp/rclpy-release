@@ -36,7 +36,7 @@ Timer::destroy()
 }
 
 Timer::Timer(
-  Clock & clock, Context & context, int64_t period_nsec, bool autostart)
+  Clock & clock, Context & context, int64_t period_nsec)
 : context_(context), clock_(clock)
 {
   // Create a client
@@ -59,9 +59,9 @@ Timer::Timer(
 
   rcl_allocator_t allocator = rcl_get_default_allocator();
 
-  rcl_ret_t ret = rcl_timer_init2(
+  rcl_ret_t ret = rcl_timer_init(
     rcl_timer_.get(), clock_.rcl_ptr(), context.rcl_ptr(),
-    period_nsec, NULL, allocator, autostart);
+    period_nsec, NULL, allocator);
 
   if (RCL_RET_OK != ret) {
     throw RCLError("failed to create timer");
@@ -92,22 +92,6 @@ void Timer::call_timer()
   if (ret != RCL_RET_OK) {
     throw RCLError("failed to call timer");
   }
-}
-
-py::object
-Timer::call_timer_with_info()
-{
-  py::dict timer_info;
-  rcl_timer_call_info_t call_info;
-  rcl_ret_t ret = rcl_timer_call_with_info(rcl_timer_.get(), &call_info);
-  if (ret != RCL_RET_OK) {
-    throw RCLError("failed to call timer");
-  }
-
-  timer_info["expected_call_time"] = call_info.expected_call_time;
-  timer_info["actual_call_time"] = call_info.actual_call_time;
-
-  return timer_info;
 }
 
 void Timer::change_timer_period(int64_t period_nsec)
@@ -175,7 +159,7 @@ void
 define_timer(py::object module)
 {
   py::class_<Timer, Destroyable, std::shared_ptr<Timer>>(module, "Timer")
-  .def(py::init<Clock &, Context &, int64_t, bool>())
+  .def(py::init<Clock &, Context &, int64_t>())
   .def_property_readonly(
     "pointer", [](const Timer & timer) {
       return reinterpret_cast<size_t>(timer.rcl_ptr());
@@ -188,9 +172,6 @@ define_timer(py::object module)
   .def(
     "call_timer", &Timer::call_timer,
     "Call a timer and starts counting again.")
-  .def(
-    "call_timer_with_info", &Timer::call_timer_with_info,
-    "Call a timer and starts counting again, retrieves actual and expected call time.")
   .def(
     "change_timer_period", &Timer::change_timer_period,
     "Set the period of a timer.")

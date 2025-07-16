@@ -13,19 +13,7 @@
 # limitations under the License.
 
 from threading import Lock
-from typing import Any, Literal, Optional, TYPE_CHECKING, Union
 import weakref
-
-
-if TYPE_CHECKING:
-    from rclpy.subscription import Subscription
-    from rclpy.timer import Timer
-    from rclpy.client import Client
-    from rclpy.service import Service
-    from rclpy.waitable import Waitable
-    from rclpy.guard_condition import GuardCondition
-    Entity = Union[Subscription[Any], Timer, Client[Any, Any], Service[Any, Any],
-                   GuardCondition, Waitable[Any]]
 
 
 class CallbackGroup:
@@ -41,9 +29,9 @@ class CallbackGroup:
 
     def __init__(self) -> None:
         super().__init__()
-        self.entities: set[weakref.ReferenceType['Entity']] = set()
+        self.entities: set = set()
 
-    def add_entity(self, entity: 'Entity') -> None:
+    def add_entity(self, entity) -> None:
         """
         Add an entity to the callback group.
 
@@ -51,7 +39,7 @@ class CallbackGroup:
         """
         self.entities.add(weakref.ref(entity))
 
-    def has_entity(self, entity: 'Entity') -> bool:
+    def has_entity(self, entity) -> bool:
         """
         Determine if an entity has been added to this group.
 
@@ -59,7 +47,7 @@ class CallbackGroup:
         """
         return weakref.ref(entity) in self.entities
 
-    def can_execute(self, entity: 'Entity') -> bool:
+    def can_execute(self, entity) -> bool:
         """
         Determine if an entity can be executed.
 
@@ -68,7 +56,7 @@ class CallbackGroup:
         """
         raise NotImplementedError()
 
-    def beginning_execution(self, entity: 'Entity') -> bool:
+    def beginning_execution(self, entity) -> bool:
         """
         Get permission for the callback from the group to begin executing an entity.
 
@@ -80,7 +68,7 @@ class CallbackGroup:
         """
         raise NotImplementedError()
 
-    def ending_execution(self, entity: 'Entity') -> None:
+    def ending_execution(self, entity) -> None:
         """
         Notify group that a callback has finished executing.
 
@@ -92,30 +80,30 @@ class CallbackGroup:
 class ReentrantCallbackGroup(CallbackGroup):
     """Allow callbacks to be executed in parallel without restriction."""
 
-    def can_execute(self, entity: 'Entity') -> Literal[True]:
+    def can_execute(self, entity):
         return True
 
-    def beginning_execution(self, entity: 'Entity') -> Literal[True]:
+    def beginning_execution(self, entity):
         return True
 
-    def ending_execution(self, entity: 'Entity') -> None:
+    def ending_execution(self, entity):
         pass
 
 
 class MutuallyExclusiveCallbackGroup(CallbackGroup):
     """Allow only one callback to be executing at a time."""
 
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__()
-        self._active_entity: Optional['Entity'] = None
+        self._active_entity = None
         self._lock = Lock()
 
-    def can_execute(self, entity: 'Entity') -> bool:
+    def can_execute(self, entity):
         with self._lock:
             assert weakref.ref(entity) in self.entities
             return self._active_entity is None
 
-    def beginning_execution(self, entity: 'Entity') -> bool:
+    def beginning_execution(self, entity):
         with self._lock:
             assert weakref.ref(entity) in self.entities
             if self._active_entity is None:
@@ -123,7 +111,7 @@ class MutuallyExclusiveCallbackGroup(CallbackGroup):
                 return True
         return False
 
-    def ending_execution(self, entity: 'Entity') -> None:
+    def ending_execution(self, entity):
         with self._lock:
             assert self._active_entity == entity
             self._active_entity = None

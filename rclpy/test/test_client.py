@@ -13,17 +13,13 @@
 # limitations under the License.
 
 import platform
-import threading
 import time
-import traceback
 import unittest
 
 from rcl_interfaces.srv import GetParameters
 import rclpy
 import rclpy.executors
-import rclpy.node
 from rclpy.utilities import get_rmw_implementation_identifier
-from test_msgs.srv import Empty
 
 # TODO(sloretz) Reduce fudge once wait_for_service uses node graph events
 TIME_FUDGE = 0.3
@@ -42,39 +38,7 @@ class TestClient(unittest.TestCase):
         cls.node.destroy_node()
         rclpy.shutdown(context=cls.context)
 
-    @classmethod
-    def do_test_service_name(cls, test_service_name_list):
-        for service_name, ns, cli_args, target_service_name in test_service_name_list:
-            node = rclpy.create_node(
-                node_name='node_name',
-                context=cls.context,
-                namespace=ns,
-                cli_args=cli_args,
-                start_parameter_services=False)
-            client = node.create_client(
-                srv_type=Empty,
-                srv_name=service_name
-            )
-            assert client.service_name == target_service_name
-            client.destroy()
-            node.destroy_node()
-
-    @staticmethod
-    def _spin_rclpy_node(
-        rclpy_node: rclpy.node.Node,
-        rclpy_executor: rclpy.executors.SingleThreadedExecutor
-    ) -> None:
-        try:
-            rclpy_executor.spin()
-        except rclpy.executors.ExternalShutdownException:
-            pass
-        except Exception as err:
-            traceback.print_exc()
-            print(rclpy_node.get_name() + ': ' + str(err))
-        print(rclpy_node.get_name() + ': rclpy_node exit')
-#        rclpy_node.destroy_node()
-
-    def test_wait_for_service_5sec(self) -> None:
+    def test_wait_for_service_5sec(self):
         cli = self.node.create_client(GetParameters, 'get/parameters')
         try:
             start = time.monotonic()
@@ -85,7 +49,7 @@ class TestClient(unittest.TestCase):
         finally:
             self.node.destroy_client(cli)
 
-    def test_wait_for_service_nowait(self) -> None:
+    def test_wait_for_service_nowait(self):
         cli = self.node.create_client(GetParameters, 'get/parameters')
         try:
             start = time.monotonic()
@@ -96,7 +60,7 @@ class TestClient(unittest.TestCase):
         finally:
             self.node.destroy_client(cli)
 
-    def test_wait_for_service_exists(self) -> None:
+    def test_wait_for_service_exists(self):
         cli = self.node.create_client(GetParameters, 'test_wfs_exists')
         srv = self.node.create_service(GetParameters, 'test_wfs_exists', lambda request: None)
         try:
@@ -109,7 +73,7 @@ class TestClient(unittest.TestCase):
             self.node.destroy_client(cli)
             self.node.destroy_service(srv)
 
-    def test_concurrent_calls_to_service(self) -> None:
+    def test_concurrent_calls_to_service(self):
         cli = self.node.create_client(GetParameters, 'get/parameters')
         srv = self.node.create_service(
             GetParameters, 'get/parameters',
@@ -130,7 +94,7 @@ class TestClient(unittest.TestCase):
     @unittest.skipIf(
         get_rmw_implementation_identifier() == 'rmw_connextdds' and platform.system() == 'Windows',
         reason='Source timestamp not implemented for Connext on Windows')
-    def test_service_timestamps(self) -> None:
+    def test_service_timestamps(self):
         cli = self.node.create_client(GetParameters, 'get/parameters')
         srv = self.node.create_service(
             GetParameters, 'get/parameters',
@@ -153,7 +117,7 @@ class TestClient(unittest.TestCase):
             self.node.destroy_client(cli)
             self.node.destroy_service(srv)
 
-    def test_different_type_raises(self) -> None:
+    def test_different_type_raises(self):
         cli = self.node.create_client(GetParameters, 'get/parameters')
         srv = self.node.create_service(
             GetParameters, 'get/parameters',
@@ -172,101 +136,10 @@ class TestClient(unittest.TestCase):
             self.node.destroy_client(cli)
             self.node.destroy_service(srv)
 
-    def test_get_service_name(self) -> None:
-        test_service_name_list = [
-            # test_service_name, namespace, cli_args for remap, expected service name
-            # No namespaces
-            ('service', None, None, '/service'),
-            ('example/service', None, None, '/example/service'),
-            # Using service names with namespaces
-            ('service', 'ns', None, '/ns/service'),
-            ('example/service', 'ns', None, '/ns/example/service'),
-            ('example/service', 'my/ns', None, '/my/ns/example/service'),
-            ('example/service', '/my/ns', None, '/my/ns/example/service'),
-            # Global service name
-            ('/service', 'ns', None, '/service'),
-            ('/example/service', 'ns', None, '/example/service')
-        ]
-        TestClient.do_test_service_name(test_service_name_list)
-
-    def test_get_service_name_after_remapping(self) -> None:
-        test_service_name_list = [
-            ('service', None, ['--ros-args', '--remap', 'service:=new_service'], '/new_service'),
-            ('service', 'ns', ['--ros-args', '--remap', 'service:=new_service'],
-             '/ns/new_service'),
-            ('service', 'ns', ['--ros-args', '--remap', 'service:=example/new_service'],
-             '/ns/example/new_service'),
-            ('example/service', 'ns', ['--ros-args', '--remap', 'example/service:=new_service'],
-             '/ns/new_service')
-        ]
-        TestClient.do_test_service_name(test_service_name_list)
-
-    def test_sync_call(self) -> None:
-        def _service(request, response):
-            return response
-        cli = self.node.create_client(GetParameters, 'get/parameters')
-        srv = self.node.create_service(GetParameters, 'get/parameters', _service)
-        try:
-            self.assertTrue(cli.wait_for_service(timeout_sec=20))
-            executor = rclpy.executors.SingleThreadedExecutor(context=self.context)
-            executor.add_node(self.node)
-            executor_thread = threading.Thread(
-                target=TestClient._spin_rclpy_node, args=(self.node, executor))
-            executor_thread.start()
-            # make sure thread has started to avoid exception via join()
-            self.assertTrue(executor_thread.is_alive())
-            result = cli.call(GetParameters.Request(), 0.5)
-            self.assertTrue(result is not None)
-            executor.shutdown()
-            executor_thread.join()
-        finally:
-            self.node.destroy_client(cli)
-            self.node.destroy_service(srv)
-
-    def test_sync_call_timeout(self) -> None:
-        def _service(request, response):
-            time.sleep(1)
-            return response
-        cli = self.node.create_client(GetParameters, 'get/parameters')
-        srv = self.node.create_service(GetParameters, 'get/parameters', _service)
-        try:
-            self.assertTrue(cli.wait_for_service(timeout_sec=20))
-            executor = rclpy.executors.SingleThreadedExecutor(context=self.context)
-            executor.add_node(self.node)
-            executor_thread = threading.Thread(
-                target=TestClient._spin_rclpy_node, args=(self.node, executor))
-            executor_thread.start()
-            # make sure thread has started to avoid exception via join()
-            self.assertTrue(executor_thread.is_alive())
-            with self.assertRaises(TimeoutError):
-                cli.call(GetParameters.Request(), 0.5)
-        finally:
-            executor.shutdown()
-            executor_thread.join()
-            self.node.destroy_client(cli)
-            self.node.destroy_service(srv)
-
-    def test_sync_call_context_manager(self) -> None:
-        def _service(request, response):
-            return response
-        with self.node.create_client(GetParameters, 'get/parameters') as cli:
-            with self.node.create_service(GetParameters, 'get/parameters', _service):
-                self.assertTrue(cli.wait_for_service(timeout_sec=20))
-                executor = rclpy.executors.SingleThreadedExecutor(context=self.context)
-                executor.add_node(self.node)
-                executor_thread = threading.Thread(
-                    target=TestClient._spin_rclpy_node, args=(self.node, executor))
-                executor_thread.start()
-                # make sure thread has started to avoid exception via join()
-                self.assertTrue(executor_thread.is_alive())
-                result = cli.call(GetParameters.Request(), 0.5)
-                self.assertTrue(result is not None)
-                executor.shutdown()
-                executor_thread.join()
-
     def test_logger_name_is_equal_to_node_name(self) -> None:
-        with self.node.create_client(GetParameters, 'get/parameters') as cli:
-            self.assertEqual(cli.logger_name, 'TestClient')
+        cli = self.node.create_client(GetParameters, 'get/parameters')
+        self.assertEqual(cli.logger_name, 'TestClient')
+        self.node.destroy_client(cli)
 
 
 if __name__ == '__main__':
