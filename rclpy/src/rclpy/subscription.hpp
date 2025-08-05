@@ -72,7 +72,7 @@ public:
    * \return None on failure
    */
   const char *
-  get_logger_name();
+  get_logger_name() const;
 
   /// Return the resolved topic name of a subscription.
   /**
@@ -83,7 +83,16 @@ public:
    * \return a string with the topic name
    */
   std::string
-  get_topic_name();
+  get_topic_name() const;
+
+  /// Count publishers from a subscriber.
+  /**
+   * Raises RCLError if the publisher count cannot be determined
+   *
+   * \return number of publishers
+   */
+  size_t
+  get_publisher_count() const;
 
   /// Get rcl_subscription_t pointer
   rcl_subscription_t *
@@ -100,7 +109,7 @@ private:
   Node node_;
   std::shared_ptr<rcl_subscription_t> rcl_subscription_;
 };
-/// Define a pybind11 wrapper for an rclpy::Service
+/// Define a pybind11 wrapper for an rclpy::Subscription
 void define_subscription(py::object module);
 }  // namespace rclpy
 
