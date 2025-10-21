@@ -37,7 +37,7 @@ from rclpy.client import Client
 from rclpy.clock import Clock
 from rclpy.clock import ClockType
 from rclpy.context import Context
-from rclpy.exceptions import InvalidHandle
+from rclpy.exceptions import InvalidHandle, TimerCancelledError
 from rclpy.guard_condition import GuardCondition
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.service import Service
@@ -215,10 +215,14 @@ class Executor:
             timeot expires before all outstanding work is done.
         """
         with self._shutdown_lock:
-            if not self._is_shutdown:
-                self._is_shutdown = True
-                # Tell executor it's been shut down
+            if self._is_shutdown:
+                return True
+            self._is_shutdown = True
+            # Tell executor it's been shut down
+            try:
                 self._guard.trigger()
+            except InvalidHandle:
+                pass
 
         if not self._work_tracker.wait(timeout_sec):
             return False
@@ -355,10 +359,16 @@ class Executor:
 
     def _take_timer(self, tmr):
         with tmr.handle:
-            tmr.handle.call_timer()
+            try:
+                tmr.handle.call_timer()
+                return True
+            except TimerCancelledError:
+                # Do not execute timer
+                return False
 
-    async def _execute_timer(self, tmr, _):
-        await await_or_execute(tmr.callback)
+    async def _execute_timer(self, tmr, ready):
+        if ready:
+            await await_or_execute(tmr.callback)
 
     def _take_subscription(self, sub):
         with sub.handle:
@@ -434,14 +444,20 @@ class Executor:
             if is_shutdown or not entity.callback_group.beginning_execution(entity):
                 # Didn't get the callback, or the executor has been ordered to stop
                 entity._executor_event = False
-                gc.trigger()
+                try:
+                    gc.trigger()
+                except InvalidHandle:
+                    pass
                 return
             with work_tracker:
                 arg = take_from_wait_list(entity)
 
                 # Signal that this has been 'taken' and can be added back to the wait list
                 entity._executor_event = False
-                gc.trigger()
+                try:
+                    gc.trigger()
+                except InvalidHandle:
+                    pass
 
                 try:
                     await call_coroutine(entity, arg)
@@ -449,7 +465,10 @@ class Executor:
                     entity.callback_group.ending_execution(entity)
                     # Signal that work has been done so the next callback in a mutually exclusive
                     # callback group can get executed
-                    gc.trigger()
+                    try:
+                        gc.trigger()
+                    except InvalidHandle:
+                        pass
         task = Task(
             handler, (entity, self._guard, self._is_shutdown, self._work_tracker),
             executor=self)
@@ -530,7 +549,10 @@ class Executor:
                 # retrigger a guard condition that was triggered but not handled
                 for gc in node_guards:
                     if gc._executor_triggered:
-                        gc.trigger()
+                        try:
+                            gc.trigger()
+                        except InvalidHandle:
+                            pass
                     guards.append(gc)
             if timeout_timer is not None:
                 timers.append(timeout_timer)
