@@ -56,7 +56,7 @@ Subscription::Subscription(
     new rcl_subscription_t,
     [node](rcl_subscription_t * subscription)
     {
-      // Intentionally capture node by copy so shared_ptr can be transferred to copies
+      // Intentionally capture node by copy so shared_ptr can be transfered to copies
       rcl_ret_t ret = rcl_subscription_fini(subscription, node.rcl_ptr());
       if (RCL_RET_OK != ret) {
         // Warning should use line number of the current stack frame
@@ -131,24 +131,15 @@ Subscription::take_message(py::object pymsg_type, bool raw)
 
     pytaken_msg = convert_to_py(taken_msg.get(), pymsg_type);
   }
-  py::object pub_seq_number = py::none();
-  if (message_info.publication_sequence_number != RMW_MESSAGE_INFO_SEQUENCE_NUMBER_UNSUPPORTED) {
-    pub_seq_number = py::int_(message_info.publication_sequence_number);
-  }
-  py::object rec_seq_number = py::none();
-  if (message_info.reception_sequence_number != RMW_MESSAGE_INFO_SEQUENCE_NUMBER_UNSUPPORTED) {
-    rec_seq_number = py::int_(message_info.reception_sequence_number);
-  }
+
   return py::make_tuple(
     pytaken_msg, py::dict(
       "source_timestamp"_a = message_info.source_timestamp,
-      "received_timestamp"_a = message_info.received_timestamp,
-      "publication_sequence_number"_a = pub_seq_number,
-      "reception_sequence_number"_a = rec_seq_number));
+      "received_timestamp"_a = message_info.received_timestamp));
 }
 
 const char *
-Subscription::get_logger_name() const
+Subscription::get_logger_name()
 {
   const char * node_logger_name = rcl_node_get_logger_name(node_.rcl_ptr());
   if (!node_logger_name) {
@@ -159,7 +150,7 @@ Subscription::get_logger_name() const
 }
 
 std::string
-Subscription::get_topic_name() const
+Subscription::get_topic_name()
 {
   const char * subscription_name = rcl_subscription_get_topic_name(rcl_subscription_.get());
   if (nullptr == subscription_name) {
@@ -168,19 +159,6 @@ Subscription::get_topic_name() const
 
   return std::string(subscription_name);
 }
-
-size_t
-Subscription::get_publisher_count() const
-{
-  size_t count = 0;
-  rcl_ret_t ret = rcl_subscription_get_publisher_count(rcl_subscription_.get(), &count);
-  if (RCL_RET_OK != ret) {
-    throw RCLError("failed to get publisher count");
-  }
-
-  return count;
-}
-
 void
 define_subscription(py::object module)
 {
@@ -199,9 +177,6 @@ define_subscription(py::object module)
     "Get the name of the logger associated with the node of the subscription.")
   .def(
     "get_topic_name", &Subscription::get_topic_name,
-    "Return the resolved topic name of a subscription.")
-  .def(
-    "get_publisher_count", &Subscription::get_publisher_count,
-    "Count the publishers from a subscription.");
+    "Return the resolved topic name of a subscription.");
 }
 }  // namespace rclpy
