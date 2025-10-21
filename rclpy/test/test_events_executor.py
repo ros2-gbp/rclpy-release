@@ -24,7 +24,6 @@ import rclpy.event_handler
 import rclpy.executors
 import rclpy.experimental
 import rclpy.node
-import rclpy.parameter
 import rclpy.qos
 import rclpy.time
 import rclpy.timer
@@ -48,18 +47,16 @@ def _get_pub_sub_qos(transient_local: bool) -> rclpy.qos.QoSProfile:
 class SubTestNode(rclpy.node.Node):
     """Node to test subscriptions and subscription-related events."""
 
-    def __init__(self, *, transient_local: bool = False, use_async_handler: bool = False) -> None:
+    def __init__(self, *, transient_local: bool = False) -> None:
         super().__init__('test_sub_node')
-        self._new_pub_future: typing.Optional[
-            rclpy.Future[rclpy.event_handler.QoSSubscriptionMatchedInfo]
-        ] = None
-        self._received_future: typing.Optional[rclpy.Future[test_msgs.msg.BasicTypes]] = None
+        self._new_pub_future: typing.Optional[rclpy.Future] = None
+        self._received_future: typing.Optional[rclpy.Future] = None
         self._sub = self.create_subscription(
             test_msgs.msg.BasicTypes,
             # This node seems to get stale discovery data and then complain about QoS
             # changes if we reuse the same topic name.
             'test_topic' + ('_transient_local' if transient_local else ''),
-            self._async_handle_sub if use_async_handler else self._handle_sub,
+            self._handle_sub,
             _get_pub_sub_qos(transient_local),
             event_callbacks=rclpy.event_handler.SubscriptionEventCallbacks(
                 matched=self._handle_matched_sub
@@ -71,11 +68,11 @@ class SubTestNode(rclpy.node.Node):
 
     def expect_pub_info(
         self,
-    ) -> rclpy.Future[rclpy.event_handler.QoSSubscriptionMatchedInfo]:
+    ) -> rclpy.Future:
         self._new_pub_future = rclpy.Future()
         return self._new_pub_future
 
-    def expect_message(self) -> rclpy.Future[test_msgs.msg.BasicTypes]:
+    def expect_message(self) -> rclpy.Future:
         self._received_future = rclpy.Future()
         return self._received_future
 
@@ -84,10 +81,6 @@ class SubTestNode(rclpy.node.Node):
             future = self._received_future
             self._received_future = None
             future.set_result(msg)
-
-    async def _async_handle_sub(self, msg: test_msgs.msg.BasicTypes) -> None:
-        # Don't bother to actually delay at all for this test
-        return self._handle_sub(msg)
 
     def _handle_matched_sub(self, info: rclpy.event_handler.QoSSubscriptionMatchedInfo) -> None:
         """Handle a new publisher being matched to our subscription."""
@@ -101,9 +94,7 @@ class PubTestNode(rclpy.node.Node):
 
     def __init__(self, *, transient_local: bool = False) -> None:
         super().__init__('test_pub_node')
-        self._new_sub_future: typing.Optional[
-            rclpy.Future[rclpy.event_handler.QoSPublisherMatchedInfo]
-        ] = None
+        self._new_sub_future: typing.Optional[rclpy.Future] = None
         self._pub = self.create_publisher(
             test_msgs.msg.BasicTypes,
             'test_topic' + ('_transient_local' if transient_local else ''),
@@ -113,9 +104,7 @@ class PubTestNode(rclpy.node.Node):
             ),
         )
 
-    def expect_sub_info(
-        self,
-    ) -> rclpy.Future[rclpy.event_handler.QoSPublisherMatchedInfo]:
+    def expect_sub_info(self) -> rclpy.Future:
         self._new_sub_future = rclpy.Future()
         return self._new_sub_future
 
@@ -132,26 +121,13 @@ class PubTestNode(rclpy.node.Node):
 class ServiceServerTestNode(rclpy.node.Node):
     """Node to test service server-side operation."""
 
-    def __init__(
-        self,
-        *,
-        use_async_handler: bool = False,
-        parameter_overrides: typing.Optional[list[rclpy.parameter.Parameter[bool]]] = None,
-    ) -> None:
-        super().__init__('test_service_server_node', parameter_overrides=parameter_overrides)
-        self._got_request_future: typing.Optional[
-            rclpy.Future[test_msgs.srv.BasicTypes.Request]
-        ] = None
+    def __init__(self) -> None:
+        super().__init__('test_service_server_node')
+        self._got_request_future: typing.Optional[rclpy.Future] = None
         self._pending_response: typing.Optional[test_msgs.srv.BasicTypes.Response] = None
-        self.create_service(
-            test_msgs.srv.BasicTypes,
-            'test_service',
-            self._async_handle_service if use_async_handler else self._handle_service,
-        )
+        self.create_service(test_msgs.srv.BasicTypes, 'test_service', self._handle_request)
 
-    def expect_request(
-        self, success: bool, error_msg: str
-    ) -> rclpy.Future[test_msgs.srv.BasicTypes.Request]:
+    def expect_request(self, success: bool, error_msg: str) -> rclpy.Future:
         """
         Expect an incoming request.
 
@@ -163,46 +139,18 @@ class ServiceServerTestNode(rclpy.node.Node):
         )
         return self._got_request_future
 
-    def _handle_service(
+    def _handle_request(
         self,
         req: test_msgs.srv.BasicTypes.Request,
         res: test_msgs.srv.BasicTypes.Response,
     ) -> test_msgs.srv.BasicTypes.Response:
-        self._handle_request(req)
-        return self._get_response(res)
-
-    def _handle_request(self, req: test_msgs.srv.BasicTypes.Request) -> None:
         if self._got_request_future is not None:
             self._got_request_future.set_result(req)
             self._got_request_future = None
-
-    def _get_response(
-        self, res: test_msgs.srv.BasicTypes.Response
-    ) -> test_msgs.srv.BasicTypes.Response:
         if self._pending_response is not None:
             res = self._pending_response
             self._pending_response = None
         return res
-
-    async def _async_handle_service(
-        self, req: test_msgs.srv.BasicTypes.Request, res: test_msgs.srv.BasicTypes.Response
-    ) -> test_msgs.srv.BasicTypes.Response:
-        self._handle_request(req)
-
-        # Create and await a timer before replying, to represent other work.
-        timer_future = rclpy.Future[None]()
-        timer = self.create_timer(
-            1.0,
-            lambda: timer_future.set_result(None),
-            # NOTE: As of this writing, the callback_group is entirely ignored by EventsExecutor;
-            # however, it would be needed for SingleThreadedExecutor to pass this same test, so
-            # we'll include it anyway.
-            callback_group=rclpy.callback_groups.ReentrantCallbackGroup(),
-        )
-        await timer_future
-        self.destroy_timer(timer)
-
-        return self._get_response(res)
 
 
 class ServiceClientTestNode(rclpy.node.Node):
@@ -210,11 +158,11 @@ class ServiceClientTestNode(rclpy.node.Node):
 
     def __init__(self) -> None:
         super().__init__('test_service_client_node')
-        self._client: rclpy.client.Client[
-            test_msgs.srv.BasicTypes.Request, test_msgs.srv.BasicTypes.Response
-        ] = self.create_client(test_msgs.srv.BasicTypes, 'test_service')
+        self._client: rclpy.client.Client = self.create_client(
+            test_msgs.srv.BasicTypes, 'test_service'
+        )
 
-    def issue_request(self, value: float) -> rclpy.Future[test_msgs.srv.BasicTypes.Response]:
+    def issue_request(self, value: float) -> rclpy.Future:
         req = test_msgs.srv.BasicTypes.Request(float32_value=value)
         return self._client.call_async(req)
 
@@ -225,26 +173,26 @@ class TimerTestNode(rclpy.node.Node):
     def __init__(
         self,
         index: int = 0,
-        parameter_overrides: typing.Optional[list[rclpy.parameter.Parameter[bool]]] = None,
+        parameter_overrides: typing.Optional[list[rclpy.Parameter]] = None,
     ) -> None:
         super().__init__(f'test_timer{index}', parameter_overrides=parameter_overrides)
         self._timer_events = 0
-        self._tick_future: typing.Optional[rclpy.Future[rclpy.timer.TimerInfo]] = None
+        self._tick_future: typing.Optional[rclpy.Future] = None
         self._timer = self.create_timer(0.1, self._handle_timer)
 
     @property
     def timer_events(self) -> int:
         return self._timer_events
 
-    def expect_tick(self) -> rclpy.Future[rclpy.timer.TimerInfo]:
-        """Get future on TimerInfo for an anticipated timer tick."""
+    def expect_tick(self) -> rclpy.Future:
+        """Get future for an anticipated timer tick."""
         self._tick_future = rclpy.Future()
         return self._tick_future
 
-    def _handle_timer(self, info: rclpy.timer.TimerInfo) -> None:
+    def _handle_timer(self) -> None:
         self._timer_events += 1
         if self._tick_future is not None:
-            self._tick_future.set_result(info)
+            self._tick_future.set_result('foo')
             self._tick_future = None
 
 
@@ -275,9 +223,9 @@ class ActionServerTestNode(rclpy.node.Node):
     def __init__(self) -> None:
         super().__init__(
             'test_action_server_node',
-            parameter_overrides=[rclpy.parameter.Parameter('use_sim_time', value=True)],
+            parameter_overrides=[rclpy.Parameter('use_sim_time', value=True)],
         )
-        self._got_goal_future: typing.Optional[rclpy.Future[test_msgs.action.Fibonacci.Goal]] = (
+        self._got_goal_future: typing.Optional[rclpy.Future] = (
             None
         )
         self._srv = rclpy.action.ActionServer(
@@ -291,7 +239,7 @@ class ActionServerTestNode(rclpy.node.Node):
         self._goal_handle: typing.Optional[rclpy.action.server.ServerGoalHandle] = None
         self._sequence: list[int] = []
 
-    def expect_goal(self) -> rclpy.Future[test_msgs.action.Fibonacci.Goal]:
+    def expect_goal(self) -> rclpy.Future:
         self._goal_handle = None
         self._got_goal_future = rclpy.Future()
         return self._got_goal_future
@@ -353,19 +301,13 @@ class ActionClientTestNode(rclpy.node.Node):
 
     def __init__(self) -> None:
         super().__init__('test_action_client_node')
-        self._client = rclpy.action.ActionClient[
-            test_msgs.action.Fibonacci.Goal,
-            test_msgs.action.Fibonacci.Result,
-            test_msgs.action.Fibonacci.Feedback,
-        ](self, test_msgs.action.Fibonacci, 'test_action')
-        self._feedback_future: typing.Optional[
-            rclpy.Future[test_msgs.action.Fibonacci.Feedback]
-        ] = None
-        self._result_future: typing.Optional[rclpy.Future[test_msgs.action.Fibonacci.Result]] = (
+        self._client = rclpy.action.ActionClient(self, test_msgs.action.Fibonacci, 'test_action')
+        self._feedback_future: typing.Optional[rclpy.Future] = None
+        self._result_future: typing.Optional[rclpy.Future] = (
             None
         )
 
-    def send_goal(self, order: int) -> rclpy.Future[rclpy.action.client.ClientGoalHandle]:
+    def send_goal(self, order: int) -> rclpy.Future:
         """
         Send a new goal.
 
@@ -381,13 +323,13 @@ class ActionClientTestNode(rclpy.node.Node):
         goal_ack_future.add_done_callback(self._handle_goal_ack)
         return goal_ack_future
 
-    def _handle_goal_ack(self, future: rclpy.Future[rclpy.action.client.ClientGoalHandle]) -> None:
+    def _handle_goal_ack(self, future: rclpy.Future) -> None:
         handle = future.result()
         assert handle is not None
         result_future = handle.get_result_async()
         result_future.add_done_callback(self._handle_result_response)
 
-    def expect_feedback(self) -> rclpy.Future[test_msgs.action.Fibonacci.Feedback]:
+    def expect_feedback(self) -> rclpy.Future:
         self._feedback_future = rclpy.Future()
         return self._feedback_future
 
@@ -400,15 +342,11 @@ class ActionClientTestNode(rclpy.node.Node):
             self._feedback_future.set_result(fb_msg.feedback)
             self._feedback_future = None
 
-    def expect_result(
-        self,
-    ) -> rclpy.Future[test_msgs.action.Fibonacci.Result]:
+    def expect_result(self) -> rclpy.Future:
         self._result_future = rclpy.Future()
         return self._result_future
 
-    def _handle_result_response(
-        self, future: rclpy.Future[test_msgs.action.Fibonacci_GetResult_Response]
-    ) -> None:
+    def _handle_result_response(self, future: rclpy.Future) -> None:
         response: typing.Optional[test_msgs.action.Fibonacci_GetResult_Response] = future.result()
         assert response is not None
         assert self._result_future is not None
@@ -436,13 +374,13 @@ class TestEventsExecutor(unittest.TestCase):
     def tearDown(self) -> None:
         rclpy.shutdown()
 
-    def _expect_future_done(self, future: rclpy.Future[typing.Any]) -> None:
+    def _expect_future_done(self, future: rclpy.Future) -> None:
         # Use a moderately long timeout with the expectation that we shouldn't often
         # need the whole duration.
         self.executor.spin_until_future_complete(future, 1.0)
         self.assertTrue(future.done())
 
-    def _expect_future_not_done(self, future: rclpy.Future[typing.Any]) -> None:
+    def _expect_future_not_done(self, future: rclpy.Future) -> None:
         # Use a short timeout to give the future some time to complete if we are going
         # to fail, but not very long because we'll be waiting the full duration every
         # time during successful tests.  It's ok if the timeout is a bit short and the
@@ -459,7 +397,7 @@ class TestEventsExecutor(unittest.TestCase):
 
     def _check_match_event_future(
         self,
-        future: rclpy.Future[rmw_matched_status_t],
+        future: rclpy.Future,
         total_count: int,
         current_count: int,
     ) -> None:
@@ -474,7 +412,7 @@ class TestEventsExecutor(unittest.TestCase):
         self.assertEqual(info.current_count, current_count)
 
     def _check_message_future(
-        self, future: rclpy.Future[test_msgs.msg.BasicTypes], value: float
+        self, future: rclpy.Future, value: float
     ) -> None:
         self._expect_future_done(future)
         msg: typing.Optional[test_msgs.msg.BasicTypes] = future.result()
@@ -482,7 +420,7 @@ class TestEventsExecutor(unittest.TestCase):
         self.assertAlmostEqual(msg.float32_value, value, places=5)
 
     def _check_service_request_future(
-        self, future: rclpy.Future[test_msgs.srv.BasicTypes.Request], value: float
+        self, future: rclpy.Future, value: float
     ) -> None:
         self._expect_future_done(future)
         req: typing.Optional[test_msgs.srv.BasicTypes.Request] = future.result()
@@ -491,7 +429,7 @@ class TestEventsExecutor(unittest.TestCase):
 
     def _check_service_response_future(
         self,
-        future: rclpy.Future[test_msgs.srv.BasicTypes.Response],
+        future: rclpy.Future,
         success: bool,
         error_msg: str,
     ) -> None:
@@ -547,17 +485,6 @@ class TestEventsExecutor(unittest.TestCase):
         self.assertFalse(new_pub_future.done())  # Already waited a bit
         self.assertFalse(received_future.done())  # Already waited a bit
 
-    def test_async_sub(self) -> None:
-        sub_node = SubTestNode(use_async_handler=True)
-        received_future = sub_node.expect_message()
-        self.executor.add_node(sub_node)
-        self._expect_future_not_done(received_future)
-
-        pub_node = PubTestNode()
-        self.executor.add_node(pub_node)
-        pub_node.publish(0.0)
-        self._check_message_future(received_future, 0.0)
-
     def test_pub_sub_multi_message(self) -> None:
         # Creates a transient local publisher and queues multiple messages on it.  Then
         # creates a subscriber and makes sure all sent messages get delivered when it
@@ -571,7 +498,7 @@ class TestEventsExecutor(unittest.TestCase):
         received_future = sub_node.expect_message()
         received_messages: list[test_msgs.msg.BasicTypes] = []
 
-        def handle_message(future: rclpy.Future[test_msgs.msg.BasicTypes]) -> None:
+        def handle_message(future: rclpy.Future) -> None:
             nonlocal received_future
             msg = future.result()
             assert msg is not None
@@ -615,28 +542,10 @@ class TestEventsExecutor(unittest.TestCase):
         self._expect_future_not_done(got_request_future)
         self.assertFalse(got_response_future.done())  # Already waited a bit
 
-    def test_async_service(self) -> None:
-        server_node = ServiceServerTestNode(
-            use_async_handler=True,
-            parameter_overrides=[rclpy.parameter.Parameter('use_sim_time', value=True)],
-        )
-        got_request_future = server_node.expect_request(True, 'test response')
-        client_node = ServiceClientTestNode()
-        clock_node = ClockPublisherNode()
-        for node in [server_node, client_node, clock_node]:
-            self.executor.add_node(node)
-
-        self._expect_future_not_done(got_request_future)
-        got_response_future = client_node.issue_request(7.1)
-        self._check_service_request_future(got_request_future, 7.1)
-        self._expect_future_not_done(got_response_future)
-        clock_node.advance_time(1000)
-        self._check_service_response_future(got_response_future, True, 'test response')
-
     def test_timers(self) -> None:
         realtime_node = TimerTestNode(index=0)
         rostime_node = TimerTestNode(
-            index=1, parameter_overrides=[rclpy.parameter.Parameter('use_sim_time', value=True)]
+            index=1, parameter_overrides=[rclpy.Parameter('use_sim_time', value=True)]
         )
         clock_node = ClockPublisherNode()
         for node in [realtime_node, rostime_node, clock_node]:
@@ -644,15 +553,11 @@ class TestEventsExecutor(unittest.TestCase):
 
         # Wait a bit, and make sure the realtime timer ticks, and the rostime one does
         # not.  Since this is based on wall time, be very flexible on tolerances here.
-        realtime_tick_future = realtime_node.expect_tick()
         self._spin_for(1.0)
         realtime_ticks = realtime_node.timer_events
         self.assertGreater(realtime_ticks, 1)
         self.assertLess(realtime_ticks, 50)
         self.assertEqual(rostime_node.timer_events, 0)
-        info = realtime_tick_future.result()
-        assert info is not None
-        self.assertGreaterEqual(info.actual_call_time, info.expected_call_time)
 
         # Manually tick the rostime timer by less than a full interval.
         rostime_tick_future = rostime_node.expect_tick()
@@ -661,10 +566,6 @@ class TestEventsExecutor(unittest.TestCase):
         self._expect_future_not_done(rostime_tick_future)
         clock_node.advance_time(1)
         self._expect_future_done(rostime_tick_future)
-        info = rostime_tick_future.result()
-        assert info is not None
-        self.assertEqual(info.actual_call_time, info.expected_call_time)
-        self.assertEqual(info.actual_call_time, clock_node.now)
         # Now tick by a bunch of full intervals.
         for _ in range(300):
             rostime_tick_future = rostime_node.expect_tick()

@@ -1,4 +1,4 @@
-# Copyright 2025 Sony Group Corporation.
+# Copyright 2024 Open Source Robotics Foundation, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,11 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import NamedTuple
+from types import TracebackType
+from typing import Optional, Protocol, Type
 
 
-class ContentFilterOptions(NamedTuple):
-    """Options to configure content filtered topic in the subscription."""
+class DestroyableType(Protocol):
 
-    filter_expression: str
-    expression_parameters: list[str]
+    def __enter__(self) -> None:
+        ...
+
+    def __exit__(self, exc_type: Optional[Type[BaseException]],
+                 exc_val: Optional[BaseException], exctb: Optional[TracebackType]) -> None:
+        ...
+
+    def destroy_when_not_in_use(self) -> None:
+        ...

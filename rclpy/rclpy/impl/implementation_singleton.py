@@ -27,7 +27,6 @@ For example, you might use it like this:
 """
 
 from rpyutils import import_c_library
-
 package = 'rclpy'
 
 rclpy_implementation = import_c_library('._rclpy_pybind11', package)

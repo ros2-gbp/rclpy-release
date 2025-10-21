@@ -70,22 +70,17 @@ class UnsupportedEventTypeError : public RCLError
   using RCLError::RCLError;
 };
 
-class NotImplementedError : public RCLError
-{
-  using RCLError::RCLError;
-};
-
 class TimerCancelledError : public RCLError
 {
   using RCLError::RCLError;
 };
 
-class InvalidHandle : public std::runtime_error
+class NotImplementedError : public RCLError
 {
-  using std::runtime_error::runtime_error;
+  using RCLError::RCLError;
 };
 
-class ContextAlreadyShutdown : public std::runtime_error
+class InvalidHandle : public std::runtime_error
 {
   using std::runtime_error::runtime_error;
 };
