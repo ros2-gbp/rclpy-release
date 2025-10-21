@@ -2,38 +2,25 @@
 Changelog for package rclpy
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-10.0.1 (2025-10-21)
--------------------
-* remove unused 'param_type' (`#1524 <https://github.com/ros2/rclpy/issues/1524>`_)
-* Fixes Action.*_async futures never complete (`#1308 <https://github.com/ros2/rclpy/issues/1308>`_)
-* add spinning state for the Executor classes. (`#1510 <https://github.com/ros2/rclpy/issues/1510>`_)
-* EventsExecutor: Handle async callbacks for services and subscriptions (`#1478 <https://github.com/ros2/rclpy/issues/1478>`_)
-* Added lock to protect futures for multithreaded executor (`#1477 <https://github.com/ros2/rclpy/issues/1477>`_)
-* Add content-filtered-topic interfaces (`#1506 <https://github.com/ros2/rclpy/issues/1506>`_)
-* Fix warnings from gcc. (`#1501 <https://github.com/ros2/rclpy/issues/1501>`_)
-* Feature: expose event callback setter in subscription, service, client and timer (`#1496 <https://github.com/ros2/rclpy/issues/1496>`_)
-* Feature: add executor.create_future() (`#1495 <https://github.com/ros2/rclpy/issues/1495>`_)
-* Add More Test Typings (`#1472 <https://github.com/ros2/rclpy/issues/1472>`_)
-* Use pybind11 from deb or pixi (`#1497 <https://github.com/ros2/rclpy/issues/1497>`_)
-* Do not execute the timer if call_timer_with_info() fails (`#1488 <https://github.com/ros2/rclpy/issues/1488>`_)
-* Fix msbuild warnings on `operator==` deprecation for pybind11 >=2.2 (`#1483 <https://github.com/ros2/rclpy/issues/1483>`_)
-* Cleanup the rclpy dependencies. (`#1482 <https://github.com/ros2/rclpy/issues/1482>`_)
-* Contributors: Alejandro Hernández Cordero, Barry Xu, Brad Martin, Brennan Miller-Klugman, Chris Lalancette, Christian Rauch, Clara Berendsen, Jonathan, Michael Carlstrom, Nadav Elkabets, Tomoya Fujita
-
-10.0.0 (2025-07-01)
--------------------
-* Feature: add logger_name property to subscription, publisher, service and client (`#1471 <https://github.com/ros2/rclpy/issues/1471>`_)
-* Update `test_node` Types (`#1464 <https://github.com/ros2/rclpy/issues/1464>`_)
-* Add method that get datetime.datetime from Time (`#1443 <https://github.com/ros2/rclpy/issues/1443>`_)
-* add `MessageInfo.publisher_gid` (`#1466 <https://github.com/ros2/rclpy/issues/1466>`_)
-* Add types to `test_action\_*.py` (`#1444 <https://github.com/ros2/rclpy/issues/1444>`_)
-* Revert "Fix Duration, Clock, and QoS Docs (`#1428 <https://github.com/ros2/rclpy/issues/1428>`_)" (`#1447 <https://github.com/ros2/rclpy/issues/1447>`_)
-* remove all deprecated classes and methods (`#1456 <https://github.com/ros2/rclpy/issues/1456>`_)
-* [rclpy] Fix spin() incorrectly removing node from executor if already attached (`#1446 <https://github.com/ros2/rclpy/issues/1446>`_)
-* Contributors: Alon Borenshtein, Jean Paul, Michael Carlstrom, Nadav Elkabets, Tomoya Fujita
-
-9.2.0 (2025-04-25)
+9.1.2 (2025-10-21)
 ------------------
+* remove unused 'param_type' (`#1524 <https://github.com/ros2/rclpy/issues/1524>`_) (`#1525 <https://github.com/ros2/rclpy/issues/1525>`_)
+* Fixes Action.*_async futures never complete (`#1308 <https://github.com/ros2/rclpy/issues/1308>`_) (`#1514 <https://github.com/ros2/rclpy/issues/1514>`_)
+* Add content-filtered-topic interfaces (backport `#1506 <https://github.com/ros2/rclpy/issues/1506>`_) (`#1520 <https://github.com/ros2/rclpy/issues/1520>`_)
+* EventsExecutor: Handle async callbacks for services and subscriptions (`#1478 <https://github.com/ros2/rclpy/issues/1478>`_) (`#1512 <https://github.com/ros2/rclpy/issues/1512>`_)
+* Do not execute the timer if call_timer_with_info() fails (`#1488 <https://github.com/ros2/rclpy/issues/1488>`_) (`#1498 <https://github.com/ros2/rclpy/issues/1498>`_)
+* Feature: add executor.create_future() (`#1495 <https://github.com/ros2/rclpy/issues/1495>`_) (`#1499 <https://github.com/ros2/rclpy/issues/1499>`_)
+* Contributors: mergify[bot]
+
+9.1.1 (2025-07-07)
+------------------
+* Add logger_name property to subscription, publisher, service and client (`#1471 <https://github.com/ros2/rclpy/issues/1471>`_) (`#1474 <https://github.com/ros2/rclpy/issues/1474>`_)
+* Add `MessageInfo.publisher_gid` (`#1466 <https://github.com/ros2/rclpy/issues/1466>`_) (`#1468 <https://github.com/ros2/rclpy/issues/1468>`_)
+* Make no-op deprecated decorator ignore arguments (`#1463 <https://github.com/ros2/rclpy/issues/1463>`_)
+* Make deprecated decorator a no-op on Debian bookworm (`#1458 <https://github.com/ros2/rclpy/issues/1458>`_)
+* Fix spin() incorrectly removing node from executor if already attached (`#1446 <https://github.com/ros2/rclpy/issues/1446>`_) (`#1449 <https://github.com/ros2/rclpy/issues/1449>`_)
+* Revert "Fix Duration, Clock, and QoS Docs (`#1428 <https://github.com/ros2/rclpy/issues/1428>`_)" (`#1447 <https://github.com/ros2/rclpy/issues/1447>`_) (`#1457 <https://github.com/ros2/rclpy/issues/1457>`_)
+* Contributors: Alon Borenshtein, Nadav Elkabets, Shane Loretz, Tomoya Fujita
 
 9.1.0 (2025-04-18)
 ------------------
