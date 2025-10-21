@@ -16,12 +16,19 @@ from enum import Enum
 import inspect
 import sys
 import threading
-from typing import Callable
+from typing import (Any, Callable, cast, Coroutine, Dict, Generator, Generic, List,
+                    Optional, overload, Tuple, TYPE_CHECKING, TypeVar, Union)
 import warnings
 import weakref
 
+if TYPE_CHECKING:
 
-def _fake_weakref():
+    from rclpy.executors import Executor
+
+T = TypeVar('T')
+
+
+def _fake_weakref() -> None:
     """Return None when called to simulate a weak reference that has been garbage collected."""
     return None
 
@@ -34,31 +41,32 @@ class FutureState(Enum):
     FINISHED = 'FINISHED'
 
 
-class Future:
+class Future(Generic[T]):
     """Represent the outcome of a task in the future."""
 
-    def __init__(self, *, executor=None):
+    def __init__(self, *, executor: Optional['Executor'] = None) -> None:
         self._state = FutureState.PENDING
         # the final return value of the handler
-        self._result = None
+        self._result: Optional[T] = None
         # An exception raised by the handler when called
-        self._exception = None
+        self._exception: Optional[Exception] = None
         self._exception_fetched = False
         # callbacks to be scheduled after this task completes
-        self._callbacks = []
+        self._callbacks: List[Callable[['Future[T]'], None]] = []
         # Lock for threadsafety
         self._lock = threading.Lock()
         # An executor to use when scheduling done callbacks
-        self._executor = None
+        self._executor: Optional[Union[weakref.ReferenceType['Executor'],
+                                       Callable[[], None]]] = None
         self._set_executor(executor)
 
-    def __del__(self):
+    def __del__(self) -> None:
         if self._exception is not None and not self._exception_fetched:
             print(
                 'The following exception was never retrieved: ' + str(self._exception),
                 file=sys.stderr)
 
-    def __await__(self):
+    def __await__(self) -> Generator[None, None, Optional[T]]:
         # Yield if the task is not finished
         while self._pending():
             yield
@@ -67,7 +75,7 @@ class Future:
     def _pending(self) -> bool:
         return self._state == FutureState.PENDING
 
-    def cancel(self):
+    def cancel(self) -> None:
         """Request cancellation of the running task if it is not done already."""
         with self._lock:
             if not self._pending():
@@ -76,25 +84,23 @@ class Future:
         self._state = FutureState.CANCELLED
         self._schedule_or_invoke_done_callbacks()
 
-    def cancelled(self):
+    def cancelled(self) -> bool:
         """
         Indicate if the task has been cancelled.
 
         :return: True if the task was cancelled
-        :rtype: bool
         """
         return self._state == FutureState.CANCELLED
 
-    def done(self):
+    def done(self) -> bool:
         """
         Indicate if the task has finished executing.
 
         :return: True if the task is finished or raised while it was executing
-        :rtype: bool
         """
         return self._state == FutureState.FINISHED
 
-    def result(self):
+    def result(self) -> Optional[T]:
         """
         Get the result of a done task.
 
@@ -102,11 +108,12 @@ class Future:
 
         :return: The result set by the task, or None if no result was set.
         """
-        if self._exception:
-            raise self.exception()
+        exception = self.exception()
+        if exception:
+            raise exception
         return self._result
 
-    def exception(self):
+    def exception(self) -> Optional[Exception]:
         """
         Get an exception raised by a done task.
 
@@ -115,7 +122,7 @@ class Future:
         self._exception_fetched = True
         return self._exception
 
-    def set_result(self, result):
+    def set_result(self, result: T) -> None:
         """
         Set the result returned by a task.
 
@@ -127,7 +134,7 @@ class Future:
 
         self._schedule_or_invoke_done_callbacks()
 
-    def set_exception(self, exception):
+    def set_exception(self, exception: Exception) -> None:
         """
         Set the exception raised by the task.
 
@@ -140,13 +147,14 @@ class Future:
 
         self._schedule_or_invoke_done_callbacks()
 
-    def _schedule_or_invoke_done_callbacks(self):
+    def _schedule_or_invoke_done_callbacks(self) -> None:
         """
         Schedule done callbacks on the executor if possible, else run them directly.
 
         This function assumes self._lock is not held.
         """
         with self._lock:
+            assert self._executor is not None
             executor = self._executor()
             callbacks = self._callbacks
             self._callbacks = []
@@ -164,7 +172,7 @@ class Future:
                     # Don't let exceptions be raised because there may be more callbacks to call
                     warnings.warn('Unhandled exception in done callback: {}'.format(e))
 
-    def _set_executor(self, executor):
+    def _set_executor(self, executor: Optional['Executor']) -> None:
         """Set the executor this future is associated with."""
         with self._lock:
             if executor is None:
@@ -172,7 +180,7 @@ class Future:
             else:
                 self._executor = weakref.ref(executor)
 
-    def add_done_callback(self, callback):
+    def add_done_callback(self, callback: Callable[['Future[T]'], None]) -> None:
         """
         Add a callback to be executed when the task is done.
 
@@ -186,6 +194,7 @@ class Future:
         invoke = False
         with self._lock:
             if not self._pending():
+                assert self._executor is not None
                 executor = self._executor()
                 if executor is not None:
                     executor.create_task(callback, self)
@@ -198,7 +207,7 @@ class Future:
         if invoke:
             callback(self)
 
-    def remove_done_callback(self, callback: Callable[['Future'], None]) -> bool:
+    def remove_done_callback(self, callback: Callable[['Future[T]'], None]) -> bool:
         """
         Remove a previously-added done callback.
 
@@ -213,7 +222,7 @@ class Future:
             return True
 
 
-class Task(Future):
+class Task(Future[T]):
     """
     Execute a function or coroutine.
 
@@ -223,27 +232,52 @@ class Task(Future):
     This class should only be instantiated by :class:`rclpy.executors.Executor`.
     """
 
-    def __init__(self, handler, args=None, kwargs=None, executor=None):
+    @overload
+    def __init__(self,
+                 handler: Callable[..., Coroutine[Any, Any, T]],
+                 args: Optional[Tuple[Any, ...]] = None,
+                 kwargs: Optional[Dict[str, Any]] = None,
+                 executor: Optional['Executor'] = None) -> None: ...
+
+    @overload
+    def __init__(self,
+                 handler: Callable[..., T],
+                 args: Optional[Tuple[Any, ...]] = None,
+                 kwargs: Optional[Dict[str, Any]] = None,
+                 executor: Optional['Executor'] = None) -> None: ...
+
+    def __init__(self,
+                 handler: Callable[..., Any],
+                 args: Optional[Tuple[Any, ...]] = None,
+                 kwargs: Optional[Dict[str, Any]] = None,
+                 executor: Optional['Executor'] = None) -> None:
         super().__init__(executor=executor)
-        # _handler is either a normal function or a coroutine
-        self._handler = handler
         # Arguments passed into the function
         if args is None:
-            args = []
-        self._args = args
+            args = ()
+        self._args: Optional[Tuple[Any, ...]] = args
         if kwargs is None:
             kwargs = {}
-        self._kwargs = kwargs
+        self._kwargs: Optional[Dict[str, Any]] = kwargs
+
+        # _handler is either a normal function or a coroutine
         if inspect.iscoroutinefunction(handler):
-            self._handler = handler(*args, **kwargs)
+            self._handler: Union[
+                Coroutine[Any, Any, T],
+                Callable[[], T],
+                None
+             ] = cast(Coroutine[Any, Any, T], handler(*args, **kwargs))
             self._args = None
             self._kwargs = None
+        else:
+            handler = cast(Callable[[], T], handler)
+            self._handler = handler
         # True while the task is being executed
         self._executing = False
         # Lock acquired to prevent task from executing in parallel with itself
         self._task_lock = threading.Lock()
 
-    def __call__(self):
+    def __call__(self) -> None:
         """
         Run or resume a task.
 
@@ -265,8 +299,9 @@ class Task(Future):
 
             if inspect.iscoroutine(self._handler):
                 # Execute a coroutine
+                handler = self._handler
                 try:
-                    self._handler.send(None)
+                    handler.send(None)
                 except StopIteration as e:
                     # The coroutine finished; store the result
                     self.set_result(e.value)
@@ -277,6 +312,7 @@ class Task(Future):
             else:
                 # Execute a normal function
                 try:
+                    assert self._handler is not None and callable(self._handler)
                     self.set_result(self._handler(*self._args, **self._kwargs))
                 except Exception as e:
                     self.set_exception(e)
@@ -286,18 +322,17 @@ class Task(Future):
         finally:
             self._task_lock.release()
 
-    def _complete_task(self):
+    def _complete_task(self) -> None:
         """Cleanup after task finished."""
         self._handler = None
         self._args = None
         self._kwargs = None
 
-    def executing(self):
+    def executing(self) -> bool:
         """
         Check if the task is currently being executed.
 
         :return: True if the task is currently executing.
-        :rtype: bool
         """
         return self._executing
 

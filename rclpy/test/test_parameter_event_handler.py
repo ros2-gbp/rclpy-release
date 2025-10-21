@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Any
 from typing import Union
 import unittest
 
@@ -32,38 +33,38 @@ from rclpy.qos import qos_profile_parameter_events
 
 class ParameterEventHandlerTester(ParameterEventHandler):
 
-    def test_event(self, parameter_event: ParameterEvent):
+    def test_event(self, parameter_event: ParameterEvent) -> None:
         self._callbacks.event_callback(parameter_event)
 
 
 class CallbackChecker:
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.received = False
 
-    def callback(self, _: Union[Parameter, ParameterEvent]):
+    def callback(self, _: Union[Parameter[Any], ParameterEvent]) -> None:
         self.received = True
 
 
 class CallCounter:
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.counter = 0
         self.first_callback_call_order = 0
         self.second_callback_call_order = 0
 
-    def first_callback(self, _: Union[Parameter, ParameterEvent]):
+    def first_callback(self, _: Union[Parameter[Any], ParameterEvent]) -> None:
         self.counter += 1
         self.first_callback_call_order = self.counter
 
-    def second_callback(self, _: Union[Parameter, ParameterEvent]):
+    def second_callback(self, _: Union[Parameter[Any], ParameterEvent]) -> None:
         self.counter += 1
         self.second_callback_call_order = self.counter
 
 
 class TestParameterEventHandler(unittest.TestCase):
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.context = rclpy.context.Context()
         rclpy.init(context=self.context)
         self.handler_node = rclpy.create_node(
@@ -88,13 +89,13 @@ class TestParameterEventHandler(unittest.TestCase):
         self.executor.add_node(self.handler_node)
         self.executor.add_node(self.target_node)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self.executor.shutdown()
         self.handler_node.destroy_node()
         self.target_node.destroy_node()
         rclpy.shutdown(context=self.context)
 
-    def test_register_parameter_callback(self):
+    def test_register_parameter_callback(self) -> None:
         self.parameter_event_handler._callbacks.parameter_callbacks.clear()
 
         parameter_name = 'double_param'
@@ -102,14 +103,14 @@ class TestParameterEventHandler(unittest.TestCase):
 
         # Callback is not called in this test anyway
         handle = self.parameter_event_handler.add_parameter_callback(
-            parameter_name, node_name, lambda: None
+            parameter_name, node_name, lambda _: None
         )
 
         assert isinstance(handle, ParameterCallbackHandle)
         assert {(parameter_name, node_name): [handle]} ==\
             self.parameter_event_handler._callbacks.parameter_callbacks
 
-    def test_get_parameter_from_event(self):
+    def test_get_parameter_from_event(self) -> None:
         int_param = Parameter('int_param', Parameter.Type.INTEGER, 1)
         str_param = Parameter('str_param', Parameter.Type.STRING, 'hello world')
 
@@ -150,7 +151,7 @@ class TestParameterEventHandler(unittest.TestCase):
             new_params_event, 'wrong_str_param', '/wrong_node_name'
         )
 
-    def test_get_parameters_from_event(self):
+    def test_get_parameters_from_event(self) -> None:
         int_param = Parameter('int_param', Parameter.Type.INTEGER, 1)
         str_param = Parameter('str_param', Parameter.Type.STRING, 'hello world')
 
@@ -163,7 +164,7 @@ class TestParameterEventHandler(unittest.TestCase):
 
         assert {int_param, str_param} == set(res)
 
-    def test_register_parameter_event_callback(self):
+    def test_register_parameter_event_callback(self) -> None:
         self.parameter_event_handler._callbacks.event_callbacks.clear()
 
         handle = self.parameter_event_handler.add_parameter_event_callback(
@@ -173,7 +174,7 @@ class TestParameterEventHandler(unittest.TestCase):
         assert isinstance(handle, ParameterEventCallbackHandle)
         assert [handle] == self.parameter_event_handler._callbacks.event_callbacks
 
-    def test_parameter_callback(self):
+    def test_parameter_callback(self) -> None:
         callback_checker = CallbackChecker()
 
         parameter_name = 'int_param'
@@ -202,7 +203,7 @@ class TestParameterEventHandler(unittest.TestCase):
         with pytest.raises(RuntimeError):
             self.parameter_event_handler.remove_parameter_callback(callback_handle)
 
-    def test_parameter_event_callback(self):
+    def test_parameter_event_callback(self) -> None:
         callback_checker = CallbackChecker()
 
         parameter_name = 'int_param'
@@ -231,7 +232,7 @@ class TestParameterEventHandler(unittest.TestCase):
         with pytest.raises(RuntimeError):
             self.parameter_event_handler.remove_parameter_event_callback(callback_handle)
 
-    def test_last_in_first_call_for_parameter_callbacks(self):
+    def test_last_in_first_call_for_parameter_callbacks(self) -> None:
         call_counter = CallCounter()
 
         parameter_name = 'int_param'
@@ -258,7 +259,7 @@ class TestParameterEventHandler(unittest.TestCase):
         assert call_counter.first_callback_call_order == 2
         assert call_counter.second_callback_call_order == 1
 
-    def test_last_in_first_call_for_parameter_event_callbacks(self):
+    def test_last_in_first_call_for_parameter_event_callbacks(self) -> None:
         call_counter = CallCounter()
 
         parameter_name = 'int_param'
@@ -285,14 +286,14 @@ class TestParameterEventHandler(unittest.TestCase):
         assert call_counter.first_callback_call_order == 2
         assert call_counter.second_callback_call_order == 1
 
-    def test_resolve_path_empty_path(self):
+    def test_resolve_path_empty_path(self) -> None:
         assert '/rclpy/test_parameter_event_handler' ==\
                self.parameter_event_handler._resolve_path()
 
-    def test_resolve_path_same_namespace(self):
+    def test_resolve_path_same_namespace(self) -> None:
         assert '/rclpy/test_node' == self.parameter_event_handler._resolve_path('test_node')
 
-    def test_resolve_path_other_namespace(self):
+    def test_resolve_path_other_namespace(self) -> None:
         assert '/test_node' == self.parameter_event_handler._resolve_path('/test_node')
 
 

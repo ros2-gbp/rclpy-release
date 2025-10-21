@@ -14,9 +14,12 @@
 
 import time
 from typing import List
+from typing import TYPE_CHECKING
 import unittest
 
 import rclpy
+from rclpy.client import Client
+import rclpy.context
 import rclpy.executors
 from rclpy.qos import qos_profile_system_default
 from rclpy.service_introspection import ServiceIntrospectionState
@@ -26,38 +29,44 @@ from test_msgs.srv import BasicTypes
 
 class TestServiceEvents(unittest.TestCase):
 
+    if TYPE_CHECKING:
+        context: rclpy.context.Context
+        node: rclpy.node.Node
+
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls.context = rclpy.context.Context()
         rclpy.init(context=cls.context)
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.node = rclpy.create_node(
             'TestServiceIntrospection', context=self.context)
         self.executor = rclpy.executors.SingleThreadedExecutor(context=self.context)
         self.executor.add_node(self.node)
         self.srv = self.node.create_service(BasicTypes, 'test_service', self.srv_callback)
-        self.cli = self.node.create_client(BasicTypes, 'test_service')
+        self.cli: Client[BasicTypes.Request, BasicTypes.Response] = \
+            self.node.create_client(BasicTypes, 'test_service')
         self.sub = self.node.create_subscription(BasicTypes.Event, 'test_service/_service_event',
                                                  self.sub_callback, 10)
         self.event_messages: List[BasicTypes.Event] = []
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self.node.destroy_node()
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         rclpy.shutdown(context=cls.context)
 
-    def sub_callback(self, msg):
+    def sub_callback(self, msg: BasicTypes.Event) -> None:
         self.event_messages.append(msg)
 
-    def srv_callback(self, req, resp):
+    def srv_callback(self, req: BasicTypes.Request,
+                     resp: BasicTypes.Response) -> BasicTypes.Response:
         resp.bool_value = not req.bool_value
         resp.int64_value = req.int64_value
         return resp
 
-    def test_service_introspection_metadata(self):
+    def test_service_introspection_metadata(self) -> None:
         req = BasicTypes.Request()
         req.bool_value = False
         req.int64_value = 12345
@@ -103,7 +112,7 @@ class TestServiceEvents(unittest.TestCase):
         self.assertEqual(len(result_dict[ServiceEventInfo.RESPONSE_RECEIVED].request), 0)
         self.assertEqual(len(result_dict[ServiceEventInfo.RESPONSE_RECEIVED].response), 0)
 
-    def test_service_introspection_contents(self):
+    def test_service_introspection_contents(self) -> None:
         req = BasicTypes.Request()
         req.bool_value = False
         req.int64_value = 12345

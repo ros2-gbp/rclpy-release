@@ -15,6 +15,7 @@
 import unittest
 
 import rclpy
+from rclpy.client import Client
 import rclpy.context
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.qos import qos_profile_services_default
@@ -24,7 +25,7 @@ from type_description_interfaces.srv import GetTypeDescription
 
 class TestTypeDescriptionService(unittest.TestCase):
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.context = rclpy.context.Context()
         rclpy.init(context=self.context)
 
@@ -36,19 +37,21 @@ class TestTypeDescriptionService(unittest.TestCase):
         self.test_pub = self.test_node.create_publisher(
             BasicTypes, self.test_topic, 10)
 
-        self.get_type_description_client = self.test_node.create_client(
-            GetTypeDescription, '/rclpy/test_parameter_service/get_type_description',
+        self.get_type_description_client: Client[GetTypeDescription.Request,
+                                                 GetTypeDescription.Response] = \
+            self.test_node.create_client(
+                GetTypeDescription, '/rclpy/test_parameter_service/get_type_description',
             qos_profile=qos_profile_services_default)
 
         self.executor = SingleThreadedExecutor(context=self.context)
         self.executor.add_node(self.test_node)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self.executor.shutdown()
         self.test_node.destroy_node()
         rclpy.shutdown(context=self.context)
 
-    def test_get_type_description(self):
+    def test_get_type_description(self) -> None:
         pub_infos = self.test_node.get_publishers_info_by_topic(self.test_topic)
         assert len(pub_infos)
         type_hash = pub_infos[0].topic_type_hash

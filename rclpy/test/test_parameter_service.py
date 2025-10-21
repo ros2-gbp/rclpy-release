@@ -18,6 +18,7 @@ from rcl_interfaces.msg import ParameterType
 from rcl_interfaces.srv import DescribeParameters
 from rcl_interfaces.srv import GetParameters
 import rclpy
+from rclpy.client import Client
 import rclpy.context
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.parameter import Parameter
@@ -26,7 +27,7 @@ from rclpy.qos import qos_profile_services_default
 
 class TestParameterService(unittest.TestCase):
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.context = rclpy.context.Context()
         rclpy.init(context=self.context)
         self.test_node = rclpy.create_node(
@@ -34,25 +35,28 @@ class TestParameterService(unittest.TestCase):
             namespace='/rclpy',
             context=self.context)
 
-        self.get_parameter_client = self.test_node.create_client(
+        self.get_parameter_client: Client[GetParameters.Request,
+                                          GetParameters.Response] = self.test_node.create_client(
             GetParameters, '/rclpy/test_parameter_service/get_parameters',
             qos_profile=qos_profile_services_default
         )
 
-        self.describe_parameters_client = self.test_node.create_client(
-            DescribeParameters, '/rclpy/test_parameter_service/describe_parameters',
-            qos_profile=qos_profile_services_default
-        )
+        self.describe_parameters_client: Client[DescribeParameters.Response,
+                                                DescribeParameters.Response] = \
+            self.test_node.create_client(
+                DescribeParameters,
+                '/rclpy/test_parameter_service/describe_parameters',
+                qos_profile=qos_profile_services_default)
 
         self.executor = SingleThreadedExecutor(context=self.context)
         self.executor.add_node(self.test_node)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self.executor.shutdown()
         self.test_node.destroy_node()
         rclpy.shutdown(context=self.context)
 
-    def test_get_uninitialized_parameter(self):
+    def test_get_uninitialized_parameter(self) -> None:
         self.test_node.declare_parameter('uninitialized_parameter', Parameter.Type.STRING)
 
         # The type in description should be STRING

@@ -19,17 +19,26 @@
 #include <rcl/types.h>
 
 #include <memory>
+#include <string>
+#include <utility>
 
 #include "clock.hpp"
 #include "context.hpp"
 #include "exceptions.hpp"
 #include "timer.hpp"
+#include "events_executor/rcl_support.hpp"
 
 namespace rclpy
 {
+using events_executor::RclEventCallbackTrampoline;
+
 void
 Timer::destroy()
 {
+  try {
+    clear_on_reset_callback();
+  } catch (const rclpy::RCLError &) {
+  }
   rcl_timer_.reset();
   clock_.destroy();
   context_.destroy();
@@ -94,6 +103,26 @@ void Timer::call_timer()
   }
 }
 
+py::object
+Timer::call_timer_with_info()
+{
+  py::dict timer_info;
+  rcl_timer_call_info_t call_info;
+  rcl_ret_t ret = rcl_timer_call_with_info(rcl_timer_.get(), &call_info);
+  if (ret != RCL_RET_OK) {
+    if (ret == RCL_RET_TIMER_CANCELED) {
+      throw TimerCancelledError("Timer has been canceled");
+    } else {
+      throw RCLError("failed to call timer");
+    }
+  }
+
+  timer_info["expected_call_time"] = call_info.expected_call_time;
+  timer_info["actual_call_time"] = call_info.actual_call_time;
+
+  return timer_info;
+}
+
 void Timer::change_timer_period(int64_t period_nsec)
 {
   int64_t old_period;
@@ -156,6 +185,41 @@ bool Timer::is_timer_canceled()
 }
 
 void
+Timer::set_callback(
+  rcl_event_callback_t callback,
+  const void * user_data)
+{
+  rcl_ret_t ret = rcl_timer_set_on_reset_callback(
+    rcl_timer_.get(),
+    callback,
+    user_data);
+
+  if (RCL_RET_OK != ret) {
+    throw RCLError(std::string("Failed to set the on reset callback for timer: ") +
+      rcl_get_error_string().str);
+  }
+}
+
+void
+Timer::set_on_reset_callback(std::function<void(size_t)> callback)
+{
+  clear_on_reset_callback();
+  on_reset_callback_ = std::move(callback);
+  set_callback(
+    RclEventCallbackTrampoline,
+    static_cast<const void *>(&on_reset_callback_));
+}
+
+void
+Timer::clear_on_reset_callback()
+{
+  if (on_reset_callback_) {
+    set_callback(nullptr, nullptr);
+    on_reset_callback_ = nullptr;
+  }
+}
+
+void
 define_timer(py::object module)
 {
   py::class_<Timer, Destroyable, std::shared_ptr<Timer>>(module, "Timer")
@@ -173,6 +237,9 @@ define_timer(py::object module)
     "call_timer", &Timer::call_timer,
     "Call a timer and starts counting again.")
   .def(
+    "call_timer_with_info", &Timer::call_timer_with_info,
+    "Call a timer and starts counting again, retrieves actual and expected call time.")
+  .def(
     "change_timer_period", &Timer::change_timer_period,
     "Set the period of a timer.")
   .def(
@@ -189,7 +256,11 @@ define_timer(py::object module)
     "Cancel a timer.")
   .def(
     "is_timer_canceled", &Timer::is_timer_canceled,
-    "Check if a timer is canceled.");
+    "Check if a timer is canceled.")
+  .def(
+    "set_on_reset_callback", &Timer::set_on_reset_callback,
+    py::arg("callback"))
+  .def("clear_on_reset_callback", &Timer::clear_on_reset_callback);
 }
 
 }  // namespace rclpy

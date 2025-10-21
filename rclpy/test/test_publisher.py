@@ -13,11 +13,15 @@
 # limitations under the License.
 
 import time
+from typing import List
+from typing import Tuple
+from typing import TYPE_CHECKING
 import unittest
 
 import rclpy
 from rclpy.duration import Duration
 
+import rclpy.node
 from test_msgs.msg import BasicTypes
 
 TEST_NODE_NAMESPACE = 'test_node_ns'
@@ -31,8 +35,13 @@ TEST_FQN_TOPIC_TO = '/remapped/another_ns/new_topic'
 
 class TestPublisher(unittest.TestCase):
 
+    if TYPE_CHECKING:
+        context: rclpy.context.Context
+        node: rclpy.node.Node
+        node_with_ns: rclpy.node.Node
+
     @classmethod
-    def setUp(cls):
+    def setUp(cls) -> None:
         cls.context = rclpy.context.Context()
         rclpy.init(context=cls.context)
         cls.node = rclpy.create_node(
@@ -50,13 +59,13 @@ class TestPublisher(unittest.TestCase):
         )
 
     @classmethod
-    def tearDown(cls):
+    def tearDown(cls) -> None:
         cls.node.destroy_node()
         cls.node_with_ns.destroy_node()
         rclpy.shutdown(context=cls.context)
 
     @classmethod
-    def do_test_topic_name(cls, test_topics, node):
+    def do_test_topic_name(cls, test_topics: List[Tuple[str, str]], node: rclpy.node.Node) -> None:
         """
         Test the topic names of publishers created by the given node.
 
@@ -74,7 +83,7 @@ class TestPublisher(unittest.TestCase):
             assert publisher.topic_name == target_topic
             publisher.destroy()
 
-    def test_topic_name(self):
+    def test_topic_name(self) -> None:
         test_topics = [
             (TEST_TOPIC, '/' + TEST_TOPIC),
             ('/' + TEST_TOPIC, '/' + TEST_TOPIC),
@@ -92,7 +101,7 @@ class TestPublisher(unittest.TestCase):
         ]
         TestPublisher.do_test_topic_name(test_topics, self.node_with_ns)
 
-    def test_topic_name_remapping(self):
+    def test_topic_name_remapping(self) -> None:
         test_topics = [
             (TEST_TOPIC_FROM, '/' + TEST_TOPIC_TO),
             ('/' + TEST_TOPIC_FROM, '/' + TEST_TOPIC_TO),
@@ -102,7 +111,7 @@ class TestPublisher(unittest.TestCase):
         ]
         TestPublisher.do_test_topic_name(test_topics, self.node)
 
-    def test_wait_for_all_acked(self):
+    def test_wait_for_all_acked(self) -> None:
         qos = rclpy.qos.QoSProfile(
             depth=1,
             reliability=rclpy.qos.QoSReliabilityPolicy.RELIABLE)
@@ -126,9 +135,19 @@ class TestPublisher(unittest.TestCase):
         sub.destroy()
 
     def test_logger_name_is_equal_to_node_name(self) -> None:
-        pub = self.node.create_publisher(BasicTypes, TEST_TOPIC, 10)
-        self.assertEqual(pub.logger_name, 'node')
-        pub.destroy()
+        with self.node.create_publisher(BasicTypes, TEST_TOPIC, 10) as pub:
+            self.assertEqual(pub.logger_name, 'node')
+
+
+def test_publisher_context_manager() -> None:
+    rclpy.init()
+    try:
+        with rclpy.create_node('pub_node', namespace='/pub_node_ns') as node:
+            with node.create_publisher(BasicTypes, 'chatter', 1) as pub:
+                assert pub.get_subscription_count() == 0
+
+    finally:
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':

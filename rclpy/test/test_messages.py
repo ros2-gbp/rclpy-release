@@ -12,21 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import TYPE_CHECKING
 import unittest
 
 import rclpy
 
+import rclpy.context
 from rclpy.serialization import serialize_message
 from test_msgs.msg import BasicTypes, Strings
 
 
 class TestMessages(unittest.TestCase):
 
+    if TYPE_CHECKING:
+        context: rclpy.context.Context
+        node: rclpy.node.Node
+
     NODE_NAME = 'messages_tester'
     NAMESPACE = 'messages_test'
 
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls.context = rclpy.context.Context()
         rclpy.init(context=cls.context)
         cls.node = rclpy.create_node(
@@ -36,33 +42,25 @@ class TestMessages(unittest.TestCase):
         )
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         cls.node.destroy_node()
         rclpy.shutdown(context=cls.context)
 
-    def test_unicode_string(self):
+    def test_unicode_string(self) -> None:
         msg = Strings()
         msg.string_value = 'ñu'
         pub = self.node.create_publisher(Strings, 'chatter', 1)
         pub.publish(msg)
         self.node.destroy_publisher(pub)
 
-    def test_different_type_raises(self):
-        # TODO(bmarchi): When a publisher is destroyed for opensplice,
-        # the topic from the previous test is kept around and is cached, so
-        # the new publisher can't be created because opensplice checks
-        # if the parameters of the created topic are the same as the one
-        # that has in memory. It's expected that if any participant
-        # is not subscribed/publishing to a topic, this is destroyed.
-        # Revert the topic name to 'chatter' once proper topic destruction
-        # for opensplice is possible.
+    def test_different_type_raises(self) -> None:
         pub = self.node.create_publisher(
             BasicTypes, 'chatter_different_message_type', 1)
         with self.assertRaises(TypeError):
             pub.publish('different message type')
         self.node.destroy_publisher(pub)
 
-    def test_serialized_publish(self):
+    def test_serialized_publish(self) -> None:
         msg = Strings()
         msg.string_value = 'ñu'
         pub = self.node.create_publisher(Strings, 'chatter', 1)
