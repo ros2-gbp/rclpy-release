@@ -86,6 +86,7 @@ from rclpy.service import Service
 from rclpy.subscription import GenericSubscriptionCallback
 from rclpy.subscription import Subscription
 from rclpy.subscription import SubscriptionCallbackUnion
+from rclpy.subscription_content_filter_options import ContentFilterOptions
 from rclpy.time_source import TimeSource
 from rclpy.timer import Rate
 from rclpy.timer import Timer
@@ -320,7 +321,7 @@ class Node:
         return None
 
     @executor.setter
-    def executor(self, new_executor: Executor) -> None:
+    def executor(self, new_executor: Optional[Executor]) -> None:
         """Set or change the executor the node belongs to."""
         current_executor = self.executor
         if current_executor == new_executor:
@@ -497,7 +498,6 @@ class Node:
                 )
 
             value = None
-            param_type = None
 
             # Get the values from the tuple, checking its types.
             # Use defaults if the tuple doesn't contain value and / or descriptor.
@@ -1642,7 +1642,8 @@ class Node:
         callback_group: Optional[CallbackGroup] = None,
         event_callbacks: Optional[SubscriptionEventCallbacks] = None,
         qos_overriding_options: Optional[QoSOverridingOptions] = None,
-        raw: Literal[True]
+        raw: Literal[True],
+        content_filter_options: Optional[ContentFilterOptions] = None
     ) -> Subscription[MsgT]: ...
 
     @overload
@@ -1656,7 +1657,8 @@ class Node:
         callback_group: Optional[CallbackGroup] = None,
         event_callbacks: Optional[SubscriptionEventCallbacks] = None,
         qos_overriding_options: Optional[QoSOverridingOptions] = None,
-        raw: bool = False
+        raw: bool = False,
+        content_filter_options: Optional[ContentFilterOptions] = None
     ) -> Subscription[MsgT]: ...
 
     def create_subscription(
@@ -1669,7 +1671,8 @@ class Node:
         callback_group: Optional[CallbackGroup] = None,
         event_callbacks: Optional[SubscriptionEventCallbacks] = None,
         qos_overriding_options: Optional[QoSOverridingOptions] = None,
-        raw: bool = False
+        raw: bool = False,
+        content_filter_options: Optional[ContentFilterOptions] = None
     ) -> Subscription[MsgT]:
         """
         Create a new subscription.
@@ -1687,6 +1690,7 @@ class Node:
         :param event_callbacks: User-defined callbacks for middleware events.
         :param raw: If ``True``, then received messages will be stored in raw binary
             representation.
+        :param content_filter_options: The filter expression and parameters for content filtering.
         """
         qos_profile = self._validate_qos_or_depth_parameter(qos_profile)
 
@@ -1714,7 +1718,8 @@ class Node:
         try:
             with self.handle:
                 subscription_object = _rclpy.Subscription(
-                    self.handle, msg_type, topic, qos_profile.get_c_qos_profile())
+                    self.handle, msg_type, topic, qos_profile.get_c_qos_profile(),
+                    content_filter_options)
         except ValueError:
             failed = True
         if failed:
@@ -1826,7 +1831,7 @@ class Node:
     def create_timer(
         self,
         timer_period_sec: float,
-        callback: TimerCallbackType,
+        callback: Optional[TimerCallbackType],
         callback_group: Optional[CallbackGroup] = None,
         clock: Optional[Clock] = None,
         autostart: bool = True,

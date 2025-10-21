@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Brad Martin
+# Copyright 2025 Sony Group Corporation.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,4 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .events_executor import EventsExecutor as EventsExecutor  # noqa: F401
+from typing import NamedTuple
+
+
+class ContentFilterOptions(NamedTuple):
+    """Options to configure content filtered topic in the subscription."""
+
+    filter_expression: str
+    expression_parameters: list[str]
