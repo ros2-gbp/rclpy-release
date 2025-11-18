@@ -16,35 +16,44 @@
 
 #include <rcl/error_handling.h>
 #include <rcl/service.h>
+#include <rcl/service_introspection.h>
 #include <rosidl_runtime_c/service_type_support_struct.h>
 #include <rmw/types.h>
 
 #include <memory>
 #include <string>
+#include <utility>
 
+#include "clock.hpp"
 #include "exceptions.hpp"
 #include "node.hpp"
 #include "service.hpp"
 #include "utils.hpp"
+#include "events_executor/rcl_support.hpp"
 
 namespace rclpy
 {
+using events_executor::RclEventCallbackTrampoline;
 
 void
 Service::destroy()
 {
+  try {
+    clear_on_new_request_callback();
+  } catch (const rclpy::RCLError &) {
+  }
   rcl_service_.reset();
   node_.destroy();
 }
 
 Service::Service(
-  Node & node, py::object pysrv_type, std::string service_name,
+  Node & node, py::object pysrv_type, const std::string & service_name,
   py::object pyqos_profile)
 : node_(node)
 {
-  auto srv_type = static_cast<rosidl_service_type_support_t *>(
+  srv_type_ = static_cast<rosidl_service_type_support_t *>(
     common_get_type_support(pysrv_type));
-  if (!srv_type) {
+  if (nullptr == srv_type_) {
     throw py::error_already_set();
   }
 
@@ -54,12 +63,12 @@ Service::Service(
     service_ops.qos = pyqos_profile.cast<rmw_qos_profile_t>();
   }
 
-  // Create a client
+  // Create a service
   rcl_service_ = std::shared_ptr<rcl_service_t>(
     new rcl_service_t,
     [node](rcl_service_t * service)
     {
-      // Intentionally capture node by copy so shared_ptr can be transfered to copies
+      // Intentionally capture node by copy so shared_ptr can be transferred to copies
       rcl_ret_t ret = rcl_service_fini(service, node.rcl_ptr());
       if (RCL_RET_OK != ret) {
         // Warning should use line number of the current stack frame
@@ -75,7 +84,7 @@ Service::Service(
   *rcl_service_ = rcl_get_zero_initialized_service();
 
   rcl_ret_t ret = rcl_service_init(
-    rcl_service_.get(), node_.rcl_ptr(), srv_type,
+    rcl_service_.get(), node_.rcl_ptr(), srv_type_,
     service_name.c_str(), &service_ops);
   if (RCL_RET_OK != ret) {
     if (ret == RCL_RET_SERVICE_NAME_INVALID) {
@@ -165,10 +174,63 @@ Service::get_logger_name() const
 }
 
 void
+Service::configure_introspection(
+  Clock & clock, py::object pyqos_service_event_pub,
+  rcl_service_introspection_state_t introspection_state)
+{
+  rcl_publisher_options_t pub_opts = rcl_publisher_get_default_options();
+  pub_opts.qos =
+    pyqos_service_event_pub.is_none() ? rcl_publisher_get_default_options().qos :
+    pyqos_service_event_pub.cast<rmw_qos_profile_t>();
+
+  rcl_ret_t ret = rcl_service_configure_service_introspection(
+    rcl_service_.get(), node_.rcl_ptr(), clock.rcl_ptr(), srv_type_, pub_opts, introspection_state);
+
+  if (RCL_RET_OK != ret) {
+    throw RCLError("failed to configure service introspection");
+  }
+}
+
+void
+Service::set_callback(
+  rcl_event_callback_t callback,
+  const void * user_data)
+{
+  rcl_ret_t ret = rcl_service_set_on_new_request_callback(
+    rcl_service_.get(),
+    callback,
+    user_data);
+
+  if (RCL_RET_OK != ret) {
+    throw RCLError(std::string("Failed to set the on new request callback for service: ") +
+      rcl_get_error_string().str);
+  }
+}
+
+void
+Service::set_on_new_request_callback(std::function<void(size_t)> callback)
+{
+  clear_on_new_request_callback();
+  on_new_request_callback_ = std::move(callback);
+  set_callback(
+    RclEventCallbackTrampoline,
+    static_cast<const void *>(&on_new_request_callback_));
+}
+
+void
+Service::clear_on_new_request_callback()
+{
+  if (on_new_request_callback_) {
+    set_callback(nullptr, nullptr);
+    on_new_request_callback_ = nullptr;
+  }
+}
+
+void
 define_service(py::object module)
 {
   py::class_<Service, Destroyable, std::shared_ptr<Service>>(module, "Service")
-  .def(py::init<Node &, py::object, std::string, py::object>())
+  .def(py::init<Node &, py::object, const std::string &, py::object>())
   .def_property_readonly(
     "pointer", [](const Service & service) {
       return reinterpret_cast<size_t>(service.rcl_ptr());
@@ -187,7 +249,14 @@ define_service(py::object module)
     "service_take_request", &Service::service_take_request,
     "Take a request from a given service")
   .def(
+    "configure_introspection", &Service::configure_introspection,
+    "Configure whether introspection is enabled")
+  .def(
     "get_logger_name", &Service::get_logger_name,
-    "Get the name of the logger associated with the node of the service.");
+    "Get the name of the logger associated with the node of the service.")
+  .def(
+    "set_on_new_request_callback", &Service::set_on_new_request_callback,
+    py::arg("callback"))
+  .def("clear_on_new_request_callback", &Service::clear_on_new_request_callback);
 }
 }  // namespace rclpy
