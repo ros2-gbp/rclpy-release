@@ -14,16 +14,11 @@
 
 import threading
 import time
-from types import TracebackType
-from typing import Optional
-from typing import Type
 import unittest
 
 import rclpy
 from rclpy.callback_groups import ReentrantCallbackGroup
-from rclpy.client import Client
 from rclpy.executors import SingleThreadedExecutor
-from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.waitable import NumberOfEntities
 from rclpy.waitable import Waitable
 from test_msgs.msg import BasicTypes
@@ -67,15 +62,13 @@ class TestCreateWhileSpinning(unittest.TestCase):
     def test_client_server(self) -> None:
         evt = threading.Event()
 
-        def trigger_event(req: BasicTypesSrv.Request,
-                          resp: BasicTypesSrv.Response) -> BasicTypesSrv.Response:
+        def trigger_event(req, resp):
             nonlocal evt
             evt.set()
             return resp
 
         self.node.create_service(BasicTypesSrv, 'foo', trigger_event)
-        cli: Client[BasicTypesSrv.Request, BasicTypesSrv.Response] = \
-            self.node.create_client(BasicTypesSrv, 'foo')
+        cli = self.node.create_client(BasicTypesSrv, 'foo')
         cli.wait_for_service()
         cli.call_async(BasicTypesSrv.Request())
         assert evt.wait(TIMEOUT)
@@ -96,7 +89,7 @@ class TestCreateWhileSpinning(unittest.TestCase):
     def test_waitable(self) -> None:
         evt = threading.Event()
 
-        class DummyWaitable(Waitable[None]):
+        class DummyWaitable(Waitable):
 
             def __init__(self) -> None:
                 super().__init__(ReentrantCallbackGroup())
@@ -104,27 +97,22 @@ class TestCreateWhileSpinning(unittest.TestCase):
             def __enter__(self) -> None:
                 pass
 
-            def __exit__(
-                self,
-                exc_type: Optional[Type[BaseException]],
-                exc_val: Optional[BaseException],
-                exc_tb: Optional[TracebackType],
-            ) -> None:
+            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
                 pass
 
-            def is_ready(self, wait_set: _rclpy.WaitSet) -> bool:
+            def is_ready(self, wait_set):
                 return False
 
             def take_data(self) -> None:
                 return None
 
-            async def execute(self, taken_data: None) -> None:
+            async def execute(self, taken_data):
                 pass
 
-            def get_num_entities(self) -> NumberOfEntities:
+            def get_num_entities(self):
                 return NumberOfEntities(0, 0, 0, 0, 0)
 
-            def add_to_wait_set(self, wait_set: _rclpy.WaitSet) -> None:
+            def add_to_wait_set(self, wait_set):
                 nonlocal evt
                 evt.set()
                 pass

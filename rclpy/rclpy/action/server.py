@@ -161,16 +161,6 @@ class ServerGoalHandle(Generic[GoalT, ResultT, FeedbackT]):
             if not self._goal_handle.is_active():
                 self._action_server.notify_goal_done()
 
-    def _set_result(self, response: Optional[ResultT]) -> None:
-        # Set result
-        result_response = self._action_server._action_type.Impl.GetResultService.Response()
-        result_response.status = self.status
-        if response is not None:
-            result_response.result = response
-        else:
-            result_response.result = self._action_server._action_type.Result()
-        self._action_server._result_futures[bytes(self.goal_id.uuid)].set_result(result_response)
-
     def execute(
         self,
         execute_callback: Optional[Callable[['ServerGoalHandle[GoalT, ResultT, FeedbackT]'],
@@ -180,7 +170,7 @@ class ServerGoalHandle(Generic[GoalT, ResultT, FeedbackT]):
         # In this case we want to avoid the illegal state transition to EXECUTING
         # but still call the users execute callback to let them handle canceling the goal.
         if not self.is_cancel_requested:
-            self.executing()
+            self._update_state(_rclpy.GoalEvent.EXECUTE)
         self._action_server.notify_execute(self, execute_callback)
 
     def publish_feedback(self, feedback: FeedbackMessage[FeedbackT]) -> None:
@@ -201,20 +191,14 @@ class ServerGoalHandle(Generic[GoalT, ResultT, FeedbackT]):
             # Publish
             self._action_server._handle.publish_feedback(feedback_message)
 
-    def executing(self) -> None:
-        self._update_state(_rclpy.GoalEvent.EXECUTE)
-
-    def succeed(self, response: Optional[ResultT] = None) -> None:
+    def succeed(self) -> None:
         self._update_state(_rclpy.GoalEvent.SUCCEED)
-        self._set_result(response)
 
-    def abort(self, response: Optional[ResultT] = None) -> None:
+    def abort(self) -> None:
         self._update_state(_rclpy.GoalEvent.ABORT)
-        self._set_result(response)
 
-    def canceled(self, response: Optional[ResultT] = None) -> None:
+    def canceled(self) -> None:
         self._update_state(_rclpy.GoalEvent.CANCELED)
-        self._set_result(response)
 
     def destroy(self) -> None:
         with self._lock:
@@ -249,8 +233,7 @@ class ActionServer(Generic[GoalT, ResultT, FeedbackT], Waitable['ServerGoalHandl
         node: 'Node',
         action_type: Type[Action],
         action_name: str,
-        execute_callback: Optional[Callable[[ServerGoalHandle[GoalT, ResultT, FeedbackT]],
-                                            ResultT]] = None,
+        execute_callback: Callable[[ServerGoalHandle[GoalT, ResultT, FeedbackT]], ResultT],
         *,
         callback_group: 'Optional[CallbackGroup]' = None,
         goal_callback: Callable[[CancelGoal.Request], GoalResponse] = default_goal_callback,
@@ -300,11 +283,7 @@ class ActionServer(Generic[GoalT, ResultT, FeedbackT], Waitable['ServerGoalHandl
         self.register_handle_accepted_callback(handle_accepted_callback)
         self.register_goal_callback(goal_callback)
         self.register_cancel_callback(cancel_callback)
-        if execute_callback:
-            self.register_execute_callback(execute_callback)
-        elif handle_accepted_callback is default_handle_accepted_callback:
-            self._logger.warning(
-                'Not handling nor executing the goal, this server will do nothing')
+        self.register_execute_callback(execute_callback)
 
         # Import the typesupport for the action module if not already done
         check_for_type_support(action_type)
@@ -389,7 +368,7 @@ class ActionServer(Generic[GoalT, ResultT, FeedbackT], Waitable['ServerGoalHandl
             with self._lock:
                 self._handle.send_goal_response(request_header, response_msg)
         except RCLError:
-            self._logger.warning('Failed to send goal response (the client may have gone away)')
+            self._logger.warn('Failed to send goal response (the client may have gone away)')
             return
 
         if not accepted:
@@ -480,7 +459,7 @@ class ActionServer(Generic[GoalT, ResultT, FeedbackT], Waitable['ServerGoalHandl
             with self._lock:
                 self._handle.send_cancel_response(request_header, cancel_response)
         except RCLError:
-            self._logger.warning('Failed to send cancel response (the client may have gone away)')
+            self._logger.warn('Failed to send cancel response (the client may have gone away)')
 
     async def _execute_get_result_request(
         self,
@@ -495,7 +474,7 @@ class ActionServer(Generic[GoalT, ResultT, FeedbackT], Waitable['ServerGoalHandl
         # If no goal with the requested ID exists, then return UNKNOWN status
         # or the goal with the requested ID has been already expired
         if bytes(goal_uuid) not in self._goal_handles:
-            self._logger.warning(
+            self._logger.warn(
                 'Sending result response for unknown or expired goal ID: {0}'.format(goal_uuid))
             result_response = self._action_type.Impl.GetResultService.Response()
             result_response.status = GoalStatus.STATUS_UNKNOWN

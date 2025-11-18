@@ -14,14 +14,11 @@
 
 import threading
 import time
-from typing import List
-from typing import Optional
 
 import pytest
 import rclpy
 from rclpy.exceptions import ROSInterruptException
 from rclpy.executors import SingleThreadedExecutor
-from rclpy.timer import Rate
 
 # Hz
 FREQ = 10.0
@@ -32,24 +29,24 @@ PASS_MAX_SINGLE_JITTER = PERIOD * 0.25
 
 class RateRunner:
 
-    def __init__(self, rate: Rate):
-        self.avg_period: Optional[float] = None
-        self.max_jitter: Optional[float] = None
-        self.min_period: Optional[float] = None
-        self.max_period: Optional[float] = None
+    def __init__(self, rate):
+        self.avg_period = None
+        self.max_jitter = None
+        self.min_period = None
+        self.max_period = None
         self.done = False
 
         self._num_measurements = 10
         self._thread = threading.Thread(target=self._run, args=(rate,), daemon=True)
         self._thread.start()
 
-    def __str__(self) -> str:
+    def __str__(self):
         return 'avg period: {} max jitter: {} min: {} max: {} '.format(
             self.avg_period, self.max_jitter, self.min_period, self.max_period)
 
-    def _run(self, rate: Rate) -> None:
+    def _run(self, rate):
         try:
-            measurements: List[float] = []
+            measurements = []
             # First sleep time depends on how long thread took to start, so ignore it
             rate.sleep()
             last_wake_time = time.monotonic()
@@ -89,14 +86,12 @@ class TestRate:
         while not runner.done:
             self.executor.spin_once()
 
-        assert runner.max_jitter is not None
         assert runner.max_jitter <= PASS_MAX_SINGLE_JITTER, str(runner)
-        assert runner.avg_period is not None
         assert abs(runner.avg_period - PERIOD) <= PASS_MAX_AVERAGE_JITTER, str(runner)
 
     def test_rate_invalid_period(self) -> None:
         with pytest.raises(TypeError):
-            self.node.create_rate(None)  # type: ignore[arg-type]
+            self.node.create_rate(None)
 
         with pytest.raises(ValueError):
             self.node.create_rate(0.0)
@@ -117,7 +112,7 @@ class TestRate:
         self._thread.join()
 
 
-def sleep_check_exception(rate: Rate) -> None:
+def sleep_check_exception(rate):
     try:
         rate.sleep()
     except ROSInterruptException:
