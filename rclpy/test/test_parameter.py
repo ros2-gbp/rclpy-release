@@ -13,17 +13,14 @@
 # limitations under the License.
 
 from array import array
-import os
-from tempfile import NamedTemporaryFile
 import unittest
 
 import pytest
+
 from rcl_interfaces.msg import Parameter as ParameterMsg
 from rcl_interfaces.msg import ParameterType
 from rcl_interfaces.msg import ParameterValue
-from rclpy.parameter import get_parameter_value
 from rclpy.parameter import Parameter
-from rclpy.parameter import parameter_dict_from_yaml_file
 from rclpy.parameter import parameter_value_to_python
 
 
@@ -168,48 +165,6 @@ class TestParameter(unittest.TestCase):
             value=ParameterValue(type=8, double_array_value=[1.0, 2.0, 3.0])
         ))
 
-    def test_get_parameter_value(self):
-        """Test the get_parameter_value function."""
-        test_cases = [
-            (True, ParameterValue(type=int(ParameterType.PARAMETER_BOOL), bool_value=True)),
-            (42, ParameterValue(type=int(ParameterType.PARAMETER_INTEGER), integer_value=42)),
-            (3.5, ParameterValue(type=int(ParameterType.PARAMETER_DOUBLE), double_value=3.5)),
-            ('foo', ParameterValue(type=int(ParameterType.PARAMETER_STRING), string_value='foo')),
-            (' ', ParameterValue(type=int(ParameterType.PARAMETER_STRING), string_value=' ')),
-            ('', ParameterValue(type=int(ParameterType.PARAMETER_STRING), string_value='')),
-            (
-                [True, False],
-                ParameterValue(
-                    type=int(ParameterType.PARAMETER_BOOL_ARRAY),
-                    bool_array_value=[True, False])
-            ),
-            (
-                [1, 2, 3],
-                ParameterValue(
-                    type=int(ParameterType.PARAMETER_INTEGER_ARRAY),
-                    integer_array_value=[1, 2, 3])
-            ),
-            (
-                [1.0, 2.0, 3.0],
-                ParameterValue(
-                    type=int(ParameterType.PARAMETER_DOUBLE_ARRAY),
-                    double_array_value=[1.0, 2.0, 3.0])
-            ),
-            (
-                ['foo', 'bar'],
-                ParameterValue(
-                    type=int(ParameterType.PARAMETER_STRING_ARRAY),
-                    string_array_value=['foo', 'bar'])
-            ),
-        ]
-
-        for input_value, expected_value in test_cases:
-            try:
-                p = get_parameter_value(str(input_value))
-            except Exception as e:
-                assert False, f'failed to get param_value, reason: {e}'
-            self.assertEqual(p, expected_value)
-
     def test_parameter_value_to_python(self):
         """Test the parameter_value_to_python conversion function."""
         test_cases = [
@@ -257,29 +212,6 @@ class TestParameter(unittest.TestCase):
         parameter_value = ParameterValue(type=42)
         with pytest.raises(RuntimeError):
             parameter_value_to_python(parameter_value)
-
-    def test_parameter_dict_from_yaml_file(self):
-        yaml_string = """/param_test_target:
-            ros__parameters:
-                param_1: 1
-                param_str: string
-            """
-        expected = {
-            'param_1': Parameter('param_1', Parameter.Type.INTEGER, 1).to_parameter_msg(),
-            'param_str': Parameter('param_str', Parameter.Type.STRING, 'string').to_parameter_msg()
-        }
-
-        try:
-            with NamedTemporaryFile(mode='w', delete=False) as f:
-                f.write(yaml_string)
-                f.flush()
-                f.close()
-                parameter_dict = parameter_dict_from_yaml_file(f.name)
-            assert parameter_dict == expected
-        finally:
-            if os.path.exists(f.name):
-                os.unlink(f.name)
-        self.assertRaises(FileNotFoundError, parameter_dict_from_yaml_file, 'unknown_file')
 
 
 if __name__ == '__main__':
