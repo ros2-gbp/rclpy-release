@@ -16,11 +16,16 @@
 #define RCLPY__CLIENT_HPP_
 
 #include <pybind11/pybind11.h>
+#include <pybind11/functional.h>
 
 #include <rcl/client.h>
+#include <rcl/service_introspection.h>
+#include <rmw/types.h>
 
 #include <memory>
+#include <string>
 
+#include "clock.hpp"
 #include "destroyable.hpp"
 #include "node.hpp"
 
@@ -43,9 +48,9 @@ public:
    * \param[in] node Node to add the client to
    * \param[in] pysrv_type Service module associated with the client
    * \param[in] service_name The service name
-   * \param[in] pyqos rmw_qos_profile_t object for this client
+   * \param[in] pyqos QoSProfile python object for this client
    */
-  Client(Node & node, py::object pysrv_type, const char * service_name, py::object pyqos);
+  Client(Node & node, py::object pysrv_type, const std::string & service_name, py::object pyqos);
 
   ~Client() = default;
 
@@ -86,9 +91,26 @@ public:
     return rcl_client_.get();
   }
 
+  /// Configure introspection.
+  /**
+   * \param[in] clock clock to use for service event timestamps
+   * \param[in] pyqos_service_event_pub QoSProfile python object for the service event publisher
+   * \param[in] introspection_state which state to set introspection to
+   *
+   * \throws RCLError if it failed to configure introspection.
+   */
+  void
+  configure_introspection(
+    Clock & clock, py::object pyqos_service_event_pub,
+    rcl_service_introspection_state_t introspection_state);
+
   /// Force an early destruction of this object
   void
   destroy() override;
+
+  /// Get the service name.
+  const char *
+  get_service_name();
 
   /// Get the name of the logger associated with the node of the client.
   /**
@@ -99,9 +121,20 @@ public:
   const char *
   get_logger_name() const;
 
+  void
+  set_on_new_response_callback(std::function<void(size_t)> callback);
+
+  void
+  clear_on_new_response_callback();
+
 private:
   Node node_;
+  std::function<void(size_t)> on_new_response_callback_{nullptr};
   std::shared_ptr<rcl_client_t> rcl_client_;
+  rosidl_service_type_support_t * srv_type_;
+
+  void
+  set_callback(rcl_event_callback_t callback, const void * user_data);
 };
 
 /// Define a pybind11 wrapper for an rclpy::Client

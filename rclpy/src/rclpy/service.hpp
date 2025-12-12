@@ -16,13 +16,16 @@
 #define RCLPY__SERVICE_HPP_
 
 #include <pybind11/pybind11.h>
+#include <pybind11/functional.h>
 
 #include <rcl/service.h>
+#include <rcl/service_introspection.h>
 #include <rmw/types.h>
 
 #include <memory>
 #include <string>
 
+#include "clock.hpp"
 #include "destroyable.hpp"
 #include "node.hpp"
 #include "utils.hpp"
@@ -48,10 +51,9 @@ public:
    * \param[in] pysrv_type Service module associated with the service
    * \param[in] service_name Python object for the service name
    * \param[in] pyqos_profile QoSProfile Python object for this service
-   * \return capsule containing the rcl_service_t
    */
   Service(
-    Node & node, py::object pysrv_type, std::string service_name,
+    Node & node, py::object pysrv_type, const std::string & service_name,
     py::object pyqos_profile);
 
   Service(
@@ -107,13 +109,37 @@ public:
   py::dict
   get_qos_profile();
 
+  /// Configure introspection.
+  /**
+   * \param[in] clock clock to use for service event timestamps
+   * \param[in] pyqos_service_event_pub QoSProfile python object for the service event publisher
+   * \param[in] introspection_state which state to set introspection to
+   *
+   * \throws RCLError if it failed to configure introspection.
+   */
+  void
+  configure_introspection(
+    Clock & clock, py::object pyqos_service_event_pub,
+    rcl_service_introspection_state_t introspection_state);
+
   /// Force an early destruction of this object
   void
   destroy() override;
 
+  void
+  set_on_new_request_callback(std::function<void(size_t)> callback);
+
+  void
+  clear_on_new_request_callback();
+
 private:
   Node node_;
+  std::function<void(size_t)> on_new_request_callback_{nullptr};
   std::shared_ptr<rcl_service_t> rcl_service_;
+  rosidl_service_type_support_t * srv_type_;
+
+  void
+  set_callback(rcl_event_callback_t callback, const void * user_data);
 };
 
 /// Define a pybind11 wrapper for an rclpy::Service

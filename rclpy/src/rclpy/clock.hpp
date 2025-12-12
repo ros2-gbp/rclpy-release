@@ -39,7 +39,7 @@ public:
    * \param[in] clock_type enum of type ClockType
    * This constructor creates a Clock object
    */
-  explicit Clock(rcl_clock_type_t clock_type);
+  explicit Clock(int clock_type);
 
   /// Returns the current value of the clock
   /**
@@ -116,7 +116,7 @@ private:
   std::shared_ptr<rcl_clock_t> rcl_clock_;
 };
 
-/// Define a pybind11 wrapper for an rclpy::Service
+/// Define a pybind11 wrapper for an rclpy::Clock
 void define_clock(py::object module);
 }  // namespace rclpy
 

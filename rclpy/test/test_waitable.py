@@ -14,12 +14,14 @@
 
 import threading
 import time
+from typing import TYPE_CHECKING
 import unittest
 
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.clock import Clock
-from rclpy.clock import ClockType
+from rclpy.clock_type import ClockType
+import rclpy.context
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.qos import QoSProfile
@@ -49,6 +51,12 @@ class ClientWaitable(Waitable):
 
         self.node = node
         self.future = None
+
+    def __enter__(self) -> None:
+        pass
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        pass
 
     def is_ready(self, wait_set):
         """Return True if entities are ready in the wait set."""
@@ -93,6 +101,12 @@ class ServerWaitable(Waitable):
         self.node = node
         self.future = None
 
+    def __enter__(self) -> None:
+        pass
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        pass
+
     def is_ready(self, wait_set):
         """Return True if entities are ready in the wait set."""
         if wait_set.is_ready('service', self.server_index):
@@ -131,12 +145,18 @@ class TimerWaitable(Waitable):
         period_nanoseconds = 10000
         with self._clock.handle, node.context.handle:
             self.timer = _rclpy.Timer(
-                self._clock.handle, node.context.handle, period_nanoseconds)
+                self._clock.handle, node.context.handle, period_nanoseconds, True)
         self.timer_index = None
         self.timer_is_ready = False
 
         self.node = node
         self.future = None
+
+    def __enter__(self) -> None:
+        pass
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        pass
 
     def is_ready(self, wait_set):
         """Return True if entities are ready in the wait set."""
@@ -148,7 +168,7 @@ class TimerWaitable(Waitable):
         """Take stuff from lower level so the wait set doesn't immediately wake again."""
         if self.timer_is_ready:
             self.timer_is_ready = False
-            self.timer.call_timer()
+            self.timer.call_timer_with_info()
             return 'timer'
         return None
 
@@ -181,6 +201,12 @@ class SubscriptionWaitable(Waitable):
 
         self.node = node
         self.future = None
+
+    def __enter__(self) -> None:
+        pass
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        pass
 
     def is_ready(self, wait_set):
         """Return True if entities are ready in the wait set."""
@@ -227,6 +253,12 @@ class GuardConditionWaitable(Waitable):
         self.node = node
         self.future = None
 
+    def __enter__(self) -> None:
+        pass
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        pass
+
     def is_ready(self, wait_set):
         """Return True if entities are ready in the wait set."""
         if wait_set.is_ready('guard_condition', self.guard_condition_index):
@@ -258,13 +290,19 @@ class GuardConditionWaitable(Waitable):
 
 class MutuallyExclusiveWaitable(Waitable):
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(MutuallyExclusiveCallbackGroup())
+
+    def __enter__(self) -> None:
+        pass
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        pass
 
     def is_ready(self, wait_set):
         return False
 
-    def take_data(self):
+    def take_data(self) -> None:
         return None
 
     async def execute(self, taken_data):
@@ -278,6 +316,11 @@ class MutuallyExclusiveWaitable(Waitable):
 
 
 class TestWaitable(unittest.TestCase):
+
+    if TYPE_CHECKING:
+        node: rclpy.node.Node
+        context: rclpy.context.Context
+        executor: SingleThreadedExecutor
 
     @classmethod
     def setUpClass(cls):
@@ -302,15 +345,15 @@ class TestWaitable(unittest.TestCase):
         self.thr.start()
         return self.thr
 
-    def setUp(self):
+    def setUp(self) -> None:
         pass
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self.node.remove_waitable(self.waitable)
         # Ensure resources inside the waitable are destroyed before the node in tearDownClass
         del self.waitable
 
-    def test_waitable_with_client(self):
+    def test_waitable_with_client(self) -> None:
         self.waitable = ClientWaitable(self.node)
         self.node.add_waitable(self.waitable)
 
@@ -327,7 +370,7 @@ class TestWaitable(unittest.TestCase):
         assert isinstance(self.waitable.future.result()['client'], EmptySrv.Response)
         self.node.destroy_service(server)
 
-    def test_waitable_with_server(self):
+    def test_waitable_with_server(self) -> None:
         self.waitable = ServerWaitable(self.node)
         self.node.add_waitable(self.waitable)
         client = self.node.create_client(EmptySrv, 'test_server')
@@ -340,7 +383,7 @@ class TestWaitable(unittest.TestCase):
         assert isinstance(self.waitable.future.result()['server'], EmptySrv.Request)
         self.node.destroy_client(client)
 
-    def test_waitable_with_timer(self):
+    def test_waitable_with_timer(self) -> None:
         self.waitable = TimerWaitable(self.node)
         self.node.add_waitable(self.waitable)
 
@@ -350,7 +393,7 @@ class TestWaitable(unittest.TestCase):
         assert self.waitable.future.done()
         assert self.waitable.future.result()['timer']
 
-    def test_waitable_with_subscription(self):
+    def test_waitable_with_subscription(self) -> None:
         self.waitable = SubscriptionWaitable(self.node)
         self.node.add_waitable(self.waitable)
         pub = self.node.create_publisher(EmptyMsg, 'test_topic', 1)
@@ -363,7 +406,7 @@ class TestWaitable(unittest.TestCase):
         assert isinstance(self.waitable.future.result()['subscription'], EmptyMsg)
         self.node.destroy_publisher(pub)
 
-    def test_waitable_with_guard_condition(self):
+    def test_waitable_with_guard_condition(self) -> None:
         self.waitable = GuardConditionWaitable(self.node)
         self.node.add_waitable(self.waitable)
 
@@ -376,7 +419,7 @@ class TestWaitable(unittest.TestCase):
 
     # Test that waitable doesn't crash with MutuallyExclusiveCallbackGroup
     # https://github.com/ros2/rclpy/issues/264
-    def test_waitable_with_mutually_exclusive_callback_group(self):
+    def test_waitable_with_mutually_exclusive_callback_group(self) -> None:
         self.waitable = MutuallyExclusiveWaitable()
         self.node.add_waitable(self.waitable)
         self.executor.spin_once(timeout_sec=0.1)
@@ -384,7 +427,7 @@ class TestWaitable(unittest.TestCase):
 
 class TestNumberOfEntities(unittest.TestCase):
 
-    def test_add(self):
+    def test_add(self) -> None:
         n1 = NumberOfEntities(1, 2, 3, 4, 5, 6)
         n2 = NumberOfEntities(10, 20, 30, 40, 50, 60)
         n = n1 + n2
@@ -395,7 +438,7 @@ class TestNumberOfEntities(unittest.TestCase):
         assert n.num_services == 55
         assert n.num_events == 66
 
-    def test_add_assign(self):
+    def test_add_assign(self) -> None:
         n1 = NumberOfEntities(1, 2, 3, 4, 5, 6)
         n2 = NumberOfEntities(10, 20, 30, 40, 50, 60)
         n1 += n2

@@ -32,7 +32,7 @@ TEST_PARAMETERS = [
 rosout_subscription_msg = None  # None=No result yet
 
 
-def rosout_subscription_callback(msg):
+def rosout_subscription_callback(msg: Log) -> None:
     global rosout_subscription_msg
     rosout_subscription_msg = msg
 
@@ -41,11 +41,11 @@ def rosout_subscription_callback(msg):
     'name,enable_global_rosout_logs,enable_node_rosout,expected_data',
     TEST_PARAMETERS)
 def test_enable_rosout(
-    name,
-    enable_global_rosout_logs,
-    enable_node_rosout,
-    expected_data
-):
+    name: str,
+    enable_global_rosout_logs: bool,
+    enable_node_rosout: bool,
+    expected_data: bool
+) -> None:
     if enable_global_rosout_logs:
         args = ['--ros-args', '--enable-rosout-logs']
     else:
@@ -83,7 +83,7 @@ def test_enable_rosout(
 
     if expected_data:
         assert (rosout_subscription_msg is not None)
-        assert (type(rosout_subscription_msg) == Log)
+        assert (isinstance(rosout_subscription_msg, Log))
         assert (LoggingSeverity(rosout_subscription_msg.level) == LoggingSeverity.INFO)
         assert (len(rosout_subscription_msg.msg) != 0)
         assert (rosout_subscription_msg.msg == message_data)
