@@ -268,25 +268,91 @@ class TestParameter(unittest.TestCase):
                     base-nodename: true
             /foo/param_test_target:
                 ros__parameters:
-                    abs-ns-nodename: true
+                    abs-foo-ns-nodename: true
             /foo:
                 param_test_target:
                     ros__parameters:
-                        abs-ns-base-nodename: true
+                        abs-foo-ns-base-nodename: true
             /bar/param_test_target:
                 ros__parameters:
-                    abs-ns-nodename: false
+                    abs-bar-ns-nodename: false
             /bar:
                 param_test_target:
                     ros__parameters:
-                        abs-ns-base-nodename: false
+                        abs-bar-ns-base-nodename: false
             /**:
                 ros__parameters:
                     wildcard: true
+            /*:
+                param_test_target2:
+                    ros__parameters:
+                        abs-wildcard-ns-base-nodename: false
+            /**/param_test_target3:
+                ros__parameters:
+                    abs-wildcard-ns-nodename-target3: true
+            /a1:
+                param_test_target2:
+                    ros__parameters:
+                        abs-a1-ns-base-nodename: true
+            /**/param_test_target2:
+                ros__parameters:
+                    abs-wildcard-ns-base-nodename2: false
+            /a2/b2/c2/d2:
+                param_test_target3:
+                    ros__parameters:
+                        abs-dep-ns-base-nodename-target3: false
+            param_test_target3:
+                ros__parameters:
+                    base-nodename-target3: true
             """
+        # target nodes aren't specified with wildcard disabled
+        expected_no_target_node_no_wildcard = {
+            'abs-a1-ns-base-nodename': Parameter(
+                'abs-a1-ns-base-nodename', Parameter.Type.BOOL, True).to_parameter_msg(),
+            'abs-bar-ns-base-nodename': Parameter(
+                'abs-bar-ns-base-nodename', Parameter.Type.BOOL, False).to_parameter_msg(),
+            'abs-bar-ns-nodename': Parameter(
+                'abs-bar-ns-nodename', Parameter.Type.BOOL, False).to_parameter_msg(),
+            'abs-dep-ns-base-nodename-target3': Parameter(
+                'abs-dep-ns-base-nodename-target3', Parameter.Type.BOOL, False).to_parameter_msg(),
+            'abs-foo-ns-base-nodename': Parameter(
+                'abs-foo-ns-base-nodename', Parameter.Type.BOOL, True).to_parameter_msg(),
+            'abs-foo-ns-nodename': Parameter(
+                'abs-foo-ns-nodename', Parameter.Type.BOOL, True).to_parameter_msg(),
+            'abs-nodename': Parameter(
+                'abs-nodename', Parameter.Type.BOOL, True).to_parameter_msg(),
+            'base-nodename': Parameter(
+                'base-nodename', Parameter.Type.BOOL, True).to_parameter_msg(),
+            'base-nodename-target3': Parameter(
+                'base-nodename-target3', Parameter.Type.BOOL, True).to_parameter_msg(),
+        }
 
-        # target nodes is specified, so it should only parse wildcard
-        expected_no_target_node = {
+        # target nodes aren't specified with wildcard enabled
+        expected_no_target_node_wildcard = {
+            'abs-a1-ns-base-nodename': Parameter(
+                'abs-a1-ns-base-nodename', Parameter.Type.BOOL, True).to_parameter_msg(),
+            'abs-bar-ns-base-nodename': Parameter(
+                'abs-bar-ns-base-nodename', Parameter.Type.BOOL, False).to_parameter_msg(),
+            'abs-bar-ns-nodename': Parameter(
+                'abs-bar-ns-nodename', Parameter.Type.BOOL, False).to_parameter_msg(),
+            'abs-dep-ns-base-nodename-target3': Parameter(
+                'abs-dep-ns-base-nodename-target3', Parameter.Type.BOOL, False).to_parameter_msg(),
+            'abs-foo-ns-base-nodename': Parameter(
+                'abs-foo-ns-base-nodename', Parameter.Type.BOOL, True).to_parameter_msg(),
+            'abs-foo-ns-nodename': Parameter(
+                'abs-foo-ns-nodename', Parameter.Type.BOOL, True).to_parameter_msg(),
+            'abs-nodename': Parameter(
+                'abs-nodename', Parameter.Type.BOOL, True).to_parameter_msg(),
+            'abs-wildcard-ns-base-nodename': Parameter(
+                'abs-wildcard-ns-base-nodename', Parameter.Type.BOOL, False).to_parameter_msg(),
+            'abs-wildcard-ns-base-nodename2': Parameter(
+                'abs-wildcard-ns-base-nodename2', Parameter.Type.BOOL, False).to_parameter_msg(),
+            'abs-wildcard-ns-nodename-target3': Parameter(
+                'abs-wildcard-ns-nodename-target3', Parameter.Type.BOOL, True).to_parameter_msg(),
+            'base-nodename': Parameter(
+                'base-nodename', Parameter.Type.BOOL, True).to_parameter_msg(),
+            'base-nodename-target3': Parameter(
+                'base-nodename-target3', Parameter.Type.BOOL, True).to_parameter_msg(),
             'wildcard': Parameter('wildcard', Parameter.Type.BOOL, True).to_parameter_msg(),
         }
         # target nodes is specified with wildcard enabled
@@ -308,10 +374,49 @@ class TestParameter(unittest.TestCase):
         # target nodes is specified with wildcard and namespace
         expected_target_node_ns = {
             'wildcard': Parameter('wildcard', Parameter.Type.BOOL, True).to_parameter_msg(),
-            'abs-ns-nodename': Parameter(
-                'abs-ns-nodename', Parameter.Type.BOOL, True).to_parameter_msg(),
-            'abs-ns-base-nodename': Parameter(
-                'abs-ns-base-nodename', Parameter.Type.BOOL, True).to_parameter_msg(),
+            'abs-foo-ns-nodename': Parameter(
+                'abs-foo-ns-nodename', Parameter.Type.BOOL, True).to_parameter_msg(),
+            'abs-foo-ns-base-nodename': Parameter(
+                'abs-foo-ns-base-nodename', Parameter.Type.BOOL, True).to_parameter_msg(),
+        }
+        # target node is specified with wildcard and single-level namespace (e.g. /abc/)
+        expected_target_node_single_level_ns_wildcard = {
+            'wildcard': Parameter('wildcard', Parameter.Type.BOOL, True).to_parameter_msg(),
+            'abs-wildcard-ns-base-nodename': Parameter(
+                'abs-wildcard-ns-base-nodename', Parameter.Type.BOOL, False).to_parameter_msg(),
+            'abs-a1-ns-base-nodename': Parameter(
+                'abs-a1-ns-base-nodename', Parameter.Type.BOOL, True).to_parameter_msg(),
+            'abs-wildcard-ns-base-nodename2': Parameter(
+                'abs-wildcard-ns-base-nodename2', Parameter.Type.BOOL, False).to_parameter_msg(),
+        }
+        # target node is specified with single-level namespace (e.g. /abc/)
+        expected_target_node_single_level_ns = {
+            'abs-a1-ns-base-nodename': Parameter(
+                'abs-a1-ns-base-nodename', Parameter.Type.BOOL, True).to_parameter_msg(),
+        }
+        # target node is specified with wildcard and any namespace /a2/b2/c2/d2/
+        expected_target_node_specified_ns_wildcard = {
+            'wildcard': Parameter('wildcard', Parameter.Type.BOOL, True).to_parameter_msg(),
+            'abs-wildcard-ns-nodename-target3': Parameter(
+                'abs-wildcard-ns-nodename-target3', Parameter.Type.BOOL, True).to_parameter_msg(),
+            'abs-dep-ns-base-nodename-target3': Parameter(
+                'abs-dep-ns-base-nodename-target3', Parameter.Type.BOOL, False).to_parameter_msg(),
+        }
+        # target node is specified with any namespace /a2/b2/c2/d2/
+        expected_target_node_specified_ns = {
+            'abs-dep-ns-base-nodename-target3': Parameter(
+                'abs-dep-ns-base-nodename-target3', Parameter.Type.BOOL, False).to_parameter_msg(),
+        }
+        # target node is specified with wildcard and without namespace
+        expected_target_node_without_ns_wildcard = {
+            'wildcard': Parameter('wildcard', Parameter.Type.BOOL, True).to_parameter_msg(),
+            'base-nodename-target3': Parameter(
+                'base-nodename-target3', Parameter.Type.BOOL, True).to_parameter_msg(),
+        }
+        # target node is specified without namespace
+        expected_target_node_without_ns = {
+            'base-nodename-target3': Parameter(
+                'base-nodename-target3', Parameter.Type.BOOL, True).to_parameter_msg(),
         }
 
         try:
@@ -319,11 +424,13 @@ class TestParameter(unittest.TestCase):
                 f.write(yaml_string)
                 f.flush()
                 f.close()
+                parameter_dict = parameter_dict_from_yaml_file(f.name, False)
+                assert parameter_dict == expected_no_target_node_no_wildcard
                 parameter_dict = parameter_dict_from_yaml_file(f.name, True)
-                assert parameter_dict == expected_no_target_node
+                assert parameter_dict == expected_no_target_node_wildcard
                 parameter_dict = parameter_dict_from_yaml_file(
-                    f.name, True, target_nodes=[''])
-                assert parameter_dict == expected_no_target_node
+                    f.name, True, target_nodes=[])
+                assert parameter_dict == expected_no_target_node_wildcard
                 parameter_dict = parameter_dict_from_yaml_file(
                     f.name, True, target_nodes=['param_test_target'])
                 assert parameter_dict == expected_target_node_wildcard
@@ -333,6 +440,35 @@ class TestParameter(unittest.TestCase):
                 parameter_dict = parameter_dict_from_yaml_file(
                     f.name, True, target_nodes=['/foo/param_test_target'])
                 assert parameter_dict == expected_target_node_ns
+
+                parameter_dict = parameter_dict_from_yaml_file(
+                    f.name, True, target_nodes=['/a1/param_test_target2'])
+                assert parameter_dict == expected_target_node_single_level_ns_wildcard
+                parameter_dict = parameter_dict_from_yaml_file(
+                    f.name, False, target_nodes=['/a1/param_test_target2'])
+                assert parameter_dict == expected_target_node_single_level_ns
+                with pytest.raises(RuntimeError,
+                                   match='Param file does not contain any valid parameters'):
+                    parameter_dict_from_yaml_file(
+                        f.name, False, target_nodes=['/abc/cde/param_test_target2'])
+                with pytest.raises(RuntimeError,
+                                   match='Param file does not contain any valid parameters'):
+                    parameter_dict_from_yaml_file(
+                        f.name, False, target_nodes=['param_test_target2'])
+
+                parameter_dict = parameter_dict_from_yaml_file(
+                    f.name, True, target_nodes=['/a2/b2/c2/d2/param_test_target3'])
+                assert parameter_dict == expected_target_node_specified_ns_wildcard
+                parameter_dict = parameter_dict_from_yaml_file(
+                    f.name, True, target_nodes=['param_test_target3'])
+                assert parameter_dict == expected_target_node_without_ns_wildcard
+                parameter_dict = parameter_dict_from_yaml_file(
+                    f.name, False, target_nodes=['/a2/b2/c2/d2/param_test_target3'])
+                assert parameter_dict == expected_target_node_specified_ns
+                parameter_dict = parameter_dict_from_yaml_file(
+                    f.name, False, target_nodes=['param_test_target3'])
+                assert parameter_dict == expected_target_node_without_ns
+
         finally:
             if os.path.exists(f.name):
                 os.unlink(f.name)
