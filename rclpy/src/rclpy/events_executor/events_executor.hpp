@@ -66,7 +66,6 @@ public:
   pybind11::object get_context() const {return rclpy_context_;}
   pybind11::object create_task(
     pybind11::object callback, pybind11::args args = {}, const pybind11::kwargs & kwargs = {});
-  void call_task_in_next_spin(pybind11::handle task);
   pybind11::object create_future();
   bool shutdown(std::optional<double> timeout_sec = {});
   bool add_node(pybind11::object node);
@@ -110,7 +109,7 @@ private:
 
   void HandleAddedTimer(pybind11::handle);
   void HandleRemovedTimer(pybind11::handle);
-  void HandleTimerReady(pybind11::handle, const rcl_timer_call_info_t &);
+  void HandleTimerReady(pybind11::handle);
 
   void HandleAddedClient(pybind11::handle);
   void HandleRemovedClient(pybind11::handle);
@@ -149,6 +148,11 @@ private:
   /// create_task() implementation for details.
   void IterateTask(pybind11::handle task);
 
+  /// Posts a call to IterateTask() for every outstanding entry in tasks_; should be invoked from
+  /// other Handle*Ready() methods to check if any asynchronous Tasks have been unblocked by the
+  /// newly-handled event.
+  void PostOutstandingTasks();
+
   void HandleCallbackExceptionInNodeEntity(
     const pybind11::error_already_set &, pybind11::handle entity,
     const std::string & node_entity_attr);
@@ -165,7 +169,6 @@ private:
   const pybind11::object inspect_signature_;
   const pybind11::object rclpy_task_;
   const pybind11::object rclpy_future_;
-  const pybind11::object rclpy_timer_timer_info_;
 
   EventsQueue events_queue_;
   ScopedSignalCallback signal_callback_;
@@ -184,6 +187,9 @@ private:
   pybind11::set clients_;
   pybind11::set services_;
   pybind11::set waitables_;
+
+  /// Collection of asynchronous Tasks awaiting new events to further iterate.
+  std::vector<pybind11::handle> blocked_tasks_;
 
   /// Cache for rcl pointers underlying each waitables_ entry, because those are harder to retrieve
   /// than the other entity types.

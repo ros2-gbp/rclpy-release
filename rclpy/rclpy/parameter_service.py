@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-from typing import TYPE_CHECKING
 import weakref
 
 from rcl_interfaces.msg import ListParametersResult
@@ -25,13 +23,10 @@ from rclpy.parameter import Parameter
 from rclpy.qos import qos_profile_parameters
 from rclpy.validate_topic_name import TOPIC_SEPARATOR_STRING
 
-if TYPE_CHECKING:
-    from rclpy.node import Node
-
 
 class ParameterService:
 
-    def __init__(self, node: 'Node'):
+    def __init__(self, node):
         self._node_weak_ref = weakref.ref(node)
         nodename = node.get_name()
 
@@ -70,11 +65,7 @@ class ParameterService:
             qos_profile=qos_profile_parameters
         )
 
-    def _describe_parameters_callback(
-        self,
-        request: DescribeParameters.Request,
-        response: DescribeParameters.Response
-    ) -> DescribeParameters.Response:
+    def _describe_parameters_callback(self, request, response):
         node = self._get_node()
         for name in request.names:
             try:
@@ -85,11 +76,7 @@ class ParameterService:
             response.descriptors.append(descriptor)
         return response
 
-    def _get_parameters_callback(
-        self,
-        request: GetParameters.Request,
-        response: GetParameters.Response
-    ) -> GetParameters.Response:
+    def _get_parameters_callback(self, request, response):
         node = self._get_node()
         for name in request.names:
             try:
@@ -100,11 +87,7 @@ class ParameterService:
             response.values.append(param.get_parameter_value())
         return response
 
-    def _get_parameter_types_callback(
-        self,
-        request: GetParameterTypes.Request,
-        response: GetParameterTypes.Response
-    ) -> GetParameterTypes.Response:
+    def _get_parameter_types_callback(self, request, response):
         node = self._get_node()
         for name in request.names:
             try:
@@ -115,11 +98,7 @@ class ParameterService:
             response.types.append(value)
         return response
 
-    def _list_parameters_callback(
-        self,
-        request: ListParameters.Request,
-        response: ListParameters.Response
-    ) -> ListParameters.Response:
+    def _list_parameters_callback(self, request, response):
         node = self._get_node()
         try:
             response.result = node.list_parameters(request.prefixes, request.depth)
@@ -127,11 +106,7 @@ class ParameterService:
             response.result = ListParametersResult()
         return response
 
-    def _set_parameters_callback(
-            self,
-            request: SetParameters.Request,
-            response: SetParameters.Response
-            ) -> SetParameters.Response:
+    def _set_parameters_callback(self, request, response):
         node = self._get_node()
         for p in request.parameters:
             param = Parameter.from_parameter_msg(p)
@@ -145,11 +120,7 @@ class ParameterService:
             response.results.append(result)
         return response
 
-    def _set_parameters_atomically_callback(
-            self,
-            request: SetParametersAtomically.Request,
-            response: SetParametersAtomically.Response
-            ) -> SetParametersAtomically.Response:
+    def _set_parameters_atomically_callback(self, request, response):
         node = self._get_node()
         try:
             response.result = node.set_parameters_atomically([
@@ -161,7 +132,7 @@ class ParameterService:
                 )
         return response
 
-    def _get_node(self) -> 'Node':
+    def _get_node(self):
         node = self._node_weak_ref()
         if node is None:
             raise ReferenceError('Expected valid node weak reference')

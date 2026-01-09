@@ -53,11 +53,10 @@ EventsExecutor::EventsExecutor(py::object context)
   inspect_signature_(py::module_::import("inspect").attr("signature")),
   rclpy_task_(py::module_::import("rclpy.task").attr("Task")),
   rclpy_future_(py::module_::import("rclpy.task").attr("Future")),
-  rclpy_timer_timer_info_(py::module_::import("rclpy.timer").attr("TimerInfo")),
   signal_callback_([this]() {events_queue_.Stop();}),
   rcl_callback_manager_(&events_queue_),
   timers_manager_(
-    &events_queue_, std::bind(&EventsExecutor::HandleTimerReady, this, pl::_1, pl::_2))
+    &events_queue_, std::bind(&EventsExecutor::HandleTimerReady, this, pl::_1))
 {
 }
 
@@ -75,13 +74,8 @@ pybind11::object EventsExecutor::create_task(
   // manual refcounting on it instead.
   py::handle cb_task_handle = task;
   cb_task_handle.inc_ref();
-  call_task_in_next_spin(task);
+  events_queue_.Enqueue(std::bind(&EventsExecutor::IterateTask, this, cb_task_handle));
   return task;
-}
-
-void EventsExecutor::call_task_in_next_spin(pybind11::handle task)
-{
-  events_queue_.Enqueue(std::bind(&EventsExecutor::IterateTask, this, task));
 }
 
 pybind11::object EventsExecutor::create_future()
@@ -169,6 +163,8 @@ void EventsExecutor::spin(std::optional<double> timeout_sec, bool stop_after_use
       throw std::runtime_error("Attempt to spin an already-spinning Executor");
     }
     stop_after_user_callback_ = stop_after_user_callback;
+    // Any blocked tasks may have become unblocked while we weren't looking.
+    PostOutstandingTasks();
     // Release the GIL while we block.  Any callbacks on the events queue that want to touch Python
     // will need to reacquire it though.
     py::gil_scoped_release gil_release;
@@ -310,6 +306,9 @@ void EventsExecutor::HandleRemovedSubscription(py::handle subscription)
 
 void EventsExecutor::HandleSubscriptionReady(py::handle subscription, size_t number_of_events)
 {
+  if (stop_after_user_callback_) {
+    events_queue_.Stop();
+  }
   py::gil_scoped_acquire gil_acquire;
 
   // Largely based on rclpy.Executor._take_subscription() and _execute_subcription().
@@ -333,58 +332,35 @@ void EventsExecutor::HandleSubscriptionReady(py::handle subscription, size_t num
   for (size_t i = 0; number_of_events ? i < number_of_events : !got_none; ++i) {
     py::object msg_info = _rclpy_sub.take_message(msg_type, raw);
     if (!msg_info.is_none()) {
-      py::object result;
       try {
         if (callback_type == message_only) {
-          result = callback(py::cast<py::tuple>(msg_info)[0]);
+          callback(py::cast<py::tuple>(msg_info)[0]);
         } else {
-          result = callback(msg_info);
+          callback(msg_info);
         }
       } catch (const py::error_already_set & e) {
         HandleCallbackExceptionInNodeEntity(e, subscription, "subscriptions");
         throw;
       }
-
-      // The type markup claims the callback can't be a coroutine, but this seems to be a lie
-      // because the stock executor handles it just fine.
-      if (py::cast<bool>(inspect_iscoroutine_(result))) {
-        // Create a Task to manage iteration of this coroutine later.
-        create_task(result);
-      } else if (stop_after_user_callback_) {
-        events_queue_.Stop();
-      }
     } else {
       got_none = true;
     }
   }
+
+  PostOutstandingTasks();
 }
 
 void EventsExecutor::HandleAddedTimer(py::handle timer) {timers_manager_.AddTimer(timer);}
 
 void EventsExecutor::HandleRemovedTimer(py::handle timer) {timers_manager_.RemoveTimer(timer);}
 
-void EventsExecutor::HandleTimerReady(py::handle timer, const rcl_timer_call_info_t & info)
+void EventsExecutor::HandleTimerReady(py::handle timer)
 {
   py::gil_scoped_acquire gil_acquire;
   py::object callback = timer.attr("callback");
-  // We need to distinguish callbacks that want a TimerInfo object from those that don't.
-  // Executor._take_timer() actually checks if an argument has type markup expecting a TypeInfo
-  // object.  This seems like overkill, vs just checking if it wants an argument at all?
-  py::object py_info;
-  if (py::len(inspect_signature_(callback).attr("parameters").attr("values")()) > 0) {
-    using py::literals::operator""_a;
-    py_info = rclpy_timer_timer_info_(
-      "expected_call_time"_a = info.expected_call_time,
-      "actual_call_time"_a = info.actual_call_time,
-      "clock_type"_a = timer.attr("clock").attr("clock_type"));
-  }
   py::object result;
   try {
-    if (py_info) {
-      result = callback(py_info);
-    } else {
-      result = callback();
-    }
+    result = callback();
   } catch (const py::error_already_set & e) {
     HandleCallbackExceptionInNodeEntity(e, timer, "timers");
     throw;
@@ -398,6 +374,7 @@ void EventsExecutor::HandleTimerReady(py::handle timer, const rcl_timer_call_inf
   } else if (stop_after_user_callback_) {
     events_queue_.Stop();
   }
+  PostOutstandingTasks();
 }
 
 void EventsExecutor::HandleAddedClient(py::handle client)
@@ -468,6 +445,8 @@ void EventsExecutor::HandleClientReady(py::handle client, size_t number_of_event
       }
     }
   }
+
+  PostOutstandingTasks();
 }
 
 void EventsExecutor::HandleAddedService(py::handle service)
@@ -501,6 +480,9 @@ void EventsExecutor::HandleRemovedService(py::handle service)
 
 void EventsExecutor::HandleServiceReady(py::handle service, size_t number_of_events)
 {
+  if (stop_after_user_callback_) {
+    events_queue_.Stop();
+  }
   py::gil_scoped_acquire gil_acquire;
 
   // Largely based on rclpy.Executor._take_service() and _execute_service().
@@ -515,7 +497,7 @@ void EventsExecutor::HandleServiceReady(py::handle service, size_t number_of_eve
   for (size_t i = 0; i < number_of_events; ++i) {
     py::tuple request_and_header = _rclpy_service.service_take_request(req_type);
     py::handle request = request_and_header[0];
-    py::object header = request_and_header[1];
+    py::handle header = request_and_header[1];
     if (!request.is_none()) {
       py::object response;
       try {
@@ -524,23 +506,11 @@ void EventsExecutor::HandleServiceReady(py::handle service, size_t number_of_eve
         HandleCallbackExceptionInNodeEntity(e, service, "services");
         throw;
       }
-
-      // The type markup claims the callback can't be a coroutine, but this seems to be a lie
-      // because the stock executor handles it just fine.
-      if (py::cast<bool>(inspect_iscoroutine_(response))) {
-        // Create a Task to manage iteration of this coroutine later.
-        create_task(response).attr("add_done_callback")(
-          py::cpp_function([send_response, header](py::object future) {
-            send_response(future.attr("result")(), header);
-          }));
-      } else {
-        send_response(response, header);
-        if (stop_after_user_callback_) {
-          events_queue_.Stop();
-        }
-      }
+      send_response(response, header);
     }
   }
+
+  PostOutstandingTasks();
 }
 
 void EventsExecutor::HandleAddedWaitable(py::handle waitable)
@@ -806,6 +776,8 @@ void EventsExecutor::HandleWaitableReady(
     // execute() is an async method, we need a Task to run it
     create_task(execute(data));
   }
+
+  PostOutstandingTasks();
 }
 
 void EventsExecutor::IterateTask(py::handle task)
@@ -838,7 +810,26 @@ void EventsExecutor::IterateTask(py::handle task)
         throw;
       }
     }
+  } else {
+    // Task needs more iteration.  Store the handle and revisit it later after the next ready
+    // entity which may unblock it.
+    // TODO(bmartin427) This matches the behavior of SingleThreadedExecutor and avoids busy
+    // looping, but I don't love it because if the task is waiting on something other than an rcl
+    // entity (e.g. an asyncio sleep, or a Future triggered from another thread, or even another
+    // Task), there can be arbitrarily long latency before some rcl activity causes us to go
+    // revisit that Task.
+    blocked_tasks_.push_back(task);
   }
+}
+
+void EventsExecutor::PostOutstandingTasks()
+{
+  for (auto & task : blocked_tasks_) {
+    events_queue_.Enqueue(std::bind(&EventsExecutor::IterateTask, this, task));
+  }
+  // Clear the entire outstanding tasks list.  Any tasks that need further iteration will re-add
+  // themselves during IterateTask().
+  blocked_tasks_.clear();
 }
 
 void EventsExecutor::HandleCallbackExceptionInNodeEntity(
@@ -897,7 +888,6 @@ void define_events_executor(py::object module)
   .def(py::init<py::object>(), py::arg("context"))
   .def_property_readonly("context", &EventsExecutor::get_context)
   .def("create_task", &EventsExecutor::create_task, py::arg("callback"))
-  .def("_call_task_in_next_spin", &EventsExecutor::call_task_in_next_spin, py::arg("task"))
   .def("create_future", &EventsExecutor::create_future)
   .def("shutdown", &EventsExecutor::shutdown, py::arg("timeout_sec") = py::none())
   .def("add_node", &EventsExecutor::add_node, py::arg("node"))

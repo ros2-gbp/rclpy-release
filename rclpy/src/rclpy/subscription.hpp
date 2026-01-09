@@ -108,12 +108,6 @@ public:
   void
   destroy() override;
 
-  void
-  set_on_new_message_callback(std::function<void(size_t)> callback);
-
-  void
-  clear_on_new_message_callback();
-
   /// Check if the content filtered topic of this subscription is enabled
   bool is_cft_enabled() const;
 
