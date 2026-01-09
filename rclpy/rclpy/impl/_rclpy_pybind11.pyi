@@ -196,12 +196,6 @@ class Client(Destroyable, Generic[SrvRequestT, SrvResponseT]):
     def get_logger_name(self) -> str:
         """Get the name of the logger associated with the node of the client."""
 
-    def set_on_new_response_callback(self, callback: Callable[[int], None]) -> None:
-        """Set the on new response callback function for the client."""
-
-    def clear_on_new_response_callback(self) -> None:
-        """Clear the on new response callback function for the client."""
-
 
 class Context(Destroyable):
 
@@ -292,12 +286,6 @@ class Service(Destroyable, Generic[SrvRequestT, SrvResponseT]):
 
     def get_logger_name(self) -> str:
         """Get the name of the logger associated with the node of the service."""
-
-    def set_on_new_request_callback(self, callback: Callable[[int], None]) -> None:
-        """Set the on new request callback function for the service."""
-
-    def clear_on_new_request_callback(self) -> None:
-        """Clear the on new request callback function for the service."""
 
 
 class TypeDescriptionService(Destroyable):
@@ -591,12 +579,6 @@ class Timer(Destroyable):
     def is_timer_canceled(self) -> bool:
         """Check if a timer is canceled."""
 
-    def set_on_reset_callback(self, callback: Callable[[int], None]) -> None:
-        """Set the on reset callback function for the timer."""
-
-    def clear_on_reset_callback(self) -> None:
-        """Clear the on reset callback function for the timer."""
-
 
 class Subscription(Destroyable, Generic[MsgT]):
 
@@ -619,12 +601,6 @@ class Subscription(Destroyable, Generic[MsgT]):
 
     def get_publisher_count(self) -> int:
         """Count the publishers from a subscription."""
-
-    def set_on_new_message_callback(self, callback: Callable[[int], None]) -> None:
-        """Set the on new message callback function for the subscription."""
-
-    def clear_on_new_message_callback(self) -> None:
-        """Clear the on new message callback function for the subscription."""
 
     def is_cft_enabled(self) -> bool:
         """Check if content filtering is enabled for this subscription."""
@@ -799,22 +775,6 @@ def rclpy_get_service_names_and_types_by_node(node: Node, node_name: str, node_n
 def rclpy_get_client_names_and_types_by_node(node: Node, node_name: str, node_namespace: str
                                              ) -> list[tuple[str, list[str]]]:
     """Get service names and types for which a remote node has servers."""
-
-
-def rclpy_get_action_client_names_and_types_by_node(node: Node, node_name: str,
-                                                     node_namespace: str
-                                                     ) -> list[tuple[str, list[str]]]:
-    """Get action client names and types by node."""
-
-
-def rclpy_get_action_server_names_and_types_by_node(node: Node, node_name: str,
-                                                     node_namespace: str
-                                                     ) -> list[tuple[str, list[str]]]:
-    """Get action server names and types by node."""
-
-
-def rclpy_get_action_names_and_types(node: Node) -> list[tuple[str, list[str]]]:
-    """Get all action names and types in the ROS graph."""
 
 
 def rclpy_serialize(pymsg: Msg, py_msg_type: type[Msg]) -> bytes:
