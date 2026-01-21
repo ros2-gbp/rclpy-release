@@ -277,6 +277,40 @@ class TestExecutor(unittest.TestCase):
                 self.assertTrue(future.done())
                 self.assertEqual('Sentinel Result', future.result())
 
+    def test_create_task_coroutine_yield(self) -> None:
+        self.assertIsNotNone(self.node.handle)
+        for cls in [SingleThreadedExecutor, EventsExecutor]:
+            with self.subTest(cls=cls):
+                executor = cls(context=self.context)
+                executor.add_node(self.node)
+
+                called1 = False
+                called2 = False
+
+                async def coroutine() -> str:
+                    nonlocal called1
+                    nonlocal called2
+                    called1 = True
+                    await asyncio.sleep(0)
+                    called2 = True
+                    return 'Sentinel Result'
+
+                future = executor.create_task(coroutine)
+                self.assertFalse(future.done())
+                self.assertFalse(called1)
+                self.assertFalse(called2)
+
+                executor.spin_once(timeout_sec=0)
+                self.assertFalse(future.done())
+                self.assertTrue(called1)
+                self.assertFalse(called2)
+
+                executor.spin_once(timeout_sec=1)
+                self.assertTrue(future.done())
+                self.assertTrue(called1)
+                self.assertTrue(called2)
+                self.assertEqual('Sentinel Result', future.result())
+
     def test_create_task_coroutine_cancel(self) -> None:
         self.assertIsNotNone(self.node.handle)
         for cls in [SingleThreadedExecutor, EventsExecutor]:
@@ -299,7 +333,39 @@ class TestExecutor(unittest.TestCase):
                 self.assertTrue(future.cancelled())
                 self.assertEqual(None, future.result())
 
-    def test_create_task_normal_function(self):
+    def test_create_task_coroutine_wake_from_another_thread(self) -> None:
+        self.assertIsNotNone(self.node.handle)
+
+        for cls in [SingleThreadedExecutor, MultiThreadedExecutor, EventsExecutor]:
+            with self.subTest(cls=cls):
+                executor = cls(context=self.context)
+                thread_future = executor.create_future()
+
+                async def coroutine():
+                    await thread_future
+
+                def future_thread():
+                    time.sleep(0.1)  # Simulate some work
+                    thread_future.set_result(None)
+
+                t = threading.Thread(target=future_thread)
+
+                coroutine_future = executor.create_task(coroutine)
+
+                start_time = time.perf_counter()
+
+                t.start()
+                executor.spin_until_future_complete(coroutine_future, timeout_sec=1.0)
+
+                end_time = time.perf_counter()
+
+                self.assertTrue(coroutine_future.done())
+
+                # The coroutine should take at least 0.1 seconds to complete because it waits for
+                # the thread to set the future but nowhere near the 1 second timeout
+                assert 0.1 <= end_time - start_time < 0.2
+
+    def test_create_task_normal_function(self) -> None:
         self.assertIsNotNone(self.node.handle)
         for cls in [SingleThreadedExecutor, EventsExecutor]:
             with self.subTest(cls=cls):
@@ -328,18 +394,12 @@ class TestExecutor(unittest.TestCase):
                     await future2
                     return 'Sentinel Result 1'
 
+                future1 = executor.create_task(coro1)
+
                 async def coro2():
                     return 'Sentinel Result 2'
 
-                # We need to swap the order of the coroutines depending on the executor type
-                # This is nessessary because https://github.com/ros2/rclpy/pull/1304
-                # won't be backported to jazzy
-                if cls is SingleThreadedExecutor:
-                    future2 = executor.create_task(coro2)
-                    future1 = executor.create_task(coro1)
-                else:
-                    future1 = executor.create_task(coro1)
-                    future2 = executor.create_task(coro2)
+                future2 = executor.create_task(coro2)
 
                 # Coro1 is the 1st task, so it gets to await future2 in this spin
                 executor.spin_once(timeout_sec=0)
@@ -697,6 +757,122 @@ class TestExecutor(unittest.TestCase):
                 try:
                     fut = executor.create_future()
                     self.assertEqual(executor, fut._executor())
+                finally:
+                    executor.shutdown()
+
+    def test_spinning_multiple_times_spin(self) -> None:
+        self.assertIsNotNone(self.node.handle)
+        # Test all executor types including base Executor class
+        for cls in [SingleThreadedExecutor, MultiThreadedExecutor]:
+            with self.subTest(cls=cls):
+                executor = cls(context=self.context)
+                try:
+                    executor.add_node(self.node)
+
+                    # Start spinning in a background thread
+                    def spin_thread():
+                        executor.spin()
+
+                    t = threading.Thread(target=spin_thread, daemon=True)
+                    t.start()
+                    # Give the executor time to start spinning
+                    time.sleep(1.0)
+                    # Check that executor is spinning
+                    self.assertTrue(executor.is_spinning)
+                    # Try to spin again, should raise an exception
+                    with self.assertRaises(RuntimeError):
+                        executor.spin()
+                    # Shutdown the executor to stop the background thread
+                    executor.shutdown()
+                    t.join(timeout=1.0)
+                finally:
+                    executor.shutdown()
+
+    def test_spinning_multiple_times_spin_once(self) -> None:
+        self.assertIsNotNone(self.node.handle)
+        # Test all executor types including base Executor class
+        for cls in [SingleThreadedExecutor, MultiThreadedExecutor]:
+            with self.subTest(cls=cls):
+                executor = cls(context=self.context)
+                try:
+                    executor.add_node(self.node)
+
+                    # Start spinning in a background thread
+                    def spin_thread():
+                        executor.spin_once(timeout_sec=10.0)
+
+                    t = threading.Thread(target=spin_thread, daemon=True)
+                    t.start()
+                    # Give the executor time to start spinning
+                    time.sleep(1.0)
+                    # Check that executor is spinning
+                    self.assertTrue(executor.is_spinning)
+                    # Try to spin again, should raise an exception
+                    with self.assertRaises(RuntimeError):
+                        executor.spin_once(timeout_sec=1.0)
+                    # Wait for the background thread to complete
+                    t.join(timeout=1.0)
+                    executor.shutdown()
+                finally:
+                    executor.shutdown()
+
+    def test_spinning_multiple_times_spin_until_future_complete(self) -> None:
+        self.assertIsNotNone(self.node.handle)
+        # Test all executor types including base Executor class
+        for cls in [SingleThreadedExecutor, MultiThreadedExecutor]:
+            with self.subTest(cls=cls):
+                executor = cls(context=self.context)
+                try:
+                    executor.add_node(self.node)
+                    future = executor.create_future()
+
+                    # Start spinning in a background thread
+                    def spin_thread():
+                        executor.spin_until_future_complete(future, timeout_sec=10.0)
+
+                    t = threading.Thread(target=spin_thread, daemon=True)
+                    t.start()
+                    # Give the executor time to start spinning
+                    time.sleep(1.0)
+                    # Check that executor is spinning
+                    self.assertTrue(executor.is_spinning)
+                    # Try to spin again, should raise an exception
+                    with self.assertRaises(RuntimeError):
+                        executor.spin_until_future_complete(future, timeout_sec=1.0)
+                    # Complete the future and shutdown
+                    future.set_result(True)
+                    t.join(timeout=1.0)
+                    executor.shutdown()
+                finally:
+                    executor.shutdown()
+
+    def test_spinning_multiple_times_spin_once_until_future_complete(self) -> None:
+        self.assertIsNotNone(self.node.handle)
+        # Test all executor types including base Executor class
+        for cls in [SingleThreadedExecutor, MultiThreadedExecutor]:
+            with self.subTest(cls=cls):
+                executor = cls(context=self.context)
+                try:
+                    executor.add_node(self.node)
+                    future = executor.create_future()
+
+                    # Start spinning in a background thread
+                    def spin_thread():
+                        executor.spin_once_until_future_complete(future, timeout_sec=10.0)
+
+                    t = threading.Thread(target=spin_thread, daemon=True)
+                    t.start()
+                    # Give the executor time to start spinning
+                    time.sleep(1.0)
+                    # Check that executor is spinning
+                    self.assertTrue(executor.is_spinning)
+                    # Try to spin again, should raise an exception
+                    with self.assertRaises(RuntimeError):
+                        executor.spin_once_until_future_complete(future, timeout_sec=1.0)
+                    # Complete the future and shutdown
+                    future.set_result(True)
+                    t.join(timeout=1.0)
+                    executor.shutdown()
                 finally:
                     executor.shutdown()
 
