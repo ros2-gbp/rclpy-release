@@ -1,3 +1,26 @@
+## rclpy (humble) - 3.3.20-1
+
+The packages in the `rclpy` repository were released into the `humble` distro by running `/usr/bin/bloom-release --rosdistro humble --track humble rclpy` on `Mon, 09 Feb 2026 12:42:35 -0000`
+
+The `rclpy` package was released.
+
+Version of package(s) in repository `rclpy`:
+
+- upstream repository: https://github.com/ros2/rclpy.git
+- release repository: https://github.com/ros2-gbp/rclpy-release.git
+- rosdistro version: `3.3.19-1`
+- old version: `3.3.19-1`
+- new version: `3.3.20-1`
+
+Versions of tools used:
+
+- bloom version: `0.13.0`
+- catkin_pkg version: `1.1.0`
+- rosdep version: `0.26.0`
+- rosdistro version: `1.0.1`
+- vcstools version: `0.1.42`
+
+
 ## rclpy (jazzy) - 7.1.10-1
 
 The packages in the `rclpy` repository were released into the `jazzy` distro by running `/usr/bin/bloom-release --rosdistro jazzy --track jazzy rclpy` on `Mon, 09 Feb 2026 12:37:43 -0000`
