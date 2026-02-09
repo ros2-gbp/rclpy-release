@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format2.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="2">
   <name>rclpy</name>
-  <version>10.0.4</version>
+  <version>10.0.5</version>
   <description>Package containing the Python client.</description>
 
   <maintainer email="sloretz@openrobotics.org">Shane Loretz</maintainer>
@@ -51,6 +51,7 @@
   <exec_depend>rmw</exec_depend>
   <exec_depend>rmw_implementation</exec_depend>
   <exec_depend>rosgraph_msgs</exec_depend>
+  <exec_depend>rosidl_pycommon</exec_depend>
   <exec_depend>rosidl_runtime_c</exec_depend>
   <exec_depend>rpyutils</exec_depend>
   <exec_depend>service_msgs</exec_depend>
