@@ -50,12 +50,6 @@ class ClientWaitable(Waitable):
         self.node = node
         self.future = None
 
-    def __enter__(self) -> None:
-        pass
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        pass
-
     def is_ready(self, wait_set):
         """Return True if entities are ready in the wait set."""
         if wait_set.is_ready('client', self.client_index):
@@ -98,12 +92,6 @@ class ServerWaitable(Waitable):
 
         self.node = node
         self.future = None
-
-    def __enter__(self) -> None:
-        pass
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        pass
 
     def is_ready(self, wait_set):
         """Return True if entities are ready in the wait set."""
@@ -150,12 +138,6 @@ class TimerWaitable(Waitable):
         self.node = node
         self.future = None
 
-    def __enter__(self) -> None:
-        pass
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        pass
-
     def is_ready(self, wait_set):
         """Return True if entities are ready in the wait set."""
         if wait_set.is_ready('timer', self.timer_index):
@@ -166,7 +148,7 @@ class TimerWaitable(Waitable):
         """Take stuff from lower level so the wait set doesn't immediately wake again."""
         if self.timer_is_ready:
             self.timer_is_ready = False
-            self.timer.call_timer_with_info()
+            self.timer.call_timer()
             return 'timer'
         return None
 
@@ -199,12 +181,6 @@ class SubscriptionWaitable(Waitable):
 
         self.node = node
         self.future = None
-
-    def __enter__(self) -> None:
-        pass
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        pass
 
     def is_ready(self, wait_set):
         """Return True if entities are ready in the wait set."""
@@ -251,12 +227,6 @@ class GuardConditionWaitable(Waitable):
         self.node = node
         self.future = None
 
-    def __enter__(self) -> None:
-        pass
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        pass
-
     def is_ready(self, wait_set):
         """Return True if entities are ready in the wait set."""
         if wait_set.is_ready('guard_condition', self.guard_condition_index):
@@ -288,19 +258,13 @@ class GuardConditionWaitable(Waitable):
 
 class MutuallyExclusiveWaitable(Waitable):
 
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__(MutuallyExclusiveCallbackGroup())
-
-    def __enter__(self) -> None:
-        pass
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        pass
 
     def is_ready(self, wait_set):
         return False
 
-    def take_data(self) -> None:
+    def take_data(self):
         return None
 
     async def execute(self, taken_data):
@@ -338,15 +302,15 @@ class TestWaitable(unittest.TestCase):
         self.thr.start()
         return self.thr
 
-    def setUp(self) -> None:
+    def setUp(self):
         pass
 
-    def tearDown(self) -> None:
+    def tearDown(self):
         self.node.remove_waitable(self.waitable)
         # Ensure resources inside the waitable are destroyed before the node in tearDownClass
         del self.waitable
 
-    def test_waitable_with_client(self) -> None:
+    def test_waitable_with_client(self):
         self.waitable = ClientWaitable(self.node)
         self.node.add_waitable(self.waitable)
 
@@ -363,7 +327,7 @@ class TestWaitable(unittest.TestCase):
         assert isinstance(self.waitable.future.result()['client'], EmptySrv.Response)
         self.node.destroy_service(server)
 
-    def test_waitable_with_server(self) -> None:
+    def test_waitable_with_server(self):
         self.waitable = ServerWaitable(self.node)
         self.node.add_waitable(self.waitable)
         client = self.node.create_client(EmptySrv, 'test_server')
@@ -376,7 +340,7 @@ class TestWaitable(unittest.TestCase):
         assert isinstance(self.waitable.future.result()['server'], EmptySrv.Request)
         self.node.destroy_client(client)
 
-    def test_waitable_with_timer(self) -> None:
+    def test_waitable_with_timer(self):
         self.waitable = TimerWaitable(self.node)
         self.node.add_waitable(self.waitable)
 
@@ -386,7 +350,7 @@ class TestWaitable(unittest.TestCase):
         assert self.waitable.future.done()
         assert self.waitable.future.result()['timer']
 
-    def test_waitable_with_subscription(self) -> None:
+    def test_waitable_with_subscription(self):
         self.waitable = SubscriptionWaitable(self.node)
         self.node.add_waitable(self.waitable)
         pub = self.node.create_publisher(EmptyMsg, 'test_topic', 1)
@@ -399,7 +363,7 @@ class TestWaitable(unittest.TestCase):
         assert isinstance(self.waitable.future.result()['subscription'], EmptyMsg)
         self.node.destroy_publisher(pub)
 
-    def test_waitable_with_guard_condition(self) -> None:
+    def test_waitable_with_guard_condition(self):
         self.waitable = GuardConditionWaitable(self.node)
         self.node.add_waitable(self.waitable)
 
@@ -412,7 +376,7 @@ class TestWaitable(unittest.TestCase):
 
     # Test that waitable doesn't crash with MutuallyExclusiveCallbackGroup
     # https://github.com/ros2/rclpy/issues/264
-    def test_waitable_with_mutually_exclusive_callback_group(self) -> None:
+    def test_waitable_with_mutually_exclusive_callback_group(self):
         self.waitable = MutuallyExclusiveWaitable()
         self.node.add_waitable(self.waitable)
         self.executor.spin_once(timeout_sec=0.1)
@@ -420,7 +384,7 @@ class TestWaitable(unittest.TestCase):
 
 class TestNumberOfEntities(unittest.TestCase):
 
-    def test_add(self) -> None:
+    def test_add(self):
         n1 = NumberOfEntities(1, 2, 3, 4, 5, 6)
         n2 = NumberOfEntities(10, 20, 30, 40, 50, 60)
         n = n1 + n2
@@ -431,7 +395,7 @@ class TestNumberOfEntities(unittest.TestCase):
         assert n.num_services == 55
         assert n.num_events == 66
 
-    def test_add_assign(self) -> None:
+    def test_add_assign(self):
         n1 = NumberOfEntities(1, 2, 3, 4, 5, 6)
         n2 = NumberOfEntities(10, 20, 30, 40, 50, 60)
         n1 += n2

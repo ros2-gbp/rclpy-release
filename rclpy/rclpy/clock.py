@@ -12,21 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from enum import IntEnum
 from types import TracebackType
-from typing import Callable, Literal, Optional, overload, Type, TYPE_CHECKING, TypedDict
+from typing import Callable, Optional, Protocol, Type, TYPE_CHECKING, TypedDict
 
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
-from typing_extensions import TypeAlias
 
 from .clock_type import ClockType
 from .context import Context
+from .destroyable import DestroyableType
 from .duration import Duration
 from .exceptions import NotInitializedException
-from .time import Time
+from .time import Time, TimeHandle
 from .utilities import get_default_context
 
 
-ClockChange: TypeAlias = _rclpy.ClockChange
+if TYPE_CHECKING:
+    from typing import TypeAlias
+
+
+class ClockChange(IntEnum):
+    ROS_TIME_NO_CHANGE = _rclpy.ClockChange.ROS_TIME_NO_CHANGE
+    ROS_TIME_ACTIVATED = _rclpy.ClockChange.ROS_TIME_ACTIVATED
+    ROS_TIME_DEACTIVATED = _rclpy.ClockChange.ROS_TIME_DEACTIVATED
+    SYSTEM_TIME_NO_CHANGE = _rclpy.ClockChange.SYSTEM_TIME_NO_CHANGE
 
 
 class JumpThreshold:
@@ -82,7 +91,7 @@ class TimeJumpDictionary(TypedDict):
     delta: int
 
 
-JumpHandlePreCallbackType: TypeAlias = Callable[[], None]
+JumpHandlePreCallbackType: 'TypeAlias' = Callable[[], None]
 
 
 class JumpHandle:
@@ -137,35 +146,50 @@ class JumpHandle:
         self.unregister()
 
 
+class ClockHandle(DestroyableType, Protocol):
+    """Generic alias of _rclpy.Clock."""
+
+    def get_now(self) -> TimeHandle:
+        """Value of the clock."""
+        ...
+
+    def get_ros_time_override_is_enabled(self) -> bool:
+        """Return if a clock using ROS time has the ROS time override enabled."""
+        ...
+
+    def set_ros_time_override_is_enabled(self, enabled: bool) -> None:
+        """Set if a clock using ROS time has the ROS time override enabled."""
+        ...
+
+    def set_ros_time_override(self, time_point: TimeHandle) -> None:
+        """Set the ROS time override for a clock using ROS time."""
+        ...
+
+    def add_clock_callback(self, pyjump_handle: JumpHandle,
+                           on_clock_change: bool, min_forward: int, min_backward: int) -> None:
+        """Add a time jump callback to a clock."""
+        ...
+
+    def remove_clock_callback(self, pyjump_handle: JumpHandle) -> None:
+        """Remove a time jump callback from a clock."""
+        ...
+
+
 class Clock:
 
     if TYPE_CHECKING:
-        __clock: _rclpy.Clock
+        __clock: ClockHandle
         _clock_type: ClockType
-
-    @overload
-    def __new__(
-        cls,
-        *,
-        clock_type: Literal[ClockType.ROS_TIME]
-    ) -> 'ROSClock': ...
-
-    @overload
-    def __new__(
-        cls,
-        *,
-        clock_type: ClockType = ClockType.SYSTEM_TIME
-    ) -> 'Clock': ...
 
     def __new__(cls, *,
                 clock_type: ClockType = ClockType.SYSTEM_TIME) -> 'Clock':
-        if not isinstance(clock_type, ClockType):
+        if not isinstance(clock_type, (ClockType, _rclpy.ClockType)):
             raise TypeError('Clock type must be a ClockType enum')
         if clock_type is ClockType.ROS_TIME:
             self: 'Clock' = super().__new__(ROSClock)
         else:
             self = super().__new__(cls)
-        self.__clock = _rclpy.Clock(clock_type.value)
+        self.__clock = _rclpy.Clock(clock_type)
         self._clock_type = clock_type
         return self
 
@@ -174,7 +198,7 @@ class Clock:
         return self._clock_type
 
     @property
-    def handle(self) -> _rclpy.Clock:
+    def handle(self) -> ClockHandle:
         """
         Return the internal instance of ``rclpy::Clock``.
 
