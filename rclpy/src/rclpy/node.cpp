@@ -17,8 +17,6 @@
 #include <rcl_action/rcl_action.h>
 #include <rcl/error_handling.h>
 #include <rcl/graph.h>
-#include <rcl/logging.h>
-#include <rcl/logging_rosout.h>
 #include <rcl/types.h>
 #include <rcl_interfaces/msg/parameter_type.h>
 #include <rcl_yaml_param_parser/parser.h>
@@ -105,30 +103,6 @@ Node::get_count_subscribers(const char * topic_name)
   rcl_ret_t ret = rcl_count_subscribers(rcl_node_.get(), topic_name, &count);
   if (RCL_RET_OK != ret) {
     throw RCLError("Error in rcl_count_subscribers");
-  }
-
-  return count;
-}
-
-size_t
-Node::get_count_clients(const char * service_name)
-{
-  size_t count = 0;
-  rcl_ret_t ret = rcl_count_clients(rcl_node_.get(), service_name, &count);
-  if (RCL_RET_OK != ret) {
-    throw RCLError("Error in rcl_count_clients");
-  }
-
-  return count;
-}
-
-size_t
-Node::get_count_services(const char * service_name)
-{
-  size_t count = 0;
-  rcl_ret_t ret = rcl_count_services(rcl_node_.get(), service_name, &count);
-  if (RCL_RET_OK != ret) {
-    throw RCLError("Error in rcl_count_services");
   }
 
   return count;
@@ -465,24 +439,9 @@ Node::Node(
 
   rcl_node_ = std::shared_ptr<rcl_node_t>(
     new rcl_node_t,
-    [enable_rosout](rcl_node_t * node)
+    [](rcl_node_t * node)
     {
-      rcl_ret_t ret;
-      {
-        rclpy::LoggingGuard scoped_logging_guard;
-        if (rcl_logging_rosout_enabled() && enable_rosout) {
-          ret = rcl_logging_rosout_fini_publisher_for_node(node);
-          if (ret != RCL_RET_OK) {
-            // Warning should use line number of the current stack frame
-            int stack_level = 1;
-            PyErr_WarnFormat(
-              PyExc_RuntimeWarning, stack_level, "Failed to fini rosout publisher: %s",
-              rcl_get_error_string().str);
-            rcl_reset_error();
-          }
-        }
-      }
-      ret = rcl_node_fini(node);
+      rcl_ret_t ret = rcl_node_fini(node);
       if (RCL_RET_OK != ret) {
         // Warning should use line number of the current stack frame
         int stack_level = 1;
@@ -500,8 +459,11 @@ Node::Node(
   options.arguments = arguments;
   options.enable_rosout = enable_rosout;
 
-  ret = rcl_node_init(
-    rcl_node_.get(), node_name, namespace_, context.rcl_ptr(), &options);
+  {
+    rclpy::LoggingGuard scoped_logging_guard;
+    ret = rcl_node_init(
+      rcl_node_.get(), node_name, namespace_, context.rcl_ptr(), &options);
+  }
 
   if (RCL_RET_BAD_ALLOC == ret) {
     rcl_reset_error();
@@ -515,14 +477,6 @@ Node::Node(
   }
   if (RCL_RET_OK != ret) {
     throw RCLError("error creating node");
-  }
-
-  if (rcl_logging_rosout_enabled() && enable_rosout) {
-    rclpy::LoggingGuard scoped_logging_guard;
-    ret = rcl_logging_rosout_init_publisher_for_node(rcl_node_.get());
-    if (ret != RCL_RET_OK) {
-      throw RCLError("failed to initialize rosout publisher");
-    }
   }
 }
 
@@ -605,12 +559,6 @@ define_node(py::object module)
   .def(
     "get_count_subscribers", &Node::get_count_subscribers,
     "Returns the count of all the subscribers known for that topic in the entire ROS graph.")
-  .def(
-    "get_count_clients", &Node::get_count_clients,
-    "Returns the count of all the clients known for that service in the entire ROS graph.")
-  .def(
-    "get_count_services", &Node::get_count_services,
-    "Returns the count of all the servers known for that service in the entire ROS graph.")
   .def(
     "get_node_names_and_namespaces", &Node::get_node_names_and_namespaces,
     "Get the list of nodes discovered by the provided node")

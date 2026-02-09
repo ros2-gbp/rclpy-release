@@ -19,10 +19,8 @@
 
 #include <rcl/subscription.h>
 
-#include <cstddef>
 #include <memory>
 #include <string>
-#include <vector>
 
 #include "destroyable.hpp"
 #include "node.hpp"
@@ -48,11 +46,10 @@ public:
    * \param[in] pymsg_type Message module associated with the subscriber
    * \param[in] topic The topic name
    * \param[in] pyqos_profile rmw_qos_profile_t object for this subscription
-   * \param[in] content_filter_options ContentFilterOptions object for this subscription
    */
   Subscription(
     Node & node, py::object pymsg_type, std::string topic,
-    py::object pyqos_profile, py::object content_filter_options = py::none());
+    py::object pyqos_profile);
 
   /// Take a message and its metadata from a subscription
   /**
@@ -75,7 +72,7 @@ public:
    * \return None on failure
    */
   const char *
-  get_logger_name() const;
+  get_logger_name();
 
   /// Return the resolved topic name of a subscription.
   /**
@@ -86,16 +83,7 @@ public:
    * \return a string with the topic name
    */
   std::string
-  get_topic_name() const;
-
-  /// Count publishers from a subscriber.
-  /**
-   * Raises RCLError if the publisher count cannot be determined
-   *
-   * \return number of publishers
-   */
-  size_t
-  get_publisher_count() const;
+  get_topic_name();
 
   /// Get rcl_subscription_t pointer
   rcl_subscription_t *
@@ -108,34 +96,11 @@ public:
   void
   destroy() override;
 
-  /// Check if the content filtered topic of this subscription is enabled
-  bool is_cft_enabled() const;
-
-  /// Set the filter expression and expression parameters for the subscription.
-  /**
-   * \param[in] filter_expression A filter expression to set.
-   *   An empty string ("") will clear the content filter setting of the subscription.
-   * \param[in] expression_parameters Array of expression parameters to set.
-   * \throws RCLError if an unexpect error occurs
-   */
-  void
-  set_content_filter(
-    const std::string & filter_expression,
-    const std::vector<std::string> & expression_parameters);
-
-  /// Get the filter expression and expression parameters for the subscription.
-  /**
-   * \return The content filter options to get.
-   * \throws RCLError if an unexpect error occurs
-   */
-  py::object
-  get_content_filter() const;
-
 private:
   Node node_;
   std::shared_ptr<rcl_subscription_t> rcl_subscription_;
 };
-/// Define a pybind11 wrapper for an rclpy::Subscription
+/// Define a pybind11 wrapper for an rclpy::Service
 void define_subscription(py::object module);
 }  // namespace rclpy
 

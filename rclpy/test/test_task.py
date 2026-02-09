@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
 import unittest
 
 from rclpy.task import Future
@@ -49,7 +50,31 @@ class TestTask(unittest.TestCase):
         self.assertTrue(t.done())
         self.assertEqual('Sentinel Result', t.result())
 
-    def test_done_callback_scheduled(self) -> None:
+    def test_coroutine(self):
+        called1 = False
+        called2 = False
+
+        async def coro():
+            nonlocal called1
+            nonlocal called2
+            called1 = True
+            await asyncio.sleep(0)
+            called2 = True
+            return 'Sentinel Result'
+
+        t = Task(coro)
+        t()
+        self.assertTrue(called1)
+        self.assertFalse(called2)
+
+        called1 = False
+        t()
+        self.assertFalse(called1)
+        self.assertTrue(called2)
+        self.assertTrue(t.done())
+        self.assertEqual('Sentinel Result', t.result())
+
+    def test_done_callback_scheduled(self):
         executor = DummyExecutor()
 
         t = Task(lambda: None, executor=executor)

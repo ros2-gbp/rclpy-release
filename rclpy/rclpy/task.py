@@ -16,7 +16,6 @@ from enum import Enum
 import inspect
 import sys
 import threading
-from typing import Any, Callable, Coroutine, Generator, Optional
 import warnings
 import weakref
 
@@ -58,16 +57,13 @@ class Future:
                 'The following exception was never retrieved: ' + str(self._exception),
                 file=sys.stderr)
 
-    def __await__(self) -> Generator['Future', None, Optional[Any]]:
+    def __await__(self):
         # Yield if the task is not finished
-        if self._pending():
-            # This tells the task to suspend until the future is done
-            yield self
-        if self._pending():
-            raise RuntimeError('Future awaited a second time before it was done')
+        while self._pending():
+            yield
         return self.result()
 
-    def _pending(self) -> bool:
+    def _pending(self):
         return self._state == FutureState.PENDING
 
     def cancel(self):
@@ -184,7 +180,7 @@ class Future:
         The callback may be called immediately by this method if the future is already done.
         If this happens and the callback raises, the exception will be raised by this method.
 
-        :param callback: a callback taking the future as an argument to be run when completed
+        :param callback: a callback taking the future as an agrument to be run when completed
         """
         invoke = False
         with self._lock:
@@ -200,20 +196,6 @@ class Future:
         # Invoke when not holding self._lock
         if invoke:
             callback(self)
-
-    def remove_done_callback(self, callback: Callable[['Future'], None]) -> bool:
-        """
-        Remove a previously-added done callback.
-
-        Returns true if the given callback was found and removed.  Always fails if the Future was
-        already complete.
-        """
-        with self._lock:
-            try:
-                self._callbacks.remove(callback)
-            except ValueError:
-                return False
-            return True
 
 
 class Task(Future):
@@ -267,7 +249,16 @@ class Task(Future):
             self._executing = True
 
             if inspect.iscoroutine(self._handler):
-                self._execute_coroutine_step(self._handler)
+                # Execute a coroutine
+                try:
+                    self._handler.send(None)
+                except StopIteration as e:
+                    # The coroutine finished; store the result
+                    self.set_result(e.value)
+                    self._complete_task()
+                except Exception as e:
+                    self.set_exception(e)
+                    self._complete_task()
             else:
                 # Execute a normal function
                 try:
@@ -280,48 +271,7 @@ class Task(Future):
         finally:
             self._task_lock.release()
 
-    def _execute_coroutine_step(self, coro: Coroutine) -> None:
-        """Execute or resume a coroutine task."""
-        try:
-            result = coro.send(None)
-        except StopIteration as e:
-            # The coroutine finished; store the result
-            self.set_result(e.value)
-            self._complete_task()
-        except Exception as e:
-            # The coroutine raised; store the exception
-            self.set_exception(e)
-            self._complete_task()
-        else:
-            # The coroutine yielded; suspend the task until it is resumed
-            executor = self._executor()
-            if executor is None:
-                raise RuntimeError(
-                    'Task tried to reschedule but no executor was set: '
-                    'tasks should only be initialized through executor.create_task()')
-            elif isinstance(result, Future):
-                # Schedule the task to resume when the future is done
-                self._add_resume_callback(result, executor)
-            elif result is None:
-                # The coroutine yielded None, schedule the task to resume in the next spin
-                executor._call_task_in_next_spin(self)
-            else:
-                raise TypeError(
-                    f'Expected coroutine to yield a Future or None, got: {type(result)}')
-
-    def _add_resume_callback(self, future: Future, executor) -> None:
-        future_executor = future._executor()
-        if future_executor is None:
-            # The future is not associated with an executor yet, so associate it with ours
-            future._set_executor(executor)
-        elif future_executor is not executor:
-            raise RuntimeError('A task can only await futures associated with the same executor')
-
-        # The future is associated with the same executor, so we can resume the task directly
-        # in the done callback
-        future.add_done_callback(lambda _: self.__call__())
-
-    def _complete_task(self) -> None:
+    def _complete_task(self):
         """Cleanup after task finished."""
         self._handler = None
         self._args = None

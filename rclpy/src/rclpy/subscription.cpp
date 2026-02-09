@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
 
 #include <rcl/error_handling.h>
 #include <rcl/node.h>
@@ -22,13 +21,9 @@
 #include <rosidl_runtime_c/message_type_support_struct.h>
 #include <rmw/types.h>
 
-#include <cstddef>
 #include <memory>
 #include <stdexcept>
 #include <string>
-#include <vector>
-
-#include <rcpputils/scope_exit.hpp>
 
 #include "exceptions.hpp"
 #include "node.hpp"
@@ -40,25 +35,9 @@ using pybind11::literals::operator""_a;
 
 namespace rclpy
 {
-namespace
-{
-std::vector<const char *>
-get_c_vector_string(const std::vector<std::string> & strings_in)
-{
-  std::vector<const char *> cstrings;
-  cstrings.reserve(strings_in.size());
-
-  for (size_t i = 0; i < strings_in.size(); ++i) {
-    cstrings.push_back(strings_in[i].c_str());
-  }
-
-  return cstrings;
-}
-}  // namespace
-
 Subscription::Subscription(
   Node & node, py::object pymsg_type, std::string topic,
-  py::object pyqos_profile, py::object content_filter_options)
+  py::object pyqos_profile)
 : node_(node)
 {
   auto msg_type = static_cast<rosidl_message_type_support_t *>(
@@ -77,7 +56,7 @@ Subscription::Subscription(
     new rcl_subscription_t,
     [node](rcl_subscription_t * subscription)
     {
-      // Intentionally capture node by copy so shared_ptr can be transferred to copies
+      // Intentionally capture node by copy so shared_ptr can be transfered to copies
       rcl_ret_t ret = rcl_subscription_fini(subscription, node.rcl_ptr());
       if (RCL_RET_OK != ret) {
         // Warning should use line number of the current stack frame
@@ -91,24 +70,6 @@ Subscription::Subscription(
     });
 
   *rcl_subscription_ = rcl_get_zero_initialized_subscription();
-
-  std::string filter_expression;
-  std::vector<std::string> expression_parameters;
-  if (!content_filter_options.is_none()) {
-    filter_expression = content_filter_options.attr("filter_expression").cast<std::string>();
-    expression_parameters =
-      content_filter_options.attr("expression_parameters").cast<std::vector<std::string>>();
-    std::vector<const char *> cstrings =
-      get_c_vector_string(expression_parameters);
-    rcl_ret_t ret = rcl_subscription_options_set_content_filter_options(
-      filter_expression.c_str(),
-      cstrings.size(),
-      cstrings.data(),
-      &subscription_ops);
-    if (RCL_RET_OK != ret) {
-      throw rclpy::RCLError("Failed to set content_filter_options");
-    }
-  }
 
   rcl_ret_t ret = rcl_subscription_init(
     rcl_subscription_.get(), node_.rcl_ptr(), msg_type,
@@ -170,24 +131,15 @@ Subscription::take_message(py::object pymsg_type, bool raw)
 
     pytaken_msg = convert_to_py(taken_msg.get(), pymsg_type);
   }
-  py::object pub_seq_number = py::none();
-  if (message_info.publication_sequence_number != RMW_MESSAGE_INFO_SEQUENCE_NUMBER_UNSUPPORTED) {
-    pub_seq_number = py::int_(message_info.publication_sequence_number);
-  }
-  py::object rec_seq_number = py::none();
-  if (message_info.reception_sequence_number != RMW_MESSAGE_INFO_SEQUENCE_NUMBER_UNSUPPORTED) {
-    rec_seq_number = py::int_(message_info.reception_sequence_number);
-  }
+
   return py::make_tuple(
     pytaken_msg, py::dict(
       "source_timestamp"_a = message_info.source_timestamp,
-      "received_timestamp"_a = message_info.received_timestamp,
-      "publication_sequence_number"_a = pub_seq_number,
-      "reception_sequence_number"_a = rec_seq_number));
+      "received_timestamp"_a = message_info.received_timestamp));
 }
 
 const char *
-Subscription::get_logger_name() const
+Subscription::get_logger_name()
 {
   const char * node_logger_name = rcl_node_get_logger_name(node_.rcl_ptr());
   if (!node_logger_name) {
@@ -198,7 +150,7 @@ Subscription::get_logger_name() const
 }
 
 std::string
-Subscription::get_topic_name() const
+Subscription::get_topic_name()
 {
   const char * subscription_name = rcl_subscription_get_topic_name(rcl_subscription_.get());
   if (nullptr == subscription_name) {
@@ -207,111 +159,11 @@ Subscription::get_topic_name() const
 
   return std::string(subscription_name);
 }
-
-size_t
-Subscription::get_publisher_count() const
-{
-  size_t count = 0;
-  rcl_ret_t ret = rcl_subscription_get_publisher_count(rcl_subscription_.get(), &count);
-  if (RCL_RET_OK != ret) {
-    throw RCLError("failed to get publisher count");
-  }
-
-  return count;
-}
-
-bool
-Subscription::is_cft_enabled() const
-{
-  return rcl_subscription_is_cft_enabled(rcl_subscription_.get());
-}
-
-void
-Subscription::set_content_filter(
-  const std::string & filter_expression,
-  const std::vector<std::string> & expression_parameters)
-{
-  rcl_subscription_content_filter_options_t options =
-    rcl_get_zero_initialized_subscription_content_filter_options();
-  std::vector<const char *> cstrings = get_c_vector_string(expression_parameters);
-  rcl_ret_t ret = rcl_subscription_content_filter_options_init(
-    rcl_subscription_.get(),
-    filter_expression.c_str(),
-    cstrings.size(),
-    cstrings.data(),
-    &options);
-  if (RCL_RET_OK != ret) {
-    throw RCLError("Failed to init subscription content_filtered_topic option");
-  }
-
-  RCPPUTILS_SCOPE_EXIT(
-    {
-      rcl_ret_t ret = rcl_subscription_content_filter_options_fini(
-        rcl_subscription_.get(), &options);
-      if (RCL_RET_OK != ret) {
-        throw RCLError(
-          "Failed to fini subscription content_filtered_topic option: " +
-          std::string(rcl_get_error_string().str));
-      }
-    });
-
-  ret = rcl_subscription_set_content_filter(
-    rcl_subscription_.get(),
-    &options);
-  if (RCL_RET_OK != ret) {
-    throw RCLError("Failed to set cft expression parameters");
-  }
-}
-
-py::object
-Subscription::get_content_filter() const
-{
-  rcl_subscription_content_filter_options_t options =
-    rcl_get_zero_initialized_subscription_content_filter_options();
-
-  rcl_ret_t ret = rcl_subscription_get_content_filter(
-    rcl_subscription_.get(),
-    &options);
-  if (RCL_RET_OK != ret) {
-    throw RCLError("Failed to get cft expression parameters");
-  }
-
-  RCPPUTILS_SCOPE_EXIT(
-    {
-      rcl_ret_t ret = rcl_subscription_content_filter_options_fini(
-        rcl_subscription_.get(), &options);
-      if (RCL_RET_OK != ret) {
-        throw RCLError(
-          "Failed to fini subscription content_filtered_topic option: " +
-          std::string(rcl_get_error_string().str));
-      }
-    });
-
-  rmw_subscription_content_filter_options_t & content_filter_options =
-    options.rmw_subscription_content_filter_options;
-  std::vector<std::string> expression_parameters;
-  for (size_t i = 0; i < content_filter_options.expression_parameters.size; ++i) {
-    expression_parameters.push_back(content_filter_options.expression_parameters.data[i]);
-  }
-
-  py::object content_filter_options_class =
-    py::module_::import("rclpy.subscription_content_filter_options").attr("ContentFilterOptions");
-
-  return content_filter_options_class(
-    std::string(content_filter_options.filter_expression),
-    expression_parameters);
-}
-
 void
 define_subscription(py::object module)
 {
   py::class_<Subscription, Destroyable, std::shared_ptr<Subscription>>(module, "Subscription")
-  .def(py::init<Node &, py::object, std::string, py::object, py::object>(),
-    py::arg("node"),
-    py::arg("msg_type"),
-    py::arg("topic"),
-    py::arg("qos_profile"),
-    py::arg("content_filter_options") = py::none())
+  .def(py::init<Node &, py::object, std::string, py::object>())
   .def_property_readonly(
     "pointer", [](const Subscription & subscription) {
       return reinterpret_cast<size_t>(subscription.rcl_ptr());
@@ -325,17 +177,6 @@ define_subscription(py::object module)
     "Get the name of the logger associated with the node of the subscription.")
   .def(
     "get_topic_name", &Subscription::get_topic_name,
-    "Return the resolved topic name of a subscription.")
-  .def(
-    "get_publisher_count", &Subscription::get_publisher_count,
-    "Count the publishers from a subscription.")
-  .def("is_cft_enabled", &Subscription::is_cft_enabled,
-    "Check if content filtering is enabled for this subscription.")
-  .def(
-    "set_content_filter", &Subscription::set_content_filter,
-    "Set the filter expression and expression parameters for the subscription.")
-  .def(
-    "get_content_filter", &Subscription::get_content_filter,
-    "Get the filter expression and expression parameters for the subscription.");
+    "Return the resolved topic name of a subscription.");
 }
 }  // namespace rclpy
