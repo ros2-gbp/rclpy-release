@@ -14,11 +14,9 @@
 
 import time
 from typing import List
-from typing import TYPE_CHECKING
 import unittest
 
 import rclpy
-import rclpy.context
 import rclpy.executors
 from rclpy.qos import qos_profile_system_default
 from rclpy.service_introspection import ServiceIntrospectionState
@@ -28,12 +26,8 @@ from test_msgs.srv import BasicTypes
 
 class TestServiceEvents(unittest.TestCase):
 
-    if TYPE_CHECKING:
-        context: rclpy.context.Context
-        node: rclpy.node.Node
-
     @classmethod
-    def setUpClass(cls) -> None:
+    def setUpClass(cls):
         cls.context = rclpy.context.Context()
         rclpy.init(context=cls.context)
 
@@ -52,14 +46,13 @@ class TestServiceEvents(unittest.TestCase):
         self.node.destroy_node()
 
     @classmethod
-    def tearDownClass(cls) -> None:
+    def tearDownClass(cls):
         rclpy.shutdown(context=cls.context)
 
-    def sub_callback(self, msg: BasicTypes.Event) -> None:
+    def sub_callback(self, msg):
         self.event_messages.append(msg)
 
-    def srv_callback(self, req: BasicTypes.Request,
-                     resp: BasicTypes.Response) -> BasicTypes.Response:
+    def srv_callback(self, req, resp):
         resp.bool_value = not req.bool_value
         resp.int64_value = req.int64_value
         return resp

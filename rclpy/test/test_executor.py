@@ -16,9 +16,6 @@ import asyncio
 import os
 import threading
 import time
-from typing import Generator
-from typing import Optional
-from typing import Set
 import unittest
 import warnings
 
@@ -45,7 +42,7 @@ class TestExecutor(unittest.TestCase):
         rclpy.shutdown(context=self.context)
         self.context.destroy()
 
-    def func_execution(self, executor: Executor) -> bool:
+    def func_execution(self, executor):
         got_callback = False
 
         def timer_callback() -> None:
@@ -154,7 +151,7 @@ class TestExecutor(unittest.TestCase):
         # check default behavior, either platform configuration or defaults to 2
         executor = MultiThreadedExecutor(context=self.context)
         if hasattr(os, 'sched_getaffinity'):
-            platform_threads: Optional[int] = len(os.sched_getaffinity(0))
+            platform_threads = len(os.sched_getaffinity(0))
         else:
             platform_threads = os.cpu_count()
         self.assertEqual(platform_threads, executor._executor._max_workers)
@@ -185,7 +182,7 @@ class TestExecutor(unittest.TestCase):
     def test_multi_threaded_executor_closes_threads(self) -> None:
         self.assertIsNotNone(self.node.handle)
 
-        def get_threads() -> Set[str]:
+        def get_threads():
             return {t.name for t in threading.enumerate()}
 
         main_thread_name = get_threads()
@@ -236,6 +233,8 @@ class TestExecutor(unittest.TestCase):
                     await asyncio.sleep(0)
                     called2 = True
 
+                # TODO(bmartin427) The type markup on Node.create_timer() says you can't pass a
+                # coroutine here.
                 tmr = self.node.create_timer(0.1, coroutine)
                 try:
                     executor.spin_once(timeout_sec=1.23)
@@ -286,7 +285,7 @@ class TestExecutor(unittest.TestCase):
                 executor = cls(context=self.context)
                 executor.add_node(self.node)
 
-                async def coroutine() -> str:
+                async def coroutine():
                     return 'Sentinel Result'
 
                 future = executor.create_task(coroutine)
@@ -337,7 +336,7 @@ class TestExecutor(unittest.TestCase):
                 executor = cls(context=self.context)
                 executor.add_node(self.node)
 
-                async def coroutine() -> str:
+                async def coroutine():
                     return 'Sentinel Result'
 
                 future = executor.create_task(coroutine)
@@ -364,19 +363,19 @@ class TestExecutor(unittest.TestCase):
                     await thread_future
 
                 def future_thread():
-                    time.sleep(0.1)  # Simulate some work
+                    threading.Event().wait(0.1)  # Simulate some work
                     thread_future.set_result(None)
 
                 t = threading.Thread(target=future_thread)
 
                 coroutine_future = executor.create_task(coroutine)
 
-                start_time = time.perf_counter()
+                start_time = time.monotonic()
 
                 t.start()
                 executor.spin_until_future_complete(coroutine_future, timeout_sec=1.0)
 
-                end_time = time.perf_counter()
+                end_time = time.monotonic()
 
                 self.assertTrue(coroutine_future.done())
 
@@ -391,7 +390,7 @@ class TestExecutor(unittest.TestCase):
                 executor = cls(context=self.context)
                 executor.add_node(self.node)
 
-                def func() -> str:
+                def func():
                     return 'Sentinel Result'
 
                 future = executor.create_task(func)
@@ -408,12 +407,12 @@ class TestExecutor(unittest.TestCase):
                 executor = cls(context=self.context)
                 executor.add_node(self.node)
 
-                async def coro1() -> str:
+                async def coro1():
                     return 'Sentinel Result 1'
 
                 future1 = executor.create_task(coro1)
 
-                async def coro2() -> str:
+                async def coro2():
                     return 'Sentinel Result 2'
 
                 future2 = executor.create_task(coro2)
@@ -436,14 +435,14 @@ class TestExecutor(unittest.TestCase):
                 executor = cls(context=self.context)
                 executor.add_node(self.node)
 
-                async def coro1() -> str:
-                    nonlocal future2  # type: ignore[misc]
+                async def coro1():
+                    nonlocal future2
                     await future2
                     return 'Sentinel Result 1'
 
                 future1 = executor.create_task(coro1)
 
-                async def coro2() -> str:
+                async def coro2():
                     return 'Sentinel Result 2'
 
                 future2 = executor.create_task(coro2)
@@ -470,7 +469,7 @@ class TestExecutor(unittest.TestCase):
 
                 future = None
 
-                def spin_until_task_done(executor: Executor) -> None:
+                def spin_until_task_done(executor):
                     nonlocal future
                     while future is None or not future.done():
                         try:
@@ -487,7 +486,7 @@ class TestExecutor(unittest.TestCase):
                 # '_wait_for_ready_callbacks()'
                 time.sleep(1)
 
-                def func() -> str:
+                def func():
                     return 'Sentinel Result'
 
                 # Create a task
@@ -509,7 +508,7 @@ class TestExecutor(unittest.TestCase):
             def __init__(self) -> None:
                 self.do_yield = True
 
-            def __await__(self) -> Generator[None, None, None]:
+            def __await__(self):
                 while self.do_yield:
                     yield
                 return
@@ -582,7 +581,7 @@ class TestExecutor(unittest.TestCase):
                     pass
                 timer = self.node.create_timer(0.003, timer_callback)
 
-                def set_future_result(future: Future[str]) -> None:
+                def set_future_result(future):
                     future.set_result('finished')
 
                 # Future complete timeout_sec > 0

@@ -18,8 +18,6 @@ import unittest
 
 import action_msgs.msg
 import rclpy.action
-from rclpy.action.client import ClientGoalHandle
-from rclpy.action.server import ServerGoalHandle
 import rclpy.clock_type
 import rclpy.duration
 import rclpy.event_handler
@@ -34,20 +32,6 @@ import rosgraph_msgs.msg
 import test_msgs.action
 import test_msgs.msg
 import test_msgs.srv
-
-from typing_extensions import TypeAlias
-
-
-FibonacciServerGoalHandle: TypeAlias = ServerGoalHandle[test_msgs.action.Fibonacci.Goal,
-                                                        test_msgs.action.Fibonacci.Result,
-                                                        test_msgs.action.Fibonacci.Feedback,
-                                                        test_msgs.action.Fibonacci.Impl]
-
-
-FibonacciClientGoalHandle: TypeAlias = ClientGoalHandle[test_msgs.action.Fibonacci.Goal,
-                                                        test_msgs.action.Fibonacci.Result,
-                                                        test_msgs.action.Fibonacci.Feedback,
-                                                        test_msgs.action.Fibonacci.Impl]
 
 
 def _get_pub_sub_qos(transient_local: bool) -> rclpy.qos.QoSProfile:
@@ -304,7 +288,7 @@ class ActionServerTestNode(rclpy.node.Node):
             handle_accepted_callback=self._handle_accepted,
             result_timeout=10,
         )
-        self._goal_handle: typing.Optional[FibonacciServerGoalHandle] = None
+        self._goal_handle: typing.Optional[rclpy.action.server.ServerGoalHandle] = None
         self._sequence: list[int] = []
 
     def expect_goal(self) -> rclpy.Future[test_msgs.action.Fibonacci.Goal]:
@@ -312,7 +296,7 @@ class ActionServerTestNode(rclpy.node.Node):
         self._got_goal_future = rclpy.Future()
         return self._got_goal_future
 
-    def _handle_accepted(self, goal_handle: FibonacciServerGoalHandle) -> None:
+    def _handle_accepted(self, goal_handle: rclpy.action.server.ServerGoalHandle) -> None:
         self._goal_handle = goal_handle
         self._sequence = [0, 1]
         if self._got_goal_future is not None:
@@ -342,7 +326,7 @@ class ActionServerTestNode(rclpy.node.Node):
         self._goal_handle.publish_feedback(fb)
         return self._sequence
 
-    def execute(self) -> FibonacciServerGoalHandle:
+    def execute(self) -> rclpy.action.server.ServerGoalHandle:
         """
         Completes the action in progress.
 
@@ -356,7 +340,7 @@ class ActionServerTestNode(rclpy.node.Node):
         return handle
 
     def _handle_execute(
-        self, goal_handle: FibonacciServerGoalHandle
+        self, goal_handle: rclpy.action.server.ServerGoalHandle
     ) -> test_msgs.action.Fibonacci.Result:
         goal_handle.succeed()
         result = test_msgs.action.Fibonacci.Result()
@@ -369,7 +353,11 @@ class ActionClientTestNode(rclpy.node.Node):
 
     def __init__(self) -> None:
         super().__init__('test_action_client_node')
-        self._client = rclpy.action.ActionClient(self, test_msgs.action.Fibonacci, 'test_action')
+        self._client = rclpy.action.ActionClient[
+            test_msgs.action.Fibonacci.Goal,
+            test_msgs.action.Fibonacci.Result,
+            test_msgs.action.Fibonacci.Feedback,
+        ](self, test_msgs.action.Fibonacci, 'test_action')
         self._feedback_future: typing.Optional[
             rclpy.Future[test_msgs.action.Fibonacci.Feedback]
         ] = None
@@ -377,7 +365,7 @@ class ActionClientTestNode(rclpy.node.Node):
             None
         )
 
-    def send_goal(self, order: int) -> rclpy.Future[FibonacciClientGoalHandle]:
+    def send_goal(self, order: int) -> rclpy.Future[rclpy.action.client.ClientGoalHandle]:
         """
         Send a new goal.
 
@@ -393,7 +381,7 @@ class ActionClientTestNode(rclpy.node.Node):
         goal_ack_future.add_done_callback(self._handle_goal_ack)
         return goal_ack_future
 
-    def _handle_goal_ack(self, future: rclpy.Future[FibonacciClientGoalHandle]) -> None:
+    def _handle_goal_ack(self, future: rclpy.Future[rclpy.action.client.ClientGoalHandle]) -> None:
         handle = future.result()
         assert handle is not None
         result_future = handle.get_result_async()
@@ -437,7 +425,7 @@ rmw_matched_status_t = typing.Union[
 
 class TestEventsExecutor(unittest.TestCase):
 
-    def setUp(self, *args: typing.Any, **kwargs: typing.Any) -> None:
+    def setUp(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         # Prevent nodes under test from discovering other random stuff to talk to
         os.environ['ROS_AUTOMATIC_DISCOVERY_RANGE'] = 'OFF'
@@ -694,8 +682,8 @@ class TestEventsExecutor(unittest.TestCase):
         # Create two timers with the same interval, both set to cancel the other from the callback.
         # Only one of the callbacks should be delivered, though we can't necessarily predict which
         # one.
-        def handler() -> None:
-            nonlocal count, timer1, timer2  # type: ignore[misc]
+        def handler():
+            nonlocal count, timer1, timer2
             count += 1
             timer1.cancel()
             timer2.cancel()

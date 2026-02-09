@@ -34,7 +34,6 @@
 #include <tuple>
 #include <vector>
 
-#include "clock.hpp"
 #include "destroyable.hpp"
 #include "exceptions.hpp"
 #include "lifecycle.hpp"
@@ -50,8 +49,8 @@ class LifecycleStateMachine : public rclpy::Destroyable,
 {
 public:
   LifecycleStateMachine(
-    rclpy::Node & node, rclpy::Clock & clock, bool enable_com_interface)
-  : node_(node), clock_(clock)
+    rclpy::Node & node, bool enable_com_interface)
+  : node_(node)
   {
     state_machine_ = std::shared_ptr<rcl_lifecycle_state_machine_t>(
       new rcl_lifecycle_state_machine_t(rcl_lifecycle_get_zero_initialized_state_machine()),
@@ -71,7 +70,6 @@ public:
     rcl_ret_t ret = rcl_lifecycle_state_machine_init(
       state_machine_.get(),
       node_.rcl_ptr(),
-      clock_.rcl_ptr(),
       ROSIDL_GET_MSG_TYPE_SUPPORT(lifecycle_msgs, msg, TransitionEvent),
       ROSIDL_GET_SRV_TYPE_SUPPORT(lifecycle_msgs, srv, ChangeState),
       ROSIDL_GET_SRV_TYPE_SUPPORT(lifecycle_msgs, srv, GetState),
@@ -270,7 +268,6 @@ public:
 
 private:
   rclpy::Node node_;
-  rclpy::Clock clock_;
   std::shared_ptr<rclpy::Service> srv_change_state_;
   std::shared_ptr<rclpy::Service> srv_get_state_;
   std::shared_ptr<rclpy::Service> srv_get_available_states_;
@@ -310,7 +307,7 @@ define_lifecycle_api(py::module m)
 {
   py::class_<LifecycleStateMachine, Destroyable, std::shared_ptr<LifecycleStateMachine>>(
     m, "LifecycleStateMachine")
-  .def(py::init<Node &, Clock &, bool>())
+  .def(py::init<Node &, bool>())
   .def_property_readonly(
     "initialized", &LifecycleStateMachine::is_initialized,
     "Check if state machine is initialized.")

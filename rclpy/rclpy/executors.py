@@ -56,9 +56,7 @@ from rclpy.subscription import MessageInfo
 from rclpy.subscription import Subscription
 from rclpy.task import Future
 from rclpy.task import Task
-from rclpy.timer import Timer
-from rclpy.timer import TimerCallbackType
-from rclpy.timer import TimerInfo
+from rclpy.timer import Timer, TimerInfo
 from rclpy.type_support import Msg
 from rclpy.utilities import get_default_context
 from rclpy.utilities import timeout_sec_to_nsec
@@ -496,7 +494,8 @@ class Executor(ContextManager['Executor']):
                     actual_call_time=info['actual_call_time'],
                     clock_type=tmr.clock.clock_type)
 
-                def check_argument_type(callback_func: TimerCallbackType,
+                def check_argument_type(callback_func: Union[Callable[[], None],
+                                                             Callable[[TimerInfo], None]],
                                         target_type: Type[TimerInfo]) -> Optional[str]:
                     sig = inspect.signature(callback_func)
                     for param in sig.parameters.values():
@@ -543,8 +542,7 @@ class Executor(ContextManager['Executor']):
                     return None
 
                 if sub._callback_type is Subscription.CallbackType.MessageOnly:
-                    msg_tuple: Union[tuple[Msg],
-                                     tuple[Msg, MessageInfo]] = (msg_info[0], )
+                    msg_tuple: Union[Tuple[Msg], Tuple[Msg, MessageInfo]] = (msg_info[0], )
                 else:
                     msg_tuple = msg_info
 
@@ -1070,7 +1068,6 @@ class MultiThreadedExecutor(Executor):
                 'Use the SingleThreadedExecutor instead.')
         self._futures: List[Future[Any]] = []
         self._executor = ThreadPoolExecutor(num_threads)
-        self._futures_lock = Lock()
 
     def _spin_once_impl(
         self,
@@ -1091,14 +1088,12 @@ class MultiThreadedExecutor(Executor):
         else:
             self._executor.submit(handler)
             self._futures.append(handler)
-            with self._futures_lock:
-                for future in self._futures:
-                    if future.done():
-                        self._futures.remove(future)
-                        future.result()  # raise any exceptions
-
-            # Yield GIL so executor threads have a chance to run.
-            os.sched_yield() if hasattr(os, 'sched_yield') else time.sleep(0)
+            # make a copy of the list that we iterate over while modifying it
+            # (https://stackoverflow.com/q/1207406/3753684)
+            for future in self._futures[:]:
+                if future.done():
+                    self._futures.remove(future)
+                    future.result()  # raise any exceptions
 
     def spin_once(self, timeout_sec: Optional[float] = None) -> None:
         # Mark executor as spinning to prevent concurrent spins

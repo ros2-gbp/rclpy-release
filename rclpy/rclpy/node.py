@@ -22,7 +22,6 @@ from typing import Dict
 from typing import Final
 from typing import Iterator
 from typing import List
-from typing import Literal
 from typing import Optional
 from typing import overload
 from typing import Sequence
@@ -53,7 +52,6 @@ from rclpy.clock import Clock
 from rclpy.clock import ROSClock
 from rclpy.constants import S_TO_NS
 from rclpy.context import Context
-from rclpy.endpoint_info import ServiceEndpointInfo, TopicEndpointInfo
 from rclpy.event_handler import PublisherEventCallbacks
 from rclpy.event_handler import SubscriptionEventCallbacks
 from rclpy.exceptions import InvalidHandle
@@ -68,7 +66,6 @@ from rclpy.exceptions import ParameterUninitializedException
 from rclpy.executors import Executor
 from rclpy.expand_topic_name import expand_topic_name
 from rclpy.guard_condition import GuardCondition
-from rclpy.guard_condition import GuardConditionCallbackType
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.impl.rcutils_logger import RcutilsLogger
 from rclpy.logging import get_logger
@@ -84,14 +81,13 @@ from rclpy.qos import QoSProfile
 from rclpy.qos_overriding_options import _declare_qos_parameters
 from rclpy.qos_overriding_options import QoSOverridingOptions
 from rclpy.service import Service
-from rclpy.subscription import GenericSubscriptionCallback
+from rclpy.subscription import MessageInfo
 from rclpy.subscription import Subscription
-from rclpy.subscription import SubscriptionCallbackUnion
 from rclpy.subscription_content_filter_options import ContentFilterOptions
 from rclpy.time_source import TimeSource
 from rclpy.timer import Rate
-from rclpy.timer import Timer
-from rclpy.timer import TimerCallbackType
+from rclpy.timer import Timer, TimerInfo
+from rclpy.topic_endpoint_info import TopicEndpointInfo
 from rclpy.type_description_service import TypeDescriptionService
 from rclpy.type_support import check_is_valid_msg_type
 from rclpy.type_support import check_is_valid_srv_type
@@ -106,6 +102,16 @@ from rclpy.validate_node_name import validate_node_name
 from rclpy.validate_parameter_name import validate_parameter_name
 from rclpy.validate_topic_name import validate_topic_name
 from rclpy.waitable import Waitable
+
+try:
+    from typing_extensions import deprecated
+except ImportError:
+    # Compatibility with Debian Bookworm
+    def deprecated(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
 from typing_extensions import TypeAlias
 
 
@@ -121,8 +127,6 @@ SrvTypeResponse = TypeVar('SrvTypeResponse')
 # Re-export exception defined in _rclpy C extension.
 # `Node.get_*_names_and_types_by_node` methods may raise this error.
 NodeNameNonExistentError: TypeAlias = _rclpy.NodeNameNonExistentError
-
-ParameterInput: TypeAlias = Union[AllowableParameterValue, Parameter.Type, ParameterValue]
 
 
 class Node:
@@ -321,7 +325,7 @@ class Node:
         return None
 
     @executor.setter
-    def executor(self, new_executor: Optional[Executor]) -> None:
+    def executor(self, new_executor: Executor) -> None:
         """Set or change the executor the node belongs to."""
         current_executor = self.executor
         if current_executor == new_executor:
@@ -388,10 +392,23 @@ class Node:
         return self._logger
 
     @overload
-    def declare_parameter(self, name: str, value: AllowableParameterValueT,
+    def declare_parameter(self, name: str, value: Union[AllowableParameterValueT,
+                                                        Parameter.Type, ParameterValue],
                           descriptor: Optional[ParameterDescriptor] = None,
                           ignore_override: bool = False
                           ) -> Parameter[AllowableParameterValueT]: ...
+
+    @overload
+    @deprecated('when declaring a parameter only providing its name is deprecated. '
+                'You have to either:\n'
+                '\t- Pass a name and a default value different to "PARAMETER NOT SET"'
+                ' (and optionally a descriptor).\n'
+                '\t- Pass a name and a parameter type.\n'
+                '\t- Pass a name and a descriptor with `dynamic_typing=True')
+    def declare_parameter(self, name: str,
+                          value: None = None,
+                          descriptor: None = None,
+                          ignore_override: bool = False) -> Parameter[Any]: ...
 
     @overload
     def declare_parameter(self, name: str,
@@ -427,19 +444,55 @@ class Node:
         """
         if value is None and descriptor is None:
             # Temporal patch so we get deprecation warning if only a name is provided.
-            args: Union[Tuple[str], Tuple[str, ParameterInput, ParameterDescriptor]] = (name, )
+            args: Union[Tuple[str], Tuple[str, Union[AllowableParameterValue,
+                                                     Parameter.Type, ParameterValue],
+                                          ParameterDescriptor]] = (name, )
         else:
             descriptor = ParameterDescriptor() if descriptor is None else descriptor
             args = (name, value, descriptor)
         return self.declare_parameters('', [args], ignore_override)[0]
 
+    ParameterInput: TypeAlias = Union[AllowableParameterValue, Parameter.Type, ParameterValue]
+
+    @overload
+    def declare_parameters(
+        self,
+        namespace: str,
+        parameters: Sequence[Union[
+            Tuple[str, ParameterInput],
+            Tuple[str, ParameterInput, ParameterDescriptor],
+        ]],
+        ignore_override: bool = False
+    ) -> List[Parameter[Any]]: ...
+
+    @overload
+    @deprecated('when declaring a parameter only providing its name is deprecated. '
+                'You have to either:\n'
+                '\t- Pass a name and a default value different to "PARAMETER NOT SET"'
+                ' (and optionally a descriptor).\n'
+                '\t- Pass a name and a parameter type.\n'
+                '\t- Pass a name and a descriptor with `dynamic_typing=True')
     def declare_parameters(
         self,
         namespace: str,
         parameters: Sequence[Union[
             Tuple[str],
             Tuple[str, ParameterInput],
+            Tuple[str, ParameterInput, ParameterDescriptor],
+        ]],
+        ignore_override: bool = False
+    ) -> List[Parameter[Any]]: ...
+
+    def declare_parameters(
+        self,
+        namespace: str,
+        parameters: Union[Sequence[Union[
+            Tuple[str],
+            Tuple[str, ParameterInput],
             Tuple[str, ParameterInput, ParameterDescriptor]]],
+                  Sequence[Union[
+            Tuple[str, ParameterInput],
+            Tuple[str, ParameterInput, ParameterDescriptor]]]],
         ignore_override: bool = False
     ) -> List[Parameter[Any]]:
         """
@@ -521,14 +574,15 @@ class Node:
                 )
 
             if len(parameter_tuple) == 1:
-                raise TypeError(
+                warnings.warn(
                     f"when declaring parameter named '{name}', "
-                    'declaring a parameter only providing its name is not allowed. '
+                    'declaring a parameter only providing its name is deprecated. '
                     'You have to either:\n'
                     '\t- Pass a name and a default value different to "PARAMETER NOT SET"'
                     ' (and optionally a descriptor).\n'
                     '\t- Pass a name and a parameter type.\n'
                     '\t- Pass a name and a descriptor with `dynamic_typing=True')
+                descriptor.dynamic_typing = True
 
             if isinstance(second_arg, Parameter.Type):
                 if second_arg == Parameter.Type.NOT_SET:
@@ -689,7 +743,7 @@ class Node:
             and the parameter hadn't been declared beforehand.
         """
         if self.has_parameter(name):
-            return self._parameters[name].type_
+            return self._parameters[name].type_.value
         elif self._allow_undeclared_parameters:
             return Parameter.Type.NOT_SET
         else:
@@ -1631,41 +1685,11 @@ class Node:
 
         return publisher
 
-    @overload
     def create_subscription(
         self,
         msg_type: Type[MsgT],
         topic: str,
-        callback: GenericSubscriptionCallback[bytes],
-        qos_profile: Union[QoSProfile, int],
-        *,
-        callback_group: Optional[CallbackGroup] = None,
-        event_callbacks: Optional[SubscriptionEventCallbacks] = None,
-        qos_overriding_options: Optional[QoSOverridingOptions] = None,
-        raw: Literal[True],
-        content_filter_options: Optional[ContentFilterOptions] = None
-    ) -> Subscription[MsgT]: ...
-
-    @overload
-    def create_subscription(
-        self,
-        msg_type: Type[MsgT],
-        topic: str,
-        callback: GenericSubscriptionCallback[MsgT],
-        qos_profile: Union[QoSProfile, int],
-        *,
-        callback_group: Optional[CallbackGroup] = None,
-        event_callbacks: Optional[SubscriptionEventCallbacks] = None,
-        qos_overriding_options: Optional[QoSOverridingOptions] = None,
-        raw: bool = False,
-        content_filter_options: Optional[ContentFilterOptions] = None
-    ) -> Subscription[MsgT]: ...
-
-    def create_subscription(
-        self,
-        msg_type: Type[MsgT],
-        topic: str,
-        callback: SubscriptionCallbackUnion[MsgT],
+        callback: Union[Callable[[MsgT], None], Callable[[MsgT, MessageInfo], None]],
         qos_profile: Union[QoSProfile, int],
         *,
         callback_group: Optional[CallbackGroup] = None,
@@ -1744,7 +1768,7 @@ class Node:
 
     def create_client(
         self,
-        srv_type: type[Srv[SrvRequestT, SrvResponseT]],
+        srv_type: Type[Srv],
         srv_name: str,
         *,
         qos_profile: QoSProfile = qos_profile_services_default,
@@ -1765,7 +1789,7 @@ class Node:
         failed = False
         try:
             with self.handle:
-                client_impl = _rclpy.Client(
+                client_impl: '_rclpy.Client[SrvRequestT, SrvResponseT]' = _rclpy.Client(
                     self.handle,
                     srv_type,
                     srv_name,
@@ -1775,7 +1799,7 @@ class Node:
         if failed:
             self._validate_topic_or_service_name(srv_name, is_service=True)
 
-        client = Client(
+        client: Client[SrvRequestT, SrvResponseT] = Client(
             self.context,
             client_impl, srv_type, srv_name, qos_profile,
             callback_group)
@@ -1786,7 +1810,7 @@ class Node:
 
     def create_service(
         self,
-        srv_type: type[Srv[SrvRequestT, SrvResponseT]],
+        srv_type: Type[Srv],
         srv_name: str,
         callback: Callable[[SrvRequestT, SrvResponseT], SrvResponseT],
         *,
@@ -1831,7 +1855,7 @@ class Node:
     def create_timer(
         self,
         timer_period_sec: float,
-        callback: Optional[TimerCallbackType],
+        callback: Union[Callable[[], None], Callable[[TimerInfo], None], None],
         callback_group: Optional[CallbackGroup] = None,
         clock: Optional[Clock] = None,
         autostart: bool = True,
@@ -1868,7 +1892,7 @@ class Node:
 
     def create_guard_condition(
         self,
-        callback: GuardConditionCallbackType,
+        callback: Callable[[], None],
         callback_group: Optional[CallbackGroup] = None
     ) -> GuardCondition:
         """
@@ -2142,57 +2166,6 @@ class Node:
             return _rclpy.rclpy_get_client_names_and_types_by_node(
                 self.handle, node_name, node_namespace)
 
-    def get_action_client_names_and_types_by_node(
-        self,
-        node_name: str,
-        node_namespace: str
-    ) -> List[Tuple[str, List[str]]]:
-        """
-        Get a list of action names and types for action clients associated with a remote node.
-
-        :param node_name: Name of a remote node to get action clients for.
-        :param node_namespace: Namespace of the remote node.
-        :return: List of tuples.
-          The first element of each tuple is the action name and the second element is a list of
-          action types.
-        :raise NodeNameNonExistentError: If the node wasn't found.
-        :raise RuntimeError: Unexpected failure.
-        """
-        with self.handle:
-            return _rclpy.rclpy_get_action_client_names_and_types_by_node(
-                self.handle, node_name, node_namespace)
-
-    def get_action_server_names_and_types_by_node(
-        self,
-        node_name: str,
-        node_namespace: str
-    ) -> List[Tuple[str, List[str]]]:
-        """
-        Get a list of action names and types for action servers associated with a remote node.
-
-        :param node_name: Name of a remote node to get action servers for.
-        :param node_namespace: Namespace of the remote node.
-        :return: List of tuples.
-          The first element of each tuple is the action name and the second element is a list of
-          action types.
-        :raise NodeNameNonExistentError: If the node wasn't found.
-        :raise RuntimeError: Unexpected failure.
-        """
-        with self.handle:
-            return _rclpy.rclpy_get_action_server_names_and_types_by_node(
-                self.handle, node_name, node_namespace)
-
-    def get_action_names_and_types(self) -> List[Tuple[str, List[str]]]:
-        """
-        Get a list of action names and types in the ROS graph.
-
-        :return: List of tuples.
-          The first element of each tuple is the action name and the second element is a list of
-          action types.
-        """
-        with self.handle:
-            return _rclpy.rclpy_get_action_names_and_types(self.handle)
-
     def get_topic_names_and_types(self, no_demangle: bool = False) -> List[Tuple[str, List[str]]]:
         """
         Get a list of discovered topic names and types.
@@ -2418,96 +2391,6 @@ class Node:
             topic_name,
             no_mangle,
             _rclpy.rclpy_get_subscriptions_info_by_topic)
-
-    def _get_info_by_service(
-        self,
-        service_name: str,
-        no_mangle: bool,
-        func: Callable[[_rclpy.Node, str, bool], List['_rclpy.ServiceEndpointInfoDict']]
-    ) -> List[ServiceEndpointInfo]:
-        with self.handle:
-            if no_mangle:
-                fq_topic_name = service_name
-            else:
-                fq_topic_name = expand_topic_name(
-                    service_name, self.get_name(), self.get_namespace())
-                validate_full_topic_name(fq_topic_name)
-                fq_topic_name = _rclpy.rclpy_remap_topic_name(self.handle, fq_topic_name)
-            info_dicts = func(self.handle, fq_topic_name, no_mangle)
-            infos = [ServiceEndpointInfo(**x) for x in info_dicts]
-            return infos
-
-    def get_clients_info_by_service(
-        self,
-        service_name: str,
-        no_mangle: bool = False
-    ) -> List[ServiceEndpointInfo]:
-        """
-        Return a list of clients on a given service.
-
-        The returned parameter is a list of ServiceEndpointInfo objects, where each will contain
-        the node name, node namespace, service type, service endpoint's GIDs, and its QoS profiles.
-
-        When the ``no_mangle`` parameter is ``True``, the provided ``service_name`` should be a
-        valid service name for the middleware (useful when combining ROS with native middleware
-        apps). When the ``no_mangle`` parameter is ``False``,the provided
-        ``service_name`` should follow ROS service name conventions.
-        In DDS-based RMWs, services are implemented as topics with mangled
-        names (e.g., `rq/my_serviceRequest` and `rp/my_serviceReply`), so `no_mangle = true` is not
-        supported and will result in an error. Use `get_subscriptions_info_by_topic` or
-        get_publishers_info_by_topic` for unmangled topic queries in such cases. Other RMWs
-        (e.g., Zenoh) may support `no_mangle = true` if they natively handle
-        services without topic-based
-
-        ``service_name`` may be a relative, private, or fully qualified service name.
-        A relative or private service will be expanded using this node's namespace and name.
-        The queried ``service_name`` is not remapped.
-
-        :param service_name: The service_name on which to find the clients.
-        :param no_mangle: If ``True``, `service_name` needs to be a valid middleware service
-            name, otherwise it should be a valid ROS service name. Defaults to ``False``.
-        :return: A list of ServiceEndpointInfo for all the clients on this service.
-        """
-        return self._get_info_by_service(
-            service_name,
-            no_mangle,
-            _rclpy.rclpy_get_clients_info_by_service)
-
-    def get_servers_info_by_service(
-        self,
-        service_name: str,
-        no_mangle: bool = False
-    ) -> List[ServiceEndpointInfo]:
-        """
-        Return a list of servers on a given service.
-
-        The returned parameter is a list of ServiceEndpointInfo objects, where each will contain
-        the node name, node namespace, service type, service endpoint's GIDs, and its QoS profiles.
-
-        When the ``no_mangle`` parameter is ``True``, the provided ``service_name`` should be a
-        valid service name for the middleware (useful when combining ROS with native middleware
-        apps). When the ``no_mangle`` parameter is ``False``,the provided
-        ``service_name`` should follow ROS service name conventions.
-        In DDS-based RMWs, services are implemented as topics with mangled
-        names (e.g., `rq/my_serviceRequest` and `rp/my_serviceReply`), so `no_mangle = true` is not
-        supported and will result in an error. Use `get_subscriptions_info_by_topic` or
-        get_publishers_info_by_topic` for unmangled topic queries in such cases. Other RMWs
-        (e.g., Zenoh) may support `no_mangle = true` if they natively handle
-        services without topic-based
-
-        ``service_name`` may be a relative, private, or fully qualified service name.
-        A relative or private service will be expanded using this node's namespace and name.
-        The queried ``service_name`` is not remapped.
-
-        :param service_name: The service_name on which to find the servers.
-        :param no_mangle: If ``True``, `service_name` needs to be a valid middleware service
-            name, otherwise it should be a valid ROS service name. Defaults to ``False``.
-        :return: A list of ServiceEndpointInfo for all the servers on this service.
-        """
-        return self._get_info_by_service(
-            service_name,
-            no_mangle,
-            _rclpy.rclpy_get_servers_info_by_service)
 
     def wait_for_node(
         self,
