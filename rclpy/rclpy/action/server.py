@@ -12,21 +12,61 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 from enum import Enum
 import functools
 import threading
 import traceback
 
-from action_msgs.msg import GoalInfo, GoalStatus
+from types import TracebackType
+from typing import (Any, Callable, Dict, Generic, Literal, Optional, Tuple, Type,
+                    TYPE_CHECKING, TypedDict, TypeVar)
 
+
+from action_msgs.msg import GoalInfo, GoalStatus
+from action_msgs.srv._cancel_goal import CancelGoal
+
+from rclpy.clock import Clock
 from rclpy.executors import await_or_execute
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.qos import qos_profile_action_status_default
 from rclpy.qos import qos_profile_services_default
 from rclpy.qos import QoSProfile
+from rclpy.service_introspection import ServiceIntrospectionState
 from rclpy.task import Future
+from rclpy.task import Task
+from rclpy.type_support import Action
 from rclpy.type_support import check_for_type_support
+from rclpy.type_support import FeedbackMessage
+from rclpy.type_support import FeedbackT
+from rclpy.type_support import GetResultServiceRequest
+from rclpy.type_support import GetResultServiceResponse
+from rclpy.type_support import GoalT
+from rclpy.type_support import ImplT
+from rclpy.type_support import ResultT
+from rclpy.type_support import SendGoalServiceRequest
 from rclpy.waitable import NumberOfEntities, Waitable
+from typing_extensions import TypeAlias
+from unique_identifier_msgs.msg import UUID
+
+
+if TYPE_CHECKING:
+    from rclpy.callback_groups import CallbackGroup
+    from rclpy.node import Node
+
+    ServerGoalHandleDictGoalT = TypeVar('ServerGoalHandleDictGoalT')
+
+    class ServerGoalHandleDict(TypedDict,
+                               Generic[ServerGoalHandleDictGoalT],
+                               total=False):
+        goal: Tuple['_rclpy.rmw_request_id_t', SendGoalServiceRequest[ServerGoalHandleDictGoalT]]
+        cancel: Tuple['_rclpy.rmw_request_id_t', CancelGoal.Request]
+        result: Tuple['_rclpy.rmw_request_id_t', GetResultServiceRequest]
+        expired: Tuple[GoalInfo, ...]
+else:
+    ServerGoalHandleDict: TypeAlias = Dict[str, object]
+
 
 # Re-export exception defined in _rclpy C extension.
 RCLError = _rclpy.RCLError
@@ -46,13 +86,18 @@ class CancelResponse(Enum):
     ACCEPT = 2
 
 
-GoalEvent = _rclpy.GoalEvent
+GoalEvent: TypeAlias = _rclpy.GoalEvent
 
 
-class ServerGoalHandle:
+class ServerGoalHandle(Generic[GoalT, ResultT, FeedbackT, ImplT]):
     """Goal handle for working with Action Servers."""
 
-    def __init__(self, action_server, goal_info, goal_request):
+    def __init__(
+        self,
+        action_server: ActionServer[GoalT, ResultT, FeedbackT, ImplT],
+        goal_info: GoalInfo,
+        goal_request: GoalT
+    ) -> None:
         """
         Accept a new goal with the given action server.
 
@@ -65,46 +110,51 @@ class ServerGoalHandle:
         :param goal_info: GoalInfo message.
         :param goal_request: The user defined goal request message from an ActionClient.
         """
-        self._goal_handle = _rclpy.ActionGoalHandle(action_server._handle, goal_info)
+        self._goal_handle: Optional[_rclpy.ActionGoalHandle] = \
+            _rclpy.ActionGoalHandle(action_server._handle, goal_info)
         self._action_server = action_server
         self._goal_info = goal_info
         self._goal_request = goal_request
         self._cancel_requested = False
         self._lock = threading.Lock()
 
-    def __eq__(self, other):
-        return self.goal_id == other.goal_id
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, ServerGoalHandle):
+            return self.goal_id == other.goal_id
+        return False
 
-    def __ne__(self, other):
-        return self.goal_id != other.goal_id
+    def __ne__(self, other: object) -> bool:
+        if isinstance(other, ServerGoalHandle):
+            return self.goal_id != other.goal_id
+        return True
 
     @property
-    def request(self):
+    def request(self) -> GoalT:
         return self._goal_request
 
     @property
-    def goal_id(self):
+    def goal_id(self) -> UUID:
         return self._goal_info.goal_id
 
     @property
-    def is_active(self):
+    def is_active(self) -> bool:
         with self._lock:
             if self._goal_handle is None:
                 return False
             return self._goal_handle.is_active()
 
     @property
-    def is_cancel_requested(self):
+    def is_cancel_requested(self) -> bool:
         return GoalStatus.STATUS_CANCELING == self.status
 
     @property
-    def status(self):
+    def status(self) -> int:
         with self._lock:
             if self._goal_handle is None:
                 return GoalStatus.STATUS_UNKNOWN
             return self._goal_handle.get_status()
 
-    def _update_state(self, event):
+    def _update_state(self, event: _rclpy.GoalEvent) -> None:
         with self._lock:
             # Ignore updates for already destructed goal handles
             if self._goal_handle is None:
@@ -120,7 +170,7 @@ class ServerGoalHandle:
             if not self._goal_handle.is_active():
                 self._action_server.notify_goal_done()
 
-    def _set_result(self, response):
+    def _set_result(self, response: Optional[ResultT]) -> None:
         # Set result
         result_response = self._action_server._action_type.Impl.GetResultService.Response()
         result_response.status = self.status
@@ -130,7 +180,11 @@ class ServerGoalHandle:
             result_response.result = self._action_server._action_type.Result()
         self._action_server._result_futures[bytes(self.goal_id.uuid)].set_result(result_response)
 
-    def execute(self, execute_callback=None):
+    def execute(
+        self,
+        execute_callback: Optional[Callable[['ServerGoalHandle[GoalT, ResultT, FeedbackT, ImplT]'],
+                                   ResultT]] = None
+    ) -> None:
         # It's possible that there has been a request to cancel the goal prior to executing.
         # In this case we want to avoid the illegal state transition to EXECUTING
         # but still call the users execute callback to let them handle canceling the goal.
@@ -138,7 +192,7 @@ class ServerGoalHandle:
             self.executing()
         self._action_server.notify_execute(self, execute_callback)
 
-    def publish_feedback(self, feedback):
+    def publish_feedback(self, feedback: FeedbackMessage[FeedbackT]) -> None:
         if not isinstance(feedback, self._action_server.action_type.Feedback):
             raise TypeError()
 
@@ -156,22 +210,25 @@ class ServerGoalHandle:
             # Publish
             self._action_server._handle.publish_feedback(feedback_message)
 
-    def executing(self):
+    def executing(self) -> None:
         self._update_state(_rclpy.GoalEvent.EXECUTE)
 
-    def succeed(self, response=None):
+    def succeed(self, response: Optional[ResultT] = None) -> None:
         self._update_state(_rclpy.GoalEvent.SUCCEED)
-        self._set_result(response)
+        if response is not None:
+            self._set_result(response)
 
-    def abort(self, response=None):
+    def abort(self, response: Optional[ResultT] = None) -> None:
         self._update_state(_rclpy.GoalEvent.ABORT)
-        self._set_result(response)
+        if response is not None:
+            self._set_result(response)
 
-    def canceled(self, response=None):
+    def canceled(self, response: Optional[ResultT] = None) -> None:
         self._update_state(_rclpy.GoalEvent.CANCELED)
-        self._set_result(response)
+        if response is not None:
+            self._set_result(response)
 
-    def destroy(self):
+    def destroy(self) -> None:
         with self._lock:
             if self._goal_handle is None:
                 return
@@ -179,42 +236,49 @@ class ServerGoalHandle:
             self._goal_handle = None
 
 
-def default_handle_accepted_callback(goal_handle):
+def default_handle_accepted_callback(goal_handle: ServerGoalHandle[Any, Any, Any, Any]) -> None:
     """Execute the goal."""
     goal_handle.execute()
 
 
-def default_goal_callback(goal_request):
+def default_goal_callback(
+    goal_request: SendGoalServiceRequest[Any]
+) -> Literal[GoalResponse.ACCEPT]:
     """Accept all goals."""
     return GoalResponse.ACCEPT
 
 
-def default_cancel_callback(cancel_request):
+def default_cancel_callback(cancel_request: CancelGoal.Request) -> Literal[CancelResponse.REJECT]:
     """No cancellations."""
     return CancelResponse.REJECT
 
 
-class ActionServer(Waitable):
+class ActionServer(Generic[GoalT, ResultT, FeedbackT, ImplT],
+                   Waitable['ServerGoalHandleDict[GoalT]']):
     """ROS Action server."""
 
     def __init__(
         self,
-        node,
-        action_type,
-        action_name,
-        execute_callback=None,
+        node: 'Node',
+        action_type: type[Action[GoalT, ResultT, FeedbackT, ImplT]],
+        action_name: str,
+        execute_callback: Optional[Callable[[ServerGoalHandle[GoalT, ResultT, FeedbackT]],
+                                            ResultT]] = None,
         *,
-        callback_group=None,
-        goal_callback=default_goal_callback,
-        handle_accepted_callback=default_handle_accepted_callback,
-        cancel_callback=default_cancel_callback,
-        goal_service_qos_profile=qos_profile_services_default,
-        result_service_qos_profile=qos_profile_services_default,
-        cancel_service_qos_profile=qos_profile_services_default,
-        feedback_pub_qos_profile=QoSProfile(depth=10),
-        status_pub_qos_profile=qos_profile_action_status_default,
-        result_timeout=900
-    ):
+        callback_group: 'Optional[CallbackGroup]' = None,
+        goal_callback: Callable[[CancelGoal.Request], GoalResponse] = default_goal_callback,
+        handle_accepted_callback: Callable[[ServerGoalHandle[GoalT,
+                                                             ResultT,
+                                                             FeedbackT, ImplT]],
+                                           None] = default_handle_accepted_callback,
+        cancel_callback: Callable[[CancelGoal.Request], CancelResponse] = default_cancel_callback,
+        goal_service_qos_profile: QoSProfile = qos_profile_services_default,
+        result_service_qos_profile: QoSProfile = qos_profile_services_default,
+        cancel_service_qos_profile: QoSProfile = qos_profile_services_default,
+        feedback_pub_qos_profile: QoSProfile = QoSProfile(depth=10),
+        status_pub_qos_profile: QoSProfile = qos_profile_action_status_default,
+        result_timeout: int = 10
+    ) -> None:
         """
         Create an ActionServer.
 
@@ -260,30 +324,35 @@ class ActionServer(Waitable):
         self._node = node
         self._action_type = action_type
         with node.handle, node.get_clock().handle:
-            self._handle = _rclpy.ActionServer(
-                node.handle,
-                node.get_clock().handle,
-                action_type,
-                action_name,
-                goal_service_qos_profile.get_c_qos_profile(),
-                result_service_qos_profile.get_c_qos_profile(),
-                cancel_service_qos_profile.get_c_qos_profile(),
-                feedback_pub_qos_profile.get_c_qos_profile(),
-                status_pub_qos_profile.get_c_qos_profile(),
-                result_timeout,
-            )
+            self._handle = \
+                _rclpy.ActionServer(
+                    node.handle,
+                    node.get_clock().handle,
+                    action_type,
+                    action_name,
+                    goal_service_qos_profile.get_c_qos_profile(),
+                    result_service_qos_profile.get_c_qos_profile(),
+                    cancel_service_qos_profile.get_c_qos_profile(),
+                    feedback_pub_qos_profile.get_c_qos_profile(),
+                    status_pub_qos_profile.get_c_qos_profile(),
+                    result_timeout,
+                )
 
         # key: UUID in bytes, value: GoalHandle
-        self._goal_handles = {}
+        self._goal_handles: Dict[bytes, ServerGoalHandle[GoalT, ResultT, FeedbackT, ImplT]] = {}
 
         # key: UUID in bytes, value: Future
-        self._result_futures = {}
+        self._result_futures: Dict[bytes, Future[GetResultServiceResponse[ResultT]]] = {}
 
         callback_group.add_entity(self)
         self._node.add_waitable(self)
         self._logger = self._node.get_logger().get_child('action_server')
 
-    async def _execute_goal_request(self, request_header_and_message):
+    async def _execute_goal_request(
+        self,
+        request_header_and_message: Tuple['_rclpy.rmw_request_id_t',
+                                          SendGoalServiceRequest[GoalT]]
+    ) -> None:
         request_header, goal_request = request_header_and_message
         goal_uuid = goal_request.goal_id
         goal_info = GoalInfo()
@@ -333,7 +402,7 @@ class ActionServer(Waitable):
             with self._lock:
                 self._handle.send_goal_response(request_header, response_msg)
         except RCLError:
-            self._logger.warn('Failed to send goal response (the client may have gone away)')
+            self._logger.warning('Failed to send goal response (the client may have gone away)')
             return
 
         if not accepted:
@@ -348,7 +417,11 @@ class ActionServer(Waitable):
         # Provide the user a reference to the goal handle
         await await_or_execute(self._handle_accepted_callback, goal_handle)
 
-    async def _execute_goal(self, execute_callback, goal_handle):
+    async def _execute_goal(
+        self,
+        execute_callback: Callable[[ServerGoalHandle[GoalT, ResultT, FeedbackT, ImplT]], ResultT],
+        goal_handle: ServerGoalHandle[GoalT, ResultT, FeedbackT, ImplT]
+    ) -> None:
         goal_uuid = goal_handle.goal_id.uuid
         self._logger.debug('Executing goal with ID {0}'.format(goal_uuid))
 
@@ -376,7 +449,10 @@ class ActionServer(Waitable):
         result_response.result = execute_result
         self._result_futures[bytes(goal_uuid)].set_result(result_response)
 
-    async def _execute_cancel_request(self, request_header_and_message):
+    async def _execute_cancel_request(
+        self,
+        request_header_and_message: Tuple['_rclpy.rmw_request_id_t', CancelGoal.Request]
+    ) -> None:
         request_header, cancel_request = request_header_and_message
 
         self._logger.debug('Cancel request received: {0}'.format(cancel_request))
@@ -417,9 +493,12 @@ class ActionServer(Waitable):
             with self._lock:
                 self._handle.send_cancel_response(request_header, cancel_response)
         except RCLError:
-            self._logger.warn('Failed to send cancel response (the client may have gone away)')
+            self._logger.warning('Failed to send cancel response (the client may have gone away)')
 
-    async def _execute_get_result_request(self, request_header_and_message):
+    async def _execute_get_result_request(
+        self,
+        request_header_and_message: Tuple['_rclpy.rmw_request_id_t', GetResultServiceRequest]
+    ) -> None:
         request_header, result_request = request_header_and_message
         goal_uuid = result_request.goal_id.uuid
 
@@ -427,9 +506,10 @@ class ActionServer(Waitable):
             'Result request received for goal with ID: {0}'.format(goal_uuid))
 
         # If no goal with the requested ID exists, then return UNKNOWN status
+        # or the goal with the requested ID has been already expired
         if bytes(goal_uuid) not in self._goal_handles:
-            self._logger.debug(
-                'Sending result response for unknown goal ID: {0}'.format(goal_uuid))
+            self._logger.warning(
+                'Sending result response for unknown or expired goal ID: {0}'.format(goal_uuid))
             result_response = self._action_type.Impl.GetResultService.Response()
             result_response.status = GoalStatus.STATUS_UNKNOWN
             with self._lock:
@@ -441,7 +521,7 @@ class ActionServer(Waitable):
         self._result_futures[bytes(goal_uuid)].add_done_callback(
             functools.partial(self._send_result_response, request_header))
 
-    async def _execute_expire_goals(self, expired_goals):
+    async def _execute_expire_goals(self, expired_goals: Tuple[GoalInfo, ...]) -> None:
         for goal in expired_goals:
             goal_uuid = bytes(goal.goal_id.uuid)
             self._goal_handles[goal_uuid].destroy()
@@ -449,7 +529,11 @@ class ActionServer(Waitable):
             self.remove_future(self._result_futures[goal_uuid])
             del self._result_futures[goal_uuid]
 
-    def _send_result_response(self, request_header, future):
+    def _send_result_response(
+        self,
+        request_header: '_rclpy.rmw_request_id_t',
+        future: Future[GetResultServiceResponse[ResultT]]
+    ) -> None:
         try:
             # If the client goes away anytime before this, sending the result response may fail.
             # Catch the exception here and go on so we don't crash.
@@ -458,14 +542,14 @@ class ActionServer(Waitable):
                 with self._lock:
                     self._handle.send_result_response(request_header, result)
         except RCLError:
-            self._logger.warn('Failed to send result response (the client may have gone away)')
+            self._logger.warning('Failed to send result response (the client may have gone away)')
 
     @property
-    def action_type(self):
+    def action_type(self) -> type[Action[GoalT, ResultT, FeedbackT, ImplT]]:
         return self._action_type
 
     # Start Waitable API
-    def is_ready(self, wait_set):
+    def is_ready(self, wait_set: _rclpy.WaitSet) -> bool:
         """Return True if one or more entities are ready in the wait set."""
         with self._lock:
             ready_entities = self._handle.is_ready(wait_set)
@@ -475,35 +559,35 @@ class ActionServer(Waitable):
         self._is_goal_expired = ready_entities[3]
         return any(ready_entities)
 
-    def take_data(self):
+    def take_data(self) -> 'ServerGoalHandleDict[GoalT]':
         """Take stuff from lower level so the wait set doesn't immediately wake again."""
-        data = {}
+        data: 'ServerGoalHandleDict[GoalT]' = {}
         if self._is_goal_request_ready:
             with self._lock:
-                taken_data = self._handle.take_goal_request(
+                taken_goal_data = self._handle.take_goal_request(
                     self._action_type.Impl.SendGoalService.Request,
                 )
                 # If take fails, then we get (None, None)
-                if all(taken_data):
-                    data['goal'] = taken_data
+                if taken_goal_data[0]:
+                    data['goal'] = taken_goal_data
 
         if self._is_cancel_request_ready:
             with self._lock:
-                taken_data = self._handle.take_cancel_request(
+                taken_cancel_data = self._handle.take_cancel_request(
                     self._action_type.Impl.CancelGoalService.Request,
                 )
                 # If take fails, then we get (None, None)
-                if all(taken_data):
-                    data['cancel'] = taken_data
+                if taken_cancel_data[0]:
+                    data['cancel'] = taken_cancel_data
 
         if self._is_result_request_ready:
             with self._lock:
-                taken_data = self._handle.take_result_request(
+                taken_result_data = self._handle.take_result_request(
                     self._action_type.Impl.GetResultService.Request,
                 )
                 # If take fails, then we get (None, None)
-                if all(taken_data):
-                    data['result'] = taken_data
+                if taken_result_data[0]:
+                    data['result'] = taken_result_data
 
         if self._is_goal_expired:
             with self._lock:
@@ -511,7 +595,7 @@ class ActionServer(Waitable):
 
         return data
 
-    async def execute(self, taken_data):
+    async def execute(self, taken_data: 'ServerGoalHandleDict[GoalT]') -> None:
         """
         Execute work after data has been taken from a ready wait set.
 
@@ -530,7 +614,7 @@ class ActionServer(Waitable):
         if 'expired' in taken_data:
             await self._execute_expire_goals(taken_data['expired'])
 
-    def get_num_entities(self):
+    def get_num_entities(self) -> NumberOfEntities:
         """Return number of each type of entity used in the wait set."""
         with self._lock:
             num_entities = self._handle.get_num_entities()
@@ -541,20 +625,26 @@ class ActionServer(Waitable):
             num_entities[3],
             num_entities[4])
 
-    def add_to_wait_set(self, wait_set):
+    def add_to_wait_set(self, wait_set: _rclpy.WaitSet) -> None:
         """Add entities to wait set."""
         with self._lock:
             self._handle.add_to_waitset(wait_set)
 
-    def __enter__(self):
-        return self._handle.__enter__()
+    def __enter__(self) -> None:
+        self._handle.__enter__()
 
-    def __exit__(self, t, v, tb):
+    def __exit__(self, t: Optional[Type[BaseException]],
+                 v: Optional[BaseException], tb: Optional[TracebackType]) -> None:
         self._handle.__exit__(t, v, tb)
 
     # End Waitable API
 
-    def notify_execute(self, goal_handle, execute_callback):
+    def notify_execute(
+        self,
+        goal_handle: ServerGoalHandle[GoalT, ResultT, FeedbackT, ImplT],
+        execute_callback: Optional[Callable[[ServerGoalHandle[GoalT, ResultT, FeedbackT, ImplT]],
+                                            ResultT]]
+    ) -> None:
         # Use provided callback, defaulting to a previously registered callback
         if execute_callback is None:
             if self._execute_callback is None:
@@ -562,13 +652,19 @@ class ActionServer(Waitable):
             execute_callback = self._execute_callback
 
         # Schedule user callback for execution
-        self._node.executor.create_task(self._execute_goal, execute_callback, goal_handle)
+        if self._node.executor:
+            _: Task[None] = self._node.executor.create_task(self._execute_goal, execute_callback,
+                                                            goal_handle)
 
-    def notify_goal_done(self):
+    def notify_goal_done(self) -> None:
         with self._lock:
             self._handle.notify_goal_done()
 
-    def register_handle_accepted_callback(self, handle_accepted_callback):
+    def register_handle_accepted_callback(
+        self,
+        handle_accepted_callback: Optional[Callable[[
+            ServerGoalHandle[GoalT, ResultT, FeedbackT, ImplT]], None]]
+    ) -> None:
         """
         Register a callback for handling newly accepted goals.
 
@@ -589,7 +685,10 @@ class ActionServer(Waitable):
             handle_accepted_callback = default_handle_accepted_callback
         self._handle_accepted_callback = handle_accepted_callback
 
-    def register_goal_callback(self, goal_callback):
+    def register_goal_callback(
+        self,
+        goal_callback: Optional[Callable[[SendGoalServiceRequest[GoalT]], GoalResponse]]
+    ) -> None:
         """
         Register a callback for handling new goal requests.
 
@@ -608,7 +707,10 @@ class ActionServer(Waitable):
             goal_callback = default_goal_callback
         self._goal_callback = goal_callback
 
-    def register_cancel_callback(self, cancel_callback):
+    def register_cancel_callback(
+        self,
+        cancel_callback: Optional[Callable[[CancelGoal.Request], CancelResponse]]
+    ) -> None:
         """
         Register a callback for handling cancel requests.
 
@@ -627,7 +729,10 @@ class ActionServer(Waitable):
             cancel_callback = default_cancel_callback
         self._cancel_callback = cancel_callback
 
-    def register_execute_callback(self, execute_callback):
+    def register_execute_callback(
+        self,
+        execute_callback: Callable[[ServerGoalHandle[GoalT, ResultT, FeedbackT, ImplT]], ResultT]
+    ) -> None:
         """
         Register a callback for executing action goals.
 
@@ -646,7 +751,24 @@ class ActionServer(Waitable):
             raise TypeError('Failed to register goal execution callback: not callable')
         self._execute_callback = execute_callback
 
-    def destroy(self):
+    def configure_introspection(
+        self, clock: Clock,
+        service_event_qos_profile: QoSProfile,
+        introspection_state: ServiceIntrospectionState
+    ) -> None:
+        """
+        Configure action server introspection.
+
+        :param clock: Clock to use for generating timestamps.
+        :param service_event_qos_profile: QoSProfile to use when creating service event publisher.
+        :param introspection_state: ServiceIntrospectionState to set introspection.
+        """
+        with self._handle:
+            self._handle.configure_introspection(clock.handle,
+                                                 service_event_qos_profile.get_c_qos_profile(),
+                                                 introspection_state)
+
+    def destroy(self) -> None:
         """Destroy the underlying action server handle."""
         for goal_handle in self._goal_handles.values():
             goal_handle.destroy()

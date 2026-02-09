@@ -22,7 +22,7 @@ from test_msgs.msg import BasicTypes
 from test_msgs.srv import BasicTypes as BasicTypesSrv
 
 
-def test_destroy_node():
+def test_destroy_node() -> None:
     context = rclpy.context.Context()
     rclpy.init(context=context)
     try:
@@ -32,7 +32,7 @@ def test_destroy_node():
         rclpy.shutdown(context=context)
 
 
-def test_destroy_node_twice():
+def test_destroy_node_twice() -> None:
     context = rclpy.context.Context()
     rclpy.init(context=context)
     try:
@@ -43,14 +43,14 @@ def test_destroy_node_twice():
         rclpy.shutdown(context=context)
 
 
-def test_destroy_node_while_spinning():
+def test_destroy_node_while_spinning() -> None:
     context = rclpy.context.Context()
     rclpy.init(context=context)
     try:
         executor = rclpy.executors.SingleThreadedExecutor(context=context)
         node = rclpy.create_node('test_node1', context=context)
 
-        def spin():
+        def spin() -> None:
             with pytest.raises(rclpy.executors.ExternalShutdownException):
                 rclpy.spin(node, executor)
 
@@ -73,7 +73,7 @@ def test_destroy_node_while_spinning():
         rclpy.try_shutdown(context=context)
 
 
-def test_destroy_timers():
+def test_destroy_timers() -> None:
     context = rclpy.context.Context()
     rclpy.init(context=context)
     try:
@@ -94,7 +94,7 @@ def test_destroy_timers():
         rclpy.shutdown(context=context)
 
 
-def test_destroy_entities():
+def test_destroy_entities() -> None:
     context = rclpy.context.Context()
     rclpy.init(context=context)
     try:
@@ -109,10 +109,10 @@ def test_destroy_entities():
             pub2  # noqa
             assert 3 == len(tuple(node.publishers))
             sub1 = node.create_subscription(
-                BasicTypes, 'sub1_topic', lambda msg: ..., 1)
+                BasicTypes, 'sub1_topic', lambda msg: None, 1)
             assert 1 == len(tuple(node.subscriptions))
             sub2 = node.create_subscription(
-                BasicTypes, 'sub2_topic', lambda msg: ..., 1)
+                BasicTypes, 'sub2_topic', lambda msg: None, 1)
             sub2  # noqa
             assert 2 == len(tuple(node.subscriptions))
 
@@ -130,14 +130,14 @@ def test_destroy_entities():
         rclpy.shutdown(context=context)
 
 
-def test_destroy_subscription_asap():
+def test_destroy_subscription_asap() -> None:
     context = rclpy.context.Context()
     rclpy.init(context=context)
 
     try:
         node = rclpy.create_node('test_destroy_subscription_asap', context=context)
         try:
-            sub = node.create_subscription(BasicTypes, 'sub_topic', lambda msg: ..., 1)
+            sub = node.create_subscription(BasicTypes, 'sub_topic', lambda msg: None, 1)
 
             # handle valid
             with sub.handle:
@@ -155,7 +155,7 @@ def test_destroy_subscription_asap():
         rclpy.shutdown(context=context)
 
 
-def test_destroy_node_asap():
+def test_destroy_node_asap() -> None:
     context = rclpy.context.Context()
     rclpy.init(context=context)
 
@@ -172,7 +172,7 @@ def test_destroy_node_asap():
         rclpy.shutdown(context=context)
 
 
-def test_destroy_publisher_asap():
+def test_destroy_publisher_asap() -> None:
     context = rclpy.context.Context()
     rclpy.init(context=context)
 
@@ -197,7 +197,7 @@ def test_destroy_publisher_asap():
         rclpy.shutdown(context=context)
 
 
-def test_destroy_client_asap():
+def test_destroy_client_asap() -> None:
     context = rclpy.context.Context()
     rclpy.init(context=context)
 
@@ -222,7 +222,7 @@ def test_destroy_client_asap():
         rclpy.shutdown(context=context)
 
 
-def test_destroy_service_asap():
+def test_destroy_service_asap() -> None:
     context = rclpy.context.Context()
     rclpy.init(context=context)
 
@@ -247,14 +247,14 @@ def test_destroy_service_asap():
         rclpy.shutdown(context=context)
 
 
-def test_destroy_timer_asap():
+def test_destroy_timer_asap() -> None:
     context = rclpy.context.Context()
     rclpy.init(context=context)
 
     try:
         node = rclpy.create_node('test_destroy_timer_asap', context=context)
         try:
-            timer = node.create_timer(1.0, lambda: ...)
+            timer = node.create_timer(1.0, lambda: None)
 
             # handle valid
             with timer.handle:

@@ -18,11 +18,11 @@ from multiprocessing import Lock
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 
+from rcl_interfaces.msg import Parameter as ParameterMsg
 from rcl_interfaces.msg import ParameterEvent
 from rclpy.callback_groups import CallbackGroup
 from rclpy.event_handler import SubscriptionEventCallbacks
 from rclpy.node import Node
-from rclpy.parameter import Parameter
 from rclpy.qos import qos_profile_parameter_events
 from rclpy.qos import QoSProfile
 from rclpy.qos_overriding_options import QoSOverridingOptions
@@ -33,8 +33,8 @@ class ParameterCallbackHandle:
         self,
         parameter_name: str,
         node_name: str,
-        callback: Callable[[Parameter], None],
-    ):
+        callback: Callable[[ParameterMsg], None],
+    ) -> None:
         self.parameter_name = parameter_name
         self.node_name = node_name
         self.callback = callback
@@ -45,7 +45,7 @@ class ParameterEventCallbackHandle:
     def __init__(
         self,
         callback: Callable[[ParameterEvent], None]
-    ):
+    ) -> None:
         self.callback = callback
         self.mutex = Lock()
 
@@ -55,7 +55,7 @@ class ParameterEventHandler:
     class Callbacks:
         def __init__(
             self
-        ):
+        ) -> None:
             """
             Create a Callbacks container for ParameterEventHandler.
 
@@ -68,7 +68,7 @@ class ParameterEventHandler:
             self.event_callbacks: List[ParameterEventCallbackHandle] = []
             self.mutex = Lock()
 
-        def event_callback(self, event: ParameterEvent):
+        def event_callback(self, event: ParameterEvent) -> None:
             """
             Search for callback and execute it.
 
@@ -97,7 +97,7 @@ class ParameterEventHandler:
             self,
             parameter_name: str,
             node_name: str,
-            callback: Callable[[Parameter], None],
+            callback: Callable[[ParameterMsg], None],
         ) -> ParameterCallbackHandle:
             """
             Add new parameter callback.
@@ -188,7 +188,7 @@ class ParameterEventHandler:
         event_callbacks: Optional[SubscriptionEventCallbacks] = None,
         qos_overriding_options: Optional[QoSOverridingOptions] = None,
         raw: bool = False,
-    ):
+    ) -> None:
         """
         Create ParameterEventHandler.
 
@@ -248,7 +248,7 @@ class ParameterEventHandler:
             raw=raw,
         )
 
-    def destroy(self):
+    def destroy(self) -> None:
         self.node.destroy_subscription(
             self.parameter_event_subscription
         )
@@ -258,7 +258,7 @@ class ParameterEventHandler:
         event: ParameterEvent,
         parameter_name: str,
         node_name: str,
-    ) -> Optional[Parameter]:
+    ) -> Optional[ParameterMsg]:
         """
         Get specified parameter value from ParameterEvent message.
 
@@ -277,7 +277,7 @@ class ParameterEventHandler:
         return None
 
     @staticmethod
-    def get_parameters_from_event(event: ParameterEvent) -> Iterable[Parameter]:
+    def get_parameters_from_event(event: ParameterEvent) -> Iterable[ParameterMsg]:
         """
         Get all parameters from a ParameterEvent message.
 
@@ -290,12 +290,16 @@ class ParameterEventHandler:
         self,
         parameter_name: str,
         node_name: str,
-        callback: Callable[[Parameter], None],
+        callback: Callable[[ParameterMsg], None],
     ) -> ParameterCallbackHandle:
         """
         Add new parameter callback.
 
         Callbacks are called in FILO manner.
+
+        The configure_nodes_filter() function will affect the behavior of this function.
+        If the node specified in this function isn't included in the nodes specified in
+        configure_nodes_filter(), the callback will never be called.
 
         :param parameter_name: Name of a parameter to tie callback to
         :param node_name: Name of a node, that the parameter should be related to
@@ -351,6 +355,51 @@ class ParameterEventHandler:
         :param handle: ParameterEventCallbackHandle of a callback to be removed
         """
         self._callbacks.remove_parameter_event_callback(handle)
+
+    def configure_nodes_filter(
+        self,
+        node_names: Optional[List[str]] = None,
+    ) -> bool:
+        """
+        Configure which node parameter events will be received.
+
+        This function depends on rmw implementation support for content filtering.
+        If middleware doesn't support contentfilter, return false.
+
+        If node_names is empty, the configured node filter will be cleared.
+
+        If this function return true, only parameter events from the specified node will be
+        received.
+        It affects the behavior of the following two functions.
+        - add_parameter_event_callback()
+          The callback will only be called for parameter events from the specified nodes which are
+          configured in this function.
+        - add_parameter_callback()
+          The callback will only be called for parameter events from the specified nodes which are
+          configured in this function and add_parameter_callback().
+          If the nodes specified in this function is different from the nodes specified in
+          add_parameter_callback(), the callback will never be called.
+
+        :param node_names: Node names to filter parameter events from
+
+        :return: True if the filter was successfully applied, False otherwise.
+        :raises: RCLError if internal error occurred when calling the rcl function.
+        """
+        if node_names is None or len(node_names) == 0:
+            # Clear content filter
+            self.parameter_event_subscription.set_content_filter('', [])
+            if (self.parameter_event_subscription.is_cft_enabled is True):
+                return False
+            return True
+
+        filter_expression = ' OR '.join([f'node = %{i}' for i in range(len(node_names))])
+
+        # Enclose each node name in "'"
+        quoted_node_names = [f"'{node_name}'" for node_name in node_names]
+
+        self.parameter_event_subscription.set_content_filter(filter_expression, quoted_node_names)
+
+        return self.parameter_event_subscription.is_cft_enabled
 
     def _resolve_path(
         self,

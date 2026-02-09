@@ -14,6 +14,8 @@
 
 import time
 from typing import List
+from typing import Optional
+from unittest.mock import Mock
 
 import pytest
 
@@ -30,7 +32,7 @@ NODE_NAME = 'test_node'
 
 
 @pytest.fixture(scope='session', autouse=True)
-def setup_ros():
+def setup_ros() -> None:
     rclpy.init()
 
 
@@ -54,7 +56,8 @@ def test_node():
     ('/topic', 'ns', '/topic'),
     ('/example/topic', 'ns', '/example/topic'),
 ])
-def test_get_subscription_topic_name(topic_name, namespace, expected):
+def test_get_subscription_topic_name(topic_name: str, namespace: Optional[str],
+                                     expected: str) -> None:
     node = Node('node_name', namespace=namespace, cli_args=None)
     sub = node.create_subscription(
         msg_type=Empty,
@@ -88,7 +91,8 @@ def test_logger_name_is_equal_to_node_name(test_node):
     ('example/topic', 'ns', ['--ros-args', '--remap', 'example/topic:=new_topic'],
      '/ns/new_topic'),
 ])
-def test_get_subscription_topic_name_after_remapping(topic_name, namespace, cli_args, expected):
+def test_get_subscription_topic_name_after_remapping(topic_name: str, namespace: Optional[str],
+                                                     cli_args: List[str], expected: str) -> None:
     node = Node('node_name', namespace=namespace, cli_args=cli_args)
     sub = node.create_subscription(
         msg_type=Empty,
@@ -103,7 +107,7 @@ def test_get_subscription_topic_name_after_remapping(topic_name, namespace, cli_
     node.destroy_node()
 
 
-def test_subscription_callback_type():
+def test_subscription_callback_type() -> None:
     node = Node('test_node', namespace='test_subscription/test_subscription_callback_type')
     sub = node.create_subscription(
         msg_type=Empty,
@@ -126,12 +130,31 @@ def test_subscription_callback_type():
             msg_type=Empty,
             topic='test_subscription/test_subscription_callback_type/topic',
             qos_profile=10,
-            callback=lambda _, _2, _3: None)
+            callback=lambda _, _2, _3: None)  # type: ignore[arg-type]
 
     node.destroy_node()
 
 
-def test_subscription_publisher_count():
+def test_subscription_context_manager() -> None:
+    node = Node('test_node', namespace='test_subscription/test_subscription_callback_type')
+    with node.create_subscription(
+            msg_type=Empty,
+            topic='test_subscription/test_subscription_callback_type/topic',
+            qos_profile=10,
+            callback=lambda _: None) as sub:
+        assert sub._callback_type == Subscription.CallbackType.MessageOnly
+
+    with node.create_subscription(
+            msg_type=Empty,
+            topic='test_subscription/test_subscription_callback_type/topic',
+            qos_profile=10,
+            callback=lambda _, _2: None) as sub:
+        assert sub._callback_type == Subscription.CallbackType.WithMessageInfo
+
+    node.destroy_node()
+
+
+def test_subscription_publisher_count() -> None:
     topic_name = 'test_subscription/test_subscription_publisher_count/topic'
     node = Node('test_node', namespace='test_subscription/test_subscription_publisher_count')
     sub = node.create_subscription(
@@ -156,6 +179,42 @@ def test_subscription_publisher_count():
     sub.destroy()
 
     node.destroy_node()
+
+
+def test_on_new_message_callback(test_node) -> None:
+    topic_name = '/topic'
+    cb = Mock()
+    sub = test_node.create_subscription(
+        msg_type=Empty,
+        topic=topic_name,
+        qos_profile=10,
+        callback=cb)
+    pub = test_node.create_publisher(Empty, topic_name, 10)
+
+    # Wait for publisher and subscriber to discover each other
+    max_seconds_to_wait = 5
+    end_time = time.time() + max_seconds_to_wait
+    while sub.get_publisher_count() != 1:
+        time.sleep(0.1)
+        assert time.time() <= end_time  # timeout waiting for pub/sub to discover each other
+
+    sub.handle.set_on_new_message_callback(cb)
+    cb.assert_not_called()
+    pub.publish(Empty())
+
+    # Wait for the callback to be invoked
+    end_time = time.time() + max_seconds_to_wait
+    while cb.call_count == 0 and time.time() <= end_time:
+        time.sleep(0.1)
+
+    cb.assert_called_once_with(1)
+    sub.handle.clear_on_new_message_callback()
+    cb.reset_mock()
+    pub.publish(Empty())
+
+    # Wait a bit to ensure the message would have been received if callback was still set
+    time.sleep(1.0)
+    cb.assert_not_called()
 
 
 def test_subscription_set_content_filter(test_node) -> None:

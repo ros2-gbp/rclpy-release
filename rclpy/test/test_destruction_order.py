@@ -16,17 +16,17 @@ import rclpy
 from rclpy.node import Node
 
 
-def test_destruction_order():
+def test_destruction_order() -> None:
     context = rclpy.context.Context()
     rclpy.init(context=context)
     node1 = Node('test_destruction_order_node_1', context=context)
     node2 = Node('test_destruction_order_node_2', context=context)
     node3 = Node('test_destruction_order_node_3', context=context)
 
-    node1.cyclic_ref = node1
-    node2.cyclic_ref = node2
-    node1.node3 = node3
-    node2.node3 = node3
+    node1.cyclic_ref = node1  # type: ignore[attr-defined]
+    node2.cyclic_ref = node2  # type: ignore[attr-defined]
+    node1.node3 = node3  # type: ignore[attr-defined]
+    node2.node3 = node3  # type: ignore[attr-defined]
 
-    node1.handle.context_handle = context.handle
-    node2.handle.context_handle = context.handle
+    node1.handle.context_handle = context.handle  # type: ignore[attr-defined]
+    node2.handle.context_handle = context.handle  # type: ignore[attr-defined]

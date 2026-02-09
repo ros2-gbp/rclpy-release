@@ -16,6 +16,7 @@
 #define RCLPY__CLIENT_HPP_
 
 #include <pybind11/pybind11.h>
+#include <pybind11/functional.h>
 
 #include <rcl/client.h>
 #include <rcl/service_introspection.h>
@@ -95,6 +96,8 @@ public:
    * \param[in] clock clock to use for service event timestamps
    * \param[in] pyqos_service_event_pub QoSProfile python object for the service event publisher
    * \param[in] introspection_state which state to set introspection to
+   *
+   * \throws RCLError if it failed to configure introspection.
    */
   void
   configure_introspection(
@@ -118,10 +121,20 @@ public:
   const char *
   get_logger_name() const;
 
+  void
+  set_on_new_response_callback(std::function<void(size_t)> callback);
+
+  void
+  clear_on_new_response_callback();
+
 private:
   Node node_;
+  std::function<void(size_t)> on_new_response_callback_{nullptr};
   std::shared_ptr<rcl_client_t> rcl_client_;
   rosidl_service_type_support_t * srv_type_;
+
+  void
+  set_callback(rcl_event_callback_t callback, const void * user_data);
 };
 
 /// Define a pybind11 wrapper for an rclpy::Client
