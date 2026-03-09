@@ -19,7 +19,7 @@ from rclpy.expand_topic_name import expand_topic_name
 
 class TestExpandTopicName(unittest.TestCase):
 
-    def test_expand_topic_name(self) -> None:
+    def test_expand_topic_name(self):
         tests = {
             # 'expected output': ['input topic', 'node', '/ns']
             '/ns/chatter': ['chatter', 'node_name', '/ns'],
@@ -32,22 +32,22 @@ class TestExpandTopicName(unittest.TestCase):
             expanded_topic = expand_topic_name(topic, node, namespace)
             self.assertEqual(expanded_topic, expected_topic)
 
-    def test_expand_topic_name_invalid_node_name(self) -> None:
+    def test_expand_topic_name_invalid_node_name(self):
         # node name may not contain '?'
         with self.assertRaisesRegex(ValueError, 'node name'):
             expand_topic_name('topic', 'invalid_node_name?', '/ns')
 
-    def test_expand_topic_name_invalid_namespace_empty(self) -> None:
+    def test_expand_topic_name_invalid_namespace_empty(self):
         # namespace may not be empty
         with self.assertRaisesRegex(ValueError, 'namespace'):
             expand_topic_name('topic', 'node_name', '')
 
-    def test_expand_topic_name_invalid_namespace_relative(self) -> None:
+    def test_expand_topic_name_invalid_namespace_relative(self):
         # namespace may not be relative
         with self.assertRaisesRegex(ValueError, 'namespace'):
             expand_topic_name('topic', 'node_name', 'ns')
 
-    def test_expand_topic_name_invalid_topic(self) -> None:
+    def test_expand_topic_name_invalid_topic(self):
         # topic may not contain '?'
         with self.assertRaisesRegex(ValueError, 'topic name'):
             expand_topic_name('invalid/topic?', 'node_name', '/ns')

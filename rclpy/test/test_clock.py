@@ -14,28 +14,29 @@
 
 import threading
 import time
-from typing import Generator
 import unittest
 from unittest.mock import Mock
 
 import pytest
 import rclpy
 from rclpy.clock import Clock
+from rclpy.clock import ClockType
 from rclpy.clock import JumpHandle
 from rclpy.clock import JumpThreshold
 from rclpy.clock import ROSClock
-from rclpy.clock_type import ClockType
 from rclpy.context import Context
 from rclpy.duration import Duration
 from rclpy.exceptions import NotInitializedException
 from rclpy.time import Time
 from rclpy.utilities import get_default_context
 
+from .mock_compat import __name__ as _  # noqa: ignore=F401
+
 
 A_SMALL_AMOUNT_OF_TIME = Duration(seconds=0.5)
 
 
-def test_invalid_jump_threshold() -> None:
+def test_invalid_jump_threshold():
     with pytest.raises(ValueError, match='.*min_forward.*'):
         JumpThreshold(
             min_forward=Duration(nanoseconds=0),
@@ -65,11 +66,11 @@ def test_invalid_jump_threshold() -> None:
 
 class TestClock(unittest.TestCase):
 
-    def test_clock_construction(self) -> None:
+    def test_clock_construction(self):
         clock = Clock()
 
         with self.assertRaises(TypeError):
-            clock = Clock(clock_type='STEADY_TIME')  # type: ignore[call-overload]
+            clock = Clock(clock_type='STEADY_TIME')
 
         clock = Clock(clock_type=ClockType.STEADY_TIME)
         assert clock.clock_type == ClockType.STEADY_TIME
@@ -84,7 +85,7 @@ class TestClock(unittest.TestCase):
         clock = ROSClock()
         assert clock.clock_type == ClockType.ROS_TIME
 
-    def test_clock_now(self) -> None:
+    def test_clock_now(self):
         # System time should be roughly equal to time.time()
         # There will still be differences between them, with the bound depending on the scheduler.
         clock = Clock(clock_type=ClockType.SYSTEM_TIME)
@@ -107,14 +108,14 @@ class TestClock(unittest.TestCase):
             assert now2 > now
             now = now2
 
-    def test_ros_time_is_active(self) -> None:
+    def test_ros_time_is_active(self):
         clock = ROSClock()
         clock._set_ros_time_is_active(True)
         assert clock.ros_time_is_active
         clock._set_ros_time_is_active(False)
         assert not clock.ros_time_is_active
 
-    def test_triggered_time_jump_callbacks(self) -> None:
+    def test_triggered_time_jump_callbacks(self):
         one_second = Duration(seconds=1)
         half_second = Duration(seconds=0.5)
         negative_half_second = Duration(seconds=-0.5)
@@ -165,7 +166,7 @@ class TestClock(unittest.TestCase):
         handler1.unregister()
         handler2.unregister()
 
-    def test_triggered_clock_change_callbacks(self) -> None:
+    def test_triggered_clock_change_callbacks(self):
         one_second = Duration(seconds=1)
         negative_one_second = Duration(seconds=-1)
 
@@ -219,43 +220,43 @@ class TestClock(unittest.TestCase):
 
 
 @pytest.fixture()
-def default_context() -> Generator[Context, None, None]:
+def default_context():
     rclpy.init()
     yield get_default_context()
     rclpy.shutdown()
 
 
 @pytest.fixture()
-def non_default_context() -> Generator[Context, None, None]:
+def non_default_context():
     context = Context()
     context.init()
     yield context
     context.try_shutdown()
 
 
-def test_sleep_until_mismatched_clock_type(default_context: Context) -> None:
+def test_sleep_until_mismatched_clock_type(default_context):
     clock = Clock(clock_type=ClockType.SYSTEM_TIME)
     with pytest.raises(ValueError, match='.*clock type does not match.*'):
         clock.sleep_until(Time(clock_type=ClockType.STEADY_TIME))
 
 
-def test_sleep_until_non_default_context(non_default_context: Context) -> None:
+def test_sleep_until_non_default_context(non_default_context):
     clock = Clock()
     assert clock.sleep_until(clock.now() + Duration(seconds=0.1), context=non_default_context)
 
 
-def test_sleep_for_non_default_context(non_default_context: Context) -> None:
+def test_sleep_for_non_default_context(non_default_context):
     clock = Clock()
     assert clock.sleep_for(Duration(seconds=0.1), context=non_default_context)
 
 
-def test_sleep_until_invalid_context() -> None:
+def test_sleep_until_invalid_context():
     clock = Clock()
     with pytest.raises(NotInitializedException):
         clock.sleep_until(clock.now() + Duration(seconds=0.1), context=Context())
 
 
-def test_sleep_for_invalid_context() -> None:
+def test_sleep_for_invalid_context():
     clock = Clock()
     with pytest.raises(NotInitializedException):
         clock.sleep_for(Duration(seconds=0.1), context=Context())
@@ -263,7 +264,7 @@ def test_sleep_for_invalid_context() -> None:
 
 @pytest.mark.parametrize(
     'clock_type', (ClockType.SYSTEM_TIME, ClockType.STEADY_TIME, ClockType.ROS_TIME))
-def test_sleep_until_basic(default_context: Context, clock_type: ClockType) -> None:
+def test_sleep_until_basic(default_context, clock_type):
     clock = Clock(clock_type=clock_type)
     sleep_duration = Duration(seconds=0.1)
     start = clock.now()
@@ -274,7 +275,7 @@ def test_sleep_until_basic(default_context: Context, clock_type: ClockType) -> N
 
 @pytest.mark.parametrize(
     'clock_type', (ClockType.SYSTEM_TIME, ClockType.STEADY_TIME, ClockType.ROS_TIME))
-def test_sleep_for_basic(default_context: Context, clock_type: ClockType) -> None:
+def test_sleep_for_basic(default_context, clock_type):
     clock = Clock(clock_type=clock_type)
     sleep_duration = Duration(seconds=0.1)
     start = clock.now()
@@ -285,7 +286,7 @@ def test_sleep_for_basic(default_context: Context, clock_type: ClockType) -> Non
 
 @pytest.mark.parametrize(
     'clock_type', (ClockType.SYSTEM_TIME, ClockType.STEADY_TIME, ClockType.ROS_TIME))
-def test_sleep_until_time_in_past(default_context: Context, clock_type: ClockType) -> None:
+def test_sleep_until_time_in_past(default_context, clock_type):
     clock = Clock(clock_type=clock_type)
     sleep_duration = Duration(seconds=-1)
     start = clock.now()
@@ -296,7 +297,7 @@ def test_sleep_until_time_in_past(default_context: Context, clock_type: ClockTyp
 
 @pytest.mark.parametrize(
     'clock_type', (ClockType.SYSTEM_TIME, ClockType.STEADY_TIME, ClockType.ROS_TIME))
-def test_sleep_for_negative_duration(default_context: Context, clock_type: ClockType) -> None:
+def test_sleep_for_negative_duration(default_context, clock_type):
     clock = Clock(clock_type=clock_type)
     sleep_duration = Duration(seconds=-1)
     start = clock.now()
@@ -306,13 +307,13 @@ def test_sleep_for_negative_duration(default_context: Context, clock_type: Clock
 
 
 @pytest.mark.parametrize('ros_time_enabled', (True, False))
-def test_sleep_until_ros_time_toggled(default_context: Context, ros_time_enabled: bool) -> None:
+def test_sleep_until_ros_time_toggled(default_context, ros_time_enabled):
     clock = ROSClock()
     clock._set_ros_time_is_active(not ros_time_enabled)
 
     retval = None
 
-    def run() -> None:
+    def run():
         nonlocal retval
         retval = clock.sleep_until(clock.now() + Duration(seconds=10))
 
@@ -334,13 +335,13 @@ def test_sleep_until_ros_time_toggled(default_context: Context, ros_time_enabled
 
 
 @pytest.mark.parametrize('ros_time_enabled', (True, False))
-def test_sleep_for_ros_time_toggled(default_context: Context, ros_time_enabled: bool) -> None:
+def test_sleep_for_ros_time_toggled(default_context, ros_time_enabled):
     clock = ROSClock()
     clock._set_ros_time_is_active(not ros_time_enabled)
 
     retval = None
 
-    def run() -> None:
+    def run():
         nonlocal retval
         retval = clock.sleep_for(Duration(seconds=10))
 
@@ -361,11 +362,11 @@ def test_sleep_for_ros_time_toggled(default_context: Context, ros_time_enabled: 
     assert retval is False
 
 
-def test_sleep_until_context_shut_down(non_default_context: Context) -> None:
+def test_sleep_until_context_shut_down(non_default_context):
     clock = Clock()
     retval = None
 
-    def run() -> None:
+    def run():
         nonlocal retval
         retval = clock.sleep_until(
             clock.now() + Duration(seconds=10), context=non_default_context)
@@ -387,11 +388,11 @@ def test_sleep_until_context_shut_down(non_default_context: Context) -> None:
     assert retval is False
 
 
-def test_sleep_for_context_shut_down(non_default_context: Context) -> None:
+def test_sleep_for_context_shut_down(non_default_context):
     clock = Clock()
     retval = None
 
-    def run() -> None:
+    def run():
         nonlocal retval
         retval = clock.sleep_for(Duration(seconds=10), context=non_default_context)
 
@@ -412,7 +413,7 @@ def test_sleep_for_context_shut_down(non_default_context: Context) -> None:
     assert retval is False
 
 
-def test_sleep_until_ros_time_enabled(default_context: Context) -> None:
+def test_sleep_until_ros_time_enabled(default_context):
     clock = ROSClock()
     clock._set_ros_time_is_active(True)
 
@@ -422,7 +423,7 @@ def test_sleep_until_ros_time_enabled(default_context: Context) -> None:
 
     retval = None
 
-    def run() -> None:
+    def run():
         nonlocal retval
         retval = clock.sleep_until(stop_time)
 
@@ -443,7 +444,7 @@ def test_sleep_until_ros_time_enabled(default_context: Context) -> None:
     assert retval
 
 
-def test_sleep_for_ros_time_enabled(default_context: Context) -> None:
+def test_sleep_for_ros_time_enabled(default_context):
     clock = ROSClock()
     clock._set_ros_time_is_active(True)
 
@@ -454,7 +455,7 @@ def test_sleep_for_ros_time_enabled(default_context: Context) -> None:
 
     retval = None
 
-    def run() -> None:
+    def run():
         nonlocal retval
         retval = clock.sleep_for(sleep_duration)
 
@@ -475,7 +476,7 @@ def test_sleep_for_ros_time_enabled(default_context: Context) -> None:
     assert retval
 
 
-def test_with_jump_handle() -> None:
+def test_with_jump_handle():
     clock = ROSClock()
     clock._set_ros_time_is_active(False)
 

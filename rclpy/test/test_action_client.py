@@ -12,38 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import annotations
-
 import time
-from typing import List
-from typing import TYPE_CHECKING
 import unittest
 import uuid
 
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
-import rclpy.context
 from rclpy.executors import MultiThreadedExecutor, SingleThreadedExecutor
-from rclpy.qos import qos_profile_action_status_default, qos_profile_system_default
-from rclpy.service_introspection import ServiceIntrospectionState
-
-from service_msgs.msg import ServiceEventInfo
+from rclpy.qos import qos_profile_action_status_default
 
 from test_msgs.action import Fibonacci
 
 from unique_identifier_msgs.msg import UUID
 
-if TYPE_CHECKING:
-    from rclpy.type_support import FeedbackMessage
 
 # TODO(jacobperron) Reduce fudge once wait_for_service uses node graph events
 TIME_FUDGE = 0.3
 
 
-class MockActionServer:
+class MockActionServer():
 
-    def __init__(self, node: rclpy.node.Node):
+    def __init__(self, node):
         self.goal_srv = node.create_service(
             Fibonacci.Impl.SendGoalService, '/fibonacci/_action/send_goal',
             self.goal_callback)
@@ -60,24 +50,18 @@ class MockActionServer:
             '/fibonacci/_action/status',
             qos_profile_action_status_default)
 
-    def goal_callback(self, request: Fibonacci.Impl.SendGoalService.Request,
-                      response: Fibonacci.Impl.SendGoalService.Response
-                      ) -> Fibonacci.Impl.SendGoalService.Response:
+    def goal_callback(self, request, response):
         response.accepted = True
         return response
 
-    def cancel_callback(self, request: Fibonacci.Impl.CancelGoalService.Request,
-                        response: Fibonacci.Impl.CancelGoalService.Response
-                        ) -> Fibonacci.Impl.CancelGoalService.Response:
+    def cancel_callback(self, request, response):
         response.goals_canceling.append(request.goal_info)
         return response
 
-    def result_callback(self, request: Fibonacci.Impl.GetResultService.Request,
-                        response: Fibonacci.Impl.GetResultService.Response
-                        ) -> Fibonacci.Impl.GetResultService.Response:
+    def result_callback(self, request, response):
         return response
 
-    def publish_feedback(self, goal_id: UUID) -> None:
+    def publish_feedback(self, goal_id):
         feedback_message = Fibonacci.Impl.FeedbackMessage()
         feedback_message.goal_id = goal_id
         self.feedback_pub.publish(feedback_message)
@@ -85,15 +69,8 @@ class MockActionServer:
 
 class TestActionClient(unittest.TestCase):
 
-    if TYPE_CHECKING:
-        context: rclpy.context.Context
-        executor: SingleThreadedExecutor
-        node: rclpy.node.Node
-        mock_action_server: MockActionServer
-        feedback: FeedbackMessage[Fibonacci.Feedback] | None
-
     @classmethod
-    def setUpClass(cls) -> None:
+    def setUpClass(cls):
         cls.context = rclpy.context.Context()
         rclpy.init(context=cls.context)
         cls.executor = SingleThreadedExecutor(context=cls.context)
@@ -101,27 +78,27 @@ class TestActionClient(unittest.TestCase):
         cls.mock_action_server = MockActionServer(cls.node)
 
     @classmethod
-    def tearDownClass(cls) -> None:
+    def tearDownClass(cls):
         cls.node.destroy_node()
         rclpy.shutdown(context=cls.context)
 
-    def setUp(self) -> None:
+    def setUp(self):
         self.feedback = None
 
-    def feedback_callback(self, feedback: FeedbackMessage[Fibonacci.Feedback]) -> None:
+    def feedback_callback(self, feedback):
         self.feedback = feedback
 
-    def timed_spin(self, duration: float) -> None:
+    def timed_spin(self, duration):
         start_time = time.time()
         while (time.time() - start_time) < duration:
             rclpy.spin_once(self.node, executor=self.executor, timeout_sec=0.1)
 
-    def test_constructor_defaults(self) -> None:
+    def test_constructor_defaults(self):
         # Defaults
         ac = ActionClient(self.node, Fibonacci, 'fibonacci')
         ac.destroy()
 
-    def test_constructor_no_defaults(self) -> None:
+    def test_constructor_no_defaults(self):
         ac = ActionClient(
             self.node,
             Fibonacci,
@@ -134,7 +111,7 @@ class TestActionClient(unittest.TestCase):
         )
         ac.destroy()
 
-    def test_get_num_entities(self) -> None:
+    def test_get_num_entities(self):
         ac = ActionClient(self.node, Fibonacci, 'fibonacci')
         num_entities = ac.get_num_entities()
         self.assertEqual(num_entities.num_subscriptions, 2)
@@ -144,7 +121,7 @@ class TestActionClient(unittest.TestCase):
         self.assertEqual(num_entities.num_services, 0)
         ac.destroy()
 
-    def test_wait_for_server_nowait(self) -> None:
+    def test_wait_for_server_nowait(self):
         ac = ActionClient(self.node, Fibonacci, 'not_fibonacci')
         try:
             start = time.monotonic()
@@ -155,7 +132,7 @@ class TestActionClient(unittest.TestCase):
         finally:
             ac.destroy()
 
-    def test_wait_for_server_timeout(self) -> None:
+    def test_wait_for_server_timeout(self):
         ac = ActionClient(self.node, Fibonacci, 'not_fibonacci')
         try:
             start = time.monotonic()
@@ -166,7 +143,7 @@ class TestActionClient(unittest.TestCase):
         finally:
             ac.destroy()
 
-    def test_wait_for_server_exists(self) -> None:
+    def test_wait_for_server_exists(self):
         ac = ActionClient(self.node, Fibonacci, 'fibonacci')
         try:
             start = time.monotonic()
@@ -177,7 +154,7 @@ class TestActionClient(unittest.TestCase):
         finally:
             ac.destroy()
 
-    def test_send_goal_async(self) -> None:
+    def test_send_goal_async(self):
         ac = ActionClient(self.node, Fibonacci, 'fibonacci')
         try:
             self.assertTrue(ac.wait_for_server(timeout_sec=2.0))
@@ -185,12 +162,11 @@ class TestActionClient(unittest.TestCase):
             rclpy.spin_until_future_complete(self.node, future, self.executor)
             self.assertTrue(future.done())
             goal_handle = future.result()
-            assert goal_handle
             self.assertTrue(goal_handle.accepted)
         finally:
             ac.destroy()
 
-    def test_send_goal_async_with_feedback_after_goal(self) -> None:
+    def test_send_goal_async_with_feedback_after_goal(self):
         ac = ActionClient(self.node, Fibonacci, 'fibonacci')
         try:
             self.assertTrue(ac.wait_for_server(timeout_sec=2.0))
@@ -210,7 +186,7 @@ class TestActionClient(unittest.TestCase):
         finally:
             ac.destroy()
 
-    def test_send_goal_async_with_feedback_before_goal(self) -> None:
+    def test_send_goal_async_with_feedback_before_goal(self):
         ac = ActionClient(self.node, Fibonacci, 'fibonacci')
         try:
             self.assertTrue(ac.wait_for_server(timeout_sec=2.0))
@@ -233,7 +209,7 @@ class TestActionClient(unittest.TestCase):
         finally:
             ac.destroy()
 
-    def test_send_goal_async_with_feedback_after_goal_result_requested(self) -> None:
+    def test_send_goal_async_with_feedback_after_goal_result_requested(self):
         ac = ActionClient(self.node, Fibonacci, 'fibonacci')
         try:
             self.assertTrue(ac.wait_for_server(timeout_sec=2.0))
@@ -248,7 +224,6 @@ class TestActionClient(unittest.TestCase):
             self.assertTrue(goal_future.done())
             # Then request result
             goal_handle = goal_future.result()
-            assert goal_handle
             result_future = goal_handle.get_result_async()
             rclpy.spin_until_future_complete(self.node, result_future, self.executor)
             self.assertTrue(result_future.done())
@@ -260,7 +235,7 @@ class TestActionClient(unittest.TestCase):
         finally:
             ac.destroy()
 
-    def test_send_goal_async_with_feedback_for_another_goal(self) -> None:
+    def test_send_goal_async_with_feedback_for_another_goal(self):
         ac = ActionClient(self.node, Fibonacci, 'fibonacci')
         try:
             self.assertTrue(ac.wait_for_server(timeout_sec=2.0))
@@ -291,7 +266,7 @@ class TestActionClient(unittest.TestCase):
         finally:
             ac.destroy()
 
-    def test_send_goal_async_with_feedback_for_not_a_goal(self) -> None:
+    def test_send_goal_async_with_feedback_for_not_a_goal(self):
         ac = ActionClient(self.node, Fibonacci, 'fibonacci')
         try:
             self.assertTrue(ac.wait_for_server(timeout_sec=2.0))
@@ -311,7 +286,7 @@ class TestActionClient(unittest.TestCase):
         finally:
             ac.destroy()
 
-    def test_send_goal_multiple(self) -> None:
+    def test_send_goal_multiple(self):
         ac = ActionClient(
             self.node,
             Fibonacci,
@@ -329,19 +304,13 @@ class TestActionClient(unittest.TestCase):
             self.assertTrue(future_0.done())
             self.assertTrue(future_1.done())
             self.assertTrue(future_2.done())
-            future_0_result = future_0.result()
-            future_1_result = future_1.result()
-            future_2_result = future_2.result()
-            assert future_0_result
-            assert future_1_result
-            assert future_2_result
-            self.assertTrue(future_0_result.accepted)
-            self.assertTrue(future_1_result.accepted)
-            self.assertTrue(future_2_result.accepted)
+            self.assertTrue(future_0.result().accepted)
+            self.assertTrue(future_1.result().accepted)
+            self.assertTrue(future_2.result().accepted)
         finally:
             ac.destroy()
 
-    def test_send_goal_async_no_server(self) -> None:
+    def test_send_goal_async_no_server(self):
         ac = ActionClient(self.node, Fibonacci, 'not_fibonacci')
         try:
             future = ac.send_goal_async(Fibonacci.Goal())
@@ -350,7 +319,7 @@ class TestActionClient(unittest.TestCase):
         finally:
             ac.destroy()
 
-    def test_send_cancel_async(self) -> None:
+    def test_send_cancel_async(self):
         ac = ActionClient(self.node, Fibonacci, 'fibonacci')
         try:
             self.assertTrue(ac.wait_for_server(timeout_sec=2.0))
@@ -362,19 +331,16 @@ class TestActionClient(unittest.TestCase):
             goal_handle = goal_future.result()
 
             # Cancel the goal
-            assert goal_handle
             cancel_future = goal_handle.cancel_goal_async()
             rclpy.spin_until_future_complete(self.node, cancel_future, self.executor)
             self.assertTrue(cancel_future.done())
-            cancel_result = cancel_future.result()
-            assert cancel_result
             self.assertEqual(
-                cancel_result.goals_canceling[0].goal_id,
+                cancel_future.result().goals_canceling[0].goal_id,
                 goal_handle.goal_id)
         finally:
             ac.destroy()
 
-    def test_get_result_async(self) -> None:
+    def test_get_result_async(self):
         ac = ActionClient(self.node, Fibonacci, 'fibonacci')
         try:
             self.assertTrue(ac.wait_for_server(timeout_sec=2.0))
@@ -386,107 +352,20 @@ class TestActionClient(unittest.TestCase):
             goal_handle = goal_future.result()
 
             # Get the goal result
-            assert goal_handle
             result_future = goal_handle.get_result_async()
             rclpy.spin_until_future_complete(self.node, result_future, self.executor)
             self.assertTrue(result_future.done())
         finally:
             ac.destroy()
 
-    def test_different_type_raises(self) -> None:
+    def test_different_type_raises(self):
         ac = ActionClient(self.node, Fibonacci, 'fibonacci')
         try:
             with self.assertRaises(TypeError):
-                ac.send_goal('different goal type')  # type: ignore[call-arg,arg-type]
+                ac.send_goal('different goal type')
             with self.assertRaises(TypeError):
-                ac.send_goal_async('different goal type')  # type: ignore[arg-type]
+                ac.send_goal_async('different goal type')
         finally:
-            ac.destroy()
-
-    def test_action_introspection_default_status(self) -> None:
-        ac = ActionClient(self.node, Fibonacci, 'fibonacci')
-
-        self.event_messages: List[Fibonacci.Impl.SendGoalService.Event] = []
-
-        def sub_callback(msg: Fibonacci.Impl.SendGoalService.Event) -> None:
-            self.event_messages.append(msg)
-
-        # There is no need to check if introspection is enabled for all internal services,
-        # as the implementation in the RCL interface operates on the three internal services
-        # simultaneously. So only check send_goal service event.
-        send_goal_service_event_sub = self.node.create_subscription(
-            Fibonacci.Impl.SendGoalService.Event,
-            '/fibonacci/_action/send_goal/_service_event',
-            sub_callback, 3)
-
-        try:
-            self.assertTrue(ac.wait_for_server(timeout_sec=2.0))
-
-            # Send a goal
-            goal_future = ac.send_goal_async(Fibonacci.Goal())
-            rclpy.spin_until_future_complete(self.node, goal_future, self.executor)
-            self.assertTrue(goal_future.done())
-
-            # By default, action client introspection is disabled.
-            # So no service event message can be received.
-            start = time.monotonic()
-            end = start + 1.0
-            while len(self.event_messages) < 1:
-                rclpy.spin_once(self.node, executor=self.executor, timeout_sec=0.1)
-                now = time.monotonic()
-                if now >= end:
-                    break
-
-            self.assertEqual(len(self.event_messages), 0)
-        finally:
-            self.node.destroy_subscription(send_goal_service_event_sub)
-            ac.destroy()
-
-    def test_configure_introspection_content(self) -> None:
-        ac = ActionClient(self.node, Fibonacci, 'fibonacci')
-
-        self.event_messages = []
-
-        def sub_callback(msg: Fibonacci.Impl.SendGoalService.Event) -> None:
-            self.event_messages.append(msg)
-
-        # There is no need to check if introspection is enabled for all internal services,
-        # as the implementation in the RCL interface operates on the three internal services
-        # simultaneously. So only check send_goal service event.
-        send_goal_service_event_sub = self.node.create_subscription(
-            Fibonacci.Impl.SendGoalService.Event,
-            '/fibonacci/_action/send_goal/_service_event',
-            sub_callback, 3)
-
-        try:
-            ac.configure_introspection(self.node.get_clock(),
-                                       qos_profile_system_default,
-                                       ServiceIntrospectionState.CONTENTS)
-
-            self.assertTrue(ac.wait_for_server(timeout_sec=2.0))
-
-            # Send a goal
-            goal_future = ac.send_goal_async(Fibonacci.Goal())
-            rclpy.spin_until_future_complete(self.node, goal_future, self.executor)
-            self.assertTrue(goal_future.done())
-
-            start = time.monotonic()
-            end = start + 5.0
-            while len(self.event_messages) < 1:
-                rclpy.spin_once(self.node, executor=self.executor, timeout_sec=0.1)
-                now = time.monotonic()
-                self.assertTrue(now < end)
-
-            self.assertEqual(len(self.event_messages), 1)
-
-            self.assertEqual(self.event_messages[0].info.event_type, ServiceEventInfo.REQUEST_SENT)
-
-            # For ServiceIntrospectionState.CONTENTS mode, the request or response section must
-            # contain data. In this case, the request section must contain data.
-            self.assertEqual(len(self.event_messages[0].request), 1)
-            self.assertEqual(len(self.event_messages[0].response), 0)
-        finally:
-            self.node.destroy_subscription(send_goal_service_event_sub)
             ac.destroy()
 
 

@@ -231,7 +231,7 @@ public:
   py::tuple
   is_ready(WaitSet & wait_set);
 
-  /// Add an action entity to a wait set.
+  /// Add an action entitiy to a wait set.
   /**
    * Raises RuntimeError on failure.
    * Raises RCLError if an error occurs in rcl
@@ -248,19 +248,6 @@ public:
     return rcl_action_server_.get();
   }
 
-  /// Configure action server introspection
-  /**
-   * \param[in] clock clock to use for service event timestamps
-   * \param[in] pyqos_service_event_pub QoSProfile python object for the service event publisher
-   * \param[in] introspection_state which state to set introspection to
-   *
-   * \throws RCLError if it failed to configure introspection.
-   */
-  void
-  configure_introspection(
-    Clock & clock, py::object pyqos_service_event_pub,
-    rcl_service_introspection_state_t introspection_state);
-
   /// Force an early destruction of this object
   void
   destroy() override;
@@ -268,9 +255,8 @@ public:
 private:
   Node node_;
   std::shared_ptr<rcl_action_server_t> rcl_action_server_;
-  const rosidl_action_type_support_t * action_type_support_;
 };
-/// Define a pybind11 wrapper for an rclpy::ActionServer
+/// Define a pybind11 wrapper for an rcl_time_point_t
 /**
  * \param[in] module a pybind11 module to add the definition to
  */

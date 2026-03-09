@@ -22,7 +22,7 @@ from test_msgs.msg import BasicTypes
 from test_msgs.srv import BasicTypes as BasicTypesSrv
 
 
-def test_destroy_node() -> None:
+def test_destroy_node():
     context = rclpy.context.Context()
     rclpy.init(context=context)
     try:
@@ -32,7 +32,7 @@ def test_destroy_node() -> None:
         rclpy.shutdown(context=context)
 
 
-def test_destroy_node_twice() -> None:
+def test_destroy_node_twice():
     context = rclpy.context.Context()
     rclpy.init(context=context)
     try:
@@ -43,14 +43,14 @@ def test_destroy_node_twice() -> None:
         rclpy.shutdown(context=context)
 
 
-def test_destroy_node_while_spinning() -> None:
+def test_destroy_node_while_spinning():
     context = rclpy.context.Context()
     rclpy.init(context=context)
     try:
         executor = rclpy.executors.SingleThreadedExecutor(context=context)
         node = rclpy.create_node('test_node1', context=context)
 
-        def spin() -> None:
+        def spin():
             with pytest.raises(rclpy.executors.ExternalShutdownException):
                 rclpy.spin(node, executor)
 
@@ -73,7 +73,7 @@ def test_destroy_node_while_spinning() -> None:
         rclpy.try_shutdown(context=context)
 
 
-def test_destroy_timers() -> None:
+def test_destroy_timers():
     context = rclpy.context.Context()
     rclpy.init(context=context)
     try:
@@ -94,7 +94,7 @@ def test_destroy_timers() -> None:
         rclpy.shutdown(context=context)
 
 
-def test_destroy_entities() -> None:
+def test_destroy_entities():
     context = rclpy.context.Context()
     rclpy.init(context=context)
     try:
@@ -109,10 +109,10 @@ def test_destroy_entities() -> None:
             pub2  # noqa
             assert 3 == len(tuple(node.publishers))
             sub1 = node.create_subscription(
-                BasicTypes, 'sub1_topic', lambda msg: None, 1)
+                BasicTypes, 'sub1_topic', lambda msg: ..., 1)
             assert 1 == len(tuple(node.subscriptions))
             sub2 = node.create_subscription(
-                BasicTypes, 'sub2_topic', lambda msg: None, 1)
+                BasicTypes, 'sub2_topic', lambda msg: ..., 1)
             sub2  # noqa
             assert 2 == len(tuple(node.subscriptions))
 
@@ -130,14 +130,14 @@ def test_destroy_entities() -> None:
         rclpy.shutdown(context=context)
 
 
-def test_destroy_subscription_asap() -> None:
+def test_destroy_subscription_asap():
     context = rclpy.context.Context()
     rclpy.init(context=context)
 
     try:
         node = rclpy.create_node('test_destroy_subscription_asap', context=context)
         try:
-            sub = node.create_subscription(BasicTypes, 'sub_topic', lambda msg: None, 1)
+            sub = node.create_subscription(BasicTypes, 'sub_topic', lambda msg: ..., 1)
 
             # handle valid
             with sub.handle:
@@ -155,7 +155,7 @@ def test_destroy_subscription_asap() -> None:
         rclpy.shutdown(context=context)
 
 
-def test_destroy_node_asap() -> None:
+def test_destroy_node_asap():
     context = rclpy.context.Context()
     rclpy.init(context=context)
 
@@ -172,7 +172,7 @@ def test_destroy_node_asap() -> None:
         rclpy.shutdown(context=context)
 
 
-def test_destroy_publisher_asap() -> None:
+def test_destroy_publisher_asap():
     context = rclpy.context.Context()
     rclpy.init(context=context)
 
@@ -197,7 +197,7 @@ def test_destroy_publisher_asap() -> None:
         rclpy.shutdown(context=context)
 
 
-def test_destroy_client_asap() -> None:
+def test_destroy_client_asap():
     context = rclpy.context.Context()
     rclpy.init(context=context)
 
@@ -222,7 +222,7 @@ def test_destroy_client_asap() -> None:
         rclpy.shutdown(context=context)
 
 
-def test_destroy_service_asap() -> None:
+def test_destroy_service_asap():
     context = rclpy.context.Context()
     rclpy.init(context=context)
 
@@ -247,14 +247,14 @@ def test_destroy_service_asap() -> None:
         rclpy.shutdown(context=context)
 
 
-def test_destroy_timer_asap() -> None:
+def test_destroy_timer_asap():
     context = rclpy.context.Context()
     rclpy.init(context=context)
 
     try:
         node = rclpy.create_node('test_destroy_timer_asap', context=context)
         try:
-            timer = node.create_timer(1.0, lambda: None)
+            timer = node.create_timer(1.0, lambda: ...)
 
             # handle valid
             with timer.handle:

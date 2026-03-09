@@ -58,9 +58,9 @@ ActionServer::ActionServer(
 {
   rcl_clock_t * clock = rclpy_clock.rcl_ptr();
 
-  action_type_support_ = static_cast<rosidl_action_type_support_t *>(
+  rosidl_action_type_support_t * ts = static_cast<rosidl_action_type_support_t *>(
     common_get_type_support(pyaction_type));
-  if (!action_type_support_) {
+  if (!ts) {
     throw py::error_already_set();
   }
 
@@ -96,7 +96,7 @@ ActionServer::ActionServer(
     rcl_action_server_.get(),
     node_.rcl_ptr(),
     clock,
-    action_type_support_,
+    ts,
     action_name,
     &action_server_ops);
   if (RCL_RET_ACTION_NAME_INVALID == ret) {
@@ -368,25 +368,6 @@ ActionServer::expire_goals(int64_t max_num_goals)
 }
 
 void
-ActionServer::configure_introspection(
-  Clock & clock, py::object pyqos_service_event_pub,
-  rcl_service_introspection_state_t introspection_state)
-{
-  rcl_publisher_options_t pub_opts = rcl_publisher_get_default_options();
-  pub_opts.qos =
-    pyqos_service_event_pub.is_none() ? rcl_publisher_get_default_options().qos :
-    pyqos_service_event_pub.cast<rmw_qos_profile_t>();
-
-  rcl_ret_t ret = rcl_action_server_configure_action_introspection(
-    rcl_action_server_.get(), node_.rcl_ptr(), clock.rcl_ptr(),
-    action_type_support_, pub_opts, introspection_state);
-
-  if (RCL_RET_OK != ret) {
-    throw RCLError("failed to configure action server introspection");
-  }
-}
-
-void
 define_action_server(py::object module)
 {
   py::class_<ActionServer, Destroyable, std::shared_ptr<ActionServer>>(module, "ActionServer")
@@ -419,7 +400,7 @@ define_action_server(py::object module)
     "Send an action cancel response.")
   .def(
     "publish_feedback", &ActionServer::publish_feedback,
-    "Publish a feedback message from a given action server.")
+    " Publish a feedback message from a given action server.")
   .def(
     "publish_status", &ActionServer::publish_status,
     "Publish a status message from a given action server.")
@@ -443,10 +424,7 @@ define_action_server(py::object module)
     "Check if an action entity has any ready wait set entities.")
   .def(
     "add_to_waitset", &ActionServer::add_to_waitset,
-    "Add an action entity to a wait set.")
-  .def(
-    "configure_introspection", &ActionServer::configure_introspection,
-    "Configure whether internal service introspection is enabled");
+    "Add an action entitiy to a wait set.");
 }
 
 }  // namespace rclpy

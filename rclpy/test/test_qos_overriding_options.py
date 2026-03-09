@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Generator
-
 import pytest
 
 import rclpy
@@ -24,7 +22,6 @@ from rclpy.publisher import Publisher
 from rclpy.qos import QoSDurabilityPolicy
 from rclpy.qos import QoSHistoryPolicy
 from rclpy.qos import QoSLivelinessPolicy
-from rclpy.qos import QoSPolicyKind
 from rclpy.qos import QoSProfile
 from rclpy.qos import QoSReliabilityPolicy
 from rclpy.qos_overriding_options import _declare_qos_parameters
@@ -32,16 +29,17 @@ from rclpy.qos_overriding_options import _get_qos_policy_parameter
 from rclpy.qos_overriding_options import InvalidQosOverridesError
 from rclpy.qos_overriding_options import QosCallbackResult
 from rclpy.qos_overriding_options import QoSOverridingOptions
+from rclpy.qos_overriding_options import QoSPolicyKind
 
 
 @pytest.fixture(autouse=True)
-def init_shutdown() -> Generator[None, None, None]:
+def init_shutdown():
     rclpy.init()
     yield
     rclpy.shutdown()
 
 
-def test_get_qos_policy_parameter() -> None:
+def test_get_qos_policy_parameter():
     qos = QoSProfile(
         history=QoSHistoryPolicy.KEEP_LAST,
         depth=10,
@@ -70,7 +68,7 @@ def test_get_qos_policy_parameter() -> None:
     assert value == qos.liveliness_lease_duration.nanoseconds
 
 
-def test_declare_qos_parameters() -> None:
+def test_declare_qos_parameters():
     node = Node('my_node')
     _declare_qos_parameters(
         Publisher, node, '/my_topic', QoSProfile(depth=10),
@@ -90,7 +88,7 @@ def test_declare_qos_parameters() -> None:
         assert actual[1].value == expected[1]  # same param value
 
 
-def test_declare_qos_parameters_with_overrides() -> None:
+def test_declare_qos_parameters_with_overrides():
     node = Node('my_node', parameter_overrides=[
         Parameter('qos_overrides./my_topic.publisher.depth', value=100),
         Parameter('qos_overrides./my_topic.publisher.reliability', value='best_effort'),
@@ -114,8 +112,8 @@ def test_declare_qos_parameters_with_overrides() -> None:
             assert actual[1].value == expected[1]  # same param value
 
 
-def test_declare_qos_parameters_with_happy_callback() -> None:
-    def qos_validation_callback(qos: QoSProfile) -> QosCallbackResult:
+def test_declare_qos_parameters_with_happy_callback():
+    def qos_validation_callback(qos):
         result = QosCallbackResult()
         result.successful = True
         return result
@@ -139,8 +137,8 @@ def test_declare_qos_parameters_with_happy_callback() -> None:
         assert actual[1].value == expected[1]  # same param value
 
 
-def test_declare_qos_parameters_with_unhappy_callback() -> None:
-    def qos_validation_callback(qos: QoSProfile) -> QosCallbackResult:
+def test_declare_qos_parameters_with_unhappy_callback():
+    def qos_validation_callback(qos):
         result = QosCallbackResult()
         result.successful = False
         result.reason = 'my_custom_error_message'
@@ -156,7 +154,7 @@ def test_declare_qos_parameters_with_unhappy_callback() -> None:
     assert 'my_custom_error_message' in str(err.value)
 
 
-def test_declare_qos_parameters_with_id() -> None:
+def test_declare_qos_parameters_with_id():
     node = Node('my_node')
     _declare_qos_parameters(
         Publisher, node, '/my_topic', QoSProfile(depth=10),
