@@ -19,6 +19,7 @@ import time
 from types import TracebackType
 from typing import Any
 from typing import Callable
+from typing import Coroutine
 from typing import Dict
 from typing import Generic
 from typing import Optional
@@ -27,6 +28,7 @@ from typing import Type
 from typing import TYPE_CHECKING
 from typing import TypedDict
 from typing import TypeVar
+from typing import Union
 
 import uuid
 import weakref
@@ -58,9 +60,9 @@ from rclpy.waitable import NumberOfEntities, Waitable
 from unique_identifier_msgs.msg import UUID
 
 if TYPE_CHECKING:
-    from rclpy.node import Node
     from rclpy.callback_groups import CallbackGroup
-    from typing_extensions import Unpack, TypeAlias
+    from rclpy.node import Node
+    from typing_extensions import TypeAlias, Unpack
 
     ClientGoalHandleDictResultT = TypeVar('ClientGoalHandleDictResultT', bound=Msg)
     ClientGoalHandleDictFeedbackT = TypeVar('ClientGoalHandleDictFeedbackT', bound=Msg)
@@ -73,16 +75,20 @@ if TYPE_CHECKING:
         result: Tuple[int, GetResultServiceResponse[ClientGoalHandleDictResultT]]
         feedback: FeedbackMessage[ClientGoalHandleDictFeedbackT]
         status: GoalStatusArray
+
+    FeedbackCallbackUnion: TypeAlias = Union[
+        Callable[[FeedbackMessage[FeedbackT]], None],
+        Callable[[FeedbackMessage[FeedbackT]], Coroutine[Any, Any, None]],
+    ]
+
+    class SendGoalKWargs(TypedDict, Generic[FeedbackT]):
+        feedback_callback: Optional[FeedbackCallbackUnion[FeedbackT]]
+        goal_uuid: Optional[UUID]
 else:
     ClientGoalHandleDict: 'TypeAlias' = Dict[str, object]
 
 
 T = TypeVar('T')
-
-
-class SendGoalKWargs(TypedDict):
-    feedback_callback: Optional[Callable[[FeedbackT], None]]
-    goal_uuid: Optional[UUID]
 
 
 class ClientGoalHandle(Generic[GoalT, ResultT, FeedbackT, ImplT]):
@@ -93,7 +99,7 @@ class ClientGoalHandle(Generic[GoalT, ResultT, FeedbackT, ImplT]):
         self._action_client = action_client
         self._goal_id = goal_id
         self._goal_response = goal_response
-        self._status = GoalStatus.STATUS_UNKNOWN
+        self._status: int = GoalStatus.STATUS_UNKNOWN
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, ClientGoalHandle):
@@ -243,7 +249,7 @@ class ActionClient(Generic[GoalT, ResultT, FeedbackT, ImplT],
         # key: result request sequence_number, value: UUID
         self._result_sequence_number_to_goal_id: Dict[int, UUID] = {}
         # key: UUID in bytes, value: callback function
-        self._feedback_callbacks: Dict[bytes, Callable[[FeedbackT], None]] = {}
+        self._feedback_callbacks: Dict[bytes, FeedbackCallbackUnion[FeedbackT]] = {}
 
         self._logger = self._node.get_logger().get_child('action_client')
         self._lock = threading.Lock()
@@ -251,7 +257,7 @@ class ActionClient(Generic[GoalT, ResultT, FeedbackT, ImplT],
         callback_group.add_entity(self)
         self._node.add_waitable(self)
 
-    def _generate_random_uuid(self):
+    def _generate_random_uuid(self) -> UUID:
         return UUID(uuid=list(uuid.uuid4().bytes))
 
     def _remove_pending_request(self, future: Future[T], pending_requests: Dict[int, Future[T]]
@@ -451,7 +457,7 @@ class ActionClient(Generic[GoalT, ResultT, FeedbackT, ImplT],
 
     # End Waitable API
 
-    def send_goal(self, goal: GoalT, **kwargs: 'Unpack[SendGoalKWargs]'
+    def send_goal(self, goal: GoalT, **kwargs: 'Unpack[SendGoalKWargs[FeedbackT]]'
                   ) -> Optional[GetResultServiceResponse[ResultT]]:
         """
         Send a goal and wait for the result.
@@ -501,7 +507,7 @@ class ActionClient(Generic[GoalT, ResultT, FeedbackT, ImplT],
     def send_goal_async(
         self,
         goal: GoalT,
-        feedback_callback: Optional[Callable[[FeedbackT], None]] = None,
+        feedback_callback: Optional[FeedbackCallbackUnion[FeedbackT]] = None,
         goal_uuid: Optional[UUID] = None
     ) -> Future[ClientGoalHandle[GoalT, ResultT, FeedbackT, ImplT]]:
         """
@@ -545,8 +551,8 @@ class ActionClient(Generic[GoalT, ResultT, FeedbackT, ImplT],
 
         if feedback_callback is not None:
             # TODO(jacobperron): Move conversion function to a general-use package
-            goal_uuid = bytes(request.goal_id.uuid)
-            self._feedback_callbacks[goal_uuid] = feedback_callback
+            goal_uuid_bytes = bytes(request.goal_id.uuid)
+            self._feedback_callbacks[goal_uuid_bytes] = feedback_callback
 
         return future
 
