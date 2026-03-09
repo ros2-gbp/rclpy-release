@@ -263,9 +263,7 @@ throw_if_unparsed_ros_args(py::list pyargs, const rcl_arguments_t & rcl_args)
     throw RCLError("failed to get unparsed arguments");
   }
 
-  auto deallocator = [&](int ptr[]) {allocator.deallocate(ptr, allocator.state);};
-  auto unparsed_indices = std::unique_ptr<int[], decltype(deallocator)>(
-    unparsed_indices_c, deallocator);
+  RCPPUTILS_SCOPE_EXIT(allocator.deallocate(unparsed_indices_c, allocator.state));
 
   py::list unparsed_args;
   for (int i = 0; i < unparsed_ros_args_count; ++i) {
@@ -308,6 +306,8 @@ _convert_to_py_topic_endpoint_info(const rmw_topic_endpoint_info_t * topic_endpo
   py_endpoint_info_dict["node_name"] = py::str(topic_endpoint_info->node_name);
   py_endpoint_info_dict["node_namespace"] = py::str(topic_endpoint_info->node_namespace);
   py_endpoint_info_dict["topic_type"] = py::str(topic_endpoint_info->topic_type);
+  py_endpoint_info_dict["topic_type_hash"] =
+    convert_to_type_hash_dict(&topic_endpoint_info->topic_type_hash);
   py_endpoint_info_dict["endpoint_type"] =
     py::int_(static_cast<int>(topic_endpoint_info->endpoint_type));
   py_endpoint_info_dict["endpoint_gid"] = py_endpoint_gid;
@@ -330,6 +330,62 @@ convert_to_py_topic_endpoint_info_list(const rmw_topic_endpoint_info_array_t * i
     rmw_topic_endpoint_info_t topic_endpoint_info = info_array->info_array[i];
     // add this dict to the list
     py_info_array[i] = _convert_to_py_topic_endpoint_info(&topic_endpoint_info);
+  }
+  return py_info_array;
+}
+
+py::dict
+_convert_to_py_service_endpoint_info(const rmw_service_endpoint_info_t * service_endpoint_info)
+{
+  py::list py_endpoint_gids;
+  for(size_t c = 0; c < service_endpoint_info->endpoint_count; c++) {
+    py::list py_endpoint_gid = py::list(RMW_GID_STORAGE_SIZE);
+    for (size_t i = 0; i < RMW_GID_STORAGE_SIZE; i++) {
+      py_endpoint_gid[i] = py::int_(service_endpoint_info->endpoint_gids[c][i]);
+    }
+    py_endpoint_gids.append(py_endpoint_gid);
+  }
+  // Create dictionary that represents rmw_service_endpoint_info_t
+  py::dict py_endpoint_info_dict;
+  // Populate keyword arguments
+  // A success returns 0, and a failure returns -1
+  py_endpoint_info_dict["node_name"] = py::str(service_endpoint_info->node_name);
+  py_endpoint_info_dict["node_namespace"] = py::str(service_endpoint_info->node_namespace);
+  py_endpoint_info_dict["service_type"] = py::str(service_endpoint_info->service_type);
+  py_endpoint_info_dict["service_type_hash"] =
+    convert_to_type_hash_dict(&service_endpoint_info->service_type_hash);
+  py_endpoint_info_dict["qos_profiles"] = py::list();
+  py_endpoint_info_dict["endpoint_gids"] = py::list();
+
+  py::list qos_profiles_list;
+  // Append values to the lists
+  for (size_t i = 0; i < service_endpoint_info->endpoint_count; i++) {
+    qos_profiles_list.append(
+      convert_to_qos_dict(&service_endpoint_info->qos_profiles[i])
+    );
+  }
+  py_endpoint_info_dict["qos_profiles"] = qos_profiles_list;
+  py_endpoint_info_dict["endpoint_gids"] = py_endpoint_gids;
+  py_endpoint_info_dict["endpoint_type"] =
+    py::int_(static_cast<int>(service_endpoint_info->endpoint_type));
+  py_endpoint_info_dict["endpoint_count"] = py::int_(service_endpoint_info->endpoint_count);
+
+  return py_endpoint_info_dict;
+}
+
+py::list
+convert_to_py_service_endpoint_info_list(const rmw_service_endpoint_info_array_t * info_array)
+{
+  if (!info_array) {
+    throw std::runtime_error("rmw_service_endpoint_info_array_t pointer is empty");
+  }
+
+  py::list py_info_array(info_array->size);
+
+  for (size_t i = 0; i < info_array->size; ++i) {
+    rmw_service_endpoint_info_t service_endpoint_info = info_array->info_array[i];
+    // add this dict to the list
+    py_info_array[i] = _convert_to_py_service_endpoint_info(&service_endpoint_info);
   }
   return py_info_array;
 }
@@ -364,5 +420,19 @@ convert_to_qos_dict(const rmw_qos_profile_t * qos_profile)
     py::bool_(qos_profile->avoid_ros_namespace_conventions);
 
   return pyqos_kwargs;
+}
+
+py::dict
+convert_to_type_hash_dict(const rosidl_type_hash_t * type_hash)
+{
+  // Create dictionary and populate arguments with type hash object
+  py::dict type_hash_kwargs;
+
+  type_hash_kwargs["version"] = py::int_(type_hash->version);
+  type_hash_kwargs["value"] = py::bytes(
+    reinterpret_cast<const char *>(type_hash->value),
+    ROSIDL_TYPE_HASH_SIZE);
+
+  return type_hash_kwargs;
 }
 }  // namespace rclpy
