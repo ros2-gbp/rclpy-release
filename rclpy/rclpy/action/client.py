@@ -178,6 +178,7 @@ class ActionClient(Waitable):
         # key: UUID in bytes, value: callback function
         self._feedback_callbacks = {}
 
+        self._logger = self._node.get_logger().get_child('action_client')
         self._lock = threading.Lock()
 
         callback_group.add_entity(self)
@@ -223,7 +224,7 @@ class ActionClient(Waitable):
         if seq in self._result_sequence_number_to_goal_id:
             goal_uuid = bytes(self._result_sequence_number_to_goal_id[seq].uuid)
             del self._result_sequence_number_to_goal_id[seq]
-            # remove feeback_callback if user is aware of result and it's been received
+            # remove feedback_callback if user is aware of result and it's been received
             if goal_uuid in self._feedback_callbacks:
                 del self._feedback_callbacks[goal_uuid]
 
@@ -307,7 +308,7 @@ class ActionClient(Waitable):
 
                 self._pending_goal_requests[sequence_number].set_result(goal_handle)
             else:
-                self._node.get_logger().warning(
+                self._logger.warning(
                     'Ignoring unexpected goal response. There may be more than '
                     f"one action server for the action '{self._action_name}'"
                 )
@@ -317,7 +318,7 @@ class ActionClient(Waitable):
             if sequence_number in self._pending_cancel_requests:
                 self._pending_cancel_requests[sequence_number].set_result(cancel_response)
             else:
-                self._node.get_logger().warning(
+                self._logger.warning(
                     'Ignoring unexpected cancel response. There may be more than '
                     f"one action server for the action '{self._action_name}'"
                 )
@@ -327,7 +328,7 @@ class ActionClient(Waitable):
             if sequence_number in self._pending_result_requests:
                 self._pending_result_requests[sequence_number].set_result(result_response)
             else:
-                self._node.get_logger().warning(
+                self._logger.warning(
                     'Ignoring unexpected result response. There may be more than '
                     f"one action server for the action '{self._action_name}'"
                 )
@@ -514,10 +515,6 @@ class ActionClient(Waitable):
             future.add_done_callback(self._remove_pending_cancel_request)
             # Add future so executor is aware
             self.add_future(future)
-        self._pending_cancel_requests[sequence_number] = future
-        future.add_done_callback(self._remove_pending_cancel_request)
-        # Add future so executor is aware
-        self.add_future(future)
 
         return future
 

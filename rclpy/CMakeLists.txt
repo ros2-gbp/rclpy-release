@@ -5,6 +5,7 @@ project(rclpy)
 # Default to C++17
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
+  set(CMAKE_CXX_STANDARD_REQUIRED ON)
 endif()
 # Default to C11
 if(NOT CMAKE_C_STANDARD)
@@ -28,6 +29,7 @@ find_package(ament_cmake_python REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
 find_package(rcl REQUIRED)
 find_package(rcl_action REQUIRED)
+find_package(rcl_interfaces REQUIRED)
 find_package(rcl_lifecycle REQUIRED)
 find_package(rcl_logging_interface REQUIRED)
 find_package(rcl_yaml_param_parser REQUIRED)
@@ -82,6 +84,11 @@ pybind11_add_module(_rclpy_pybind11
   src/rclpy/destroyable.cpp
   src/rclpy/duration.cpp
   src/rclpy/clock_event.cpp
+  src/rclpy/events_executor/delayed_event_thread.cpp
+  src/rclpy/events_executor/events_executor.cpp
+  src/rclpy/events_executor/events_queue.cpp
+  src/rclpy/events_executor/rcl_support.cpp
+  src/rclpy/events_executor/timers_manager.cpp
   src/rclpy/exceptions.cpp
   src/rclpy/graph.cpp
   src/rclpy/guard_condition.cpp
@@ -91,17 +98,24 @@ pybind11_add_module(_rclpy_pybind11
   src/rclpy/node.cpp
   src/rclpy/publisher.cpp
   src/rclpy/qos.cpp
-  src/rclpy/qos_event.cpp
+  src/rclpy/event_handle.cpp
   src/rclpy/serialization.cpp
   src/rclpy/service.cpp
   src/rclpy/service_info.cpp
+  src/rclpy/service_introspection.cpp
   src/rclpy/signal_handler.cpp
   src/rclpy/subscription.cpp
   src/rclpy/time_point.cpp
   src/rclpy/timer.cpp
+  src/rclpy/type_description_service.cpp
   src/rclpy/utils.cpp
   src/rclpy/wait_set.cpp
 )
+
+if(CMAKE_C_COMPILER_ID MATCHES "Clang" AND NOT APPLE)
+  target_link_libraries(_rclpy_pybind11 PRIVATE atomic)
+endif()
+
 target_include_directories(_rclpy_pybind11 PRIVATE
   src/rclpy/
 )
@@ -110,6 +124,7 @@ target_link_libraries(_rclpy_pybind11 PRIVATE
   lifecycle_msgs::lifecycle_msgs__rosidl_typesupport_c
   rcl::rcl
   rcl_action::rcl_action
+  ${rcl_interfaces_TARGETS}
   rcl_lifecycle::rcl_lifecycle
   rcl_logging_interface::rcl_logging_interface
   rcpputils::rcpputils
@@ -166,6 +181,7 @@ if(BUILD_TESTING)
       test/test_create_node.py
       test/test_create_while_spinning.py
       test/test_destruction.py
+      test/test_events_executor.py
       test/test_executor.py
       test/test_expand_topic_name.py
       test/test_guard_condition.py
@@ -173,16 +189,22 @@ if(BUILD_TESTING)
       test/test_lifecycle.py
       test/test_logging.py
       test/test_logging_rosout.py
+      test/test_logging_service.py
       test/test_messages.py
       test/test_node.py
       test/test_parameter.py
+      test/test_parameter_client.py
       test/test_parameter_service.py
+      test/test_parameter_event_handler.py
       test/test_publisher.py
       test/test_qos.py
       test/test_qos_event.py
       test/test_qos_overriding_options.py
       test/test_rate.py
+      test/test_rosout_subscription.py
       test/test_serialization.py
+      test/test_service.py
+      test/test_service_introspection.py
       test/test_subscription.py
       test/test_task.py
       test/test_time_source.py
@@ -191,6 +213,7 @@ if(BUILD_TESTING)
       test/test_topic_or_service_is_hidden.py
       test/test_topic_endpoint_info.py
       test/test_type_support.py
+      test/test_type_hash.py
       test/test_utilities.py
       test/test_validate_full_topic_name.py
       test/test_validate_namespace.py

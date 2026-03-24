@@ -144,7 +144,7 @@ WaitSet::add_client(const Client & client)
 }
 
 size_t
-WaitSet::add_event(const QoSEvent & event)
+WaitSet::add_event(const EventHandle & event)
 {
   size_t index;
   rcl_ret_t ret = rcl_wait_set_add_event(rcl_wait_set_.get(), event.rcl_ptr(), &index);
@@ -269,7 +269,7 @@ void define_waitset(py::object module)
     "Add a service to the wait set structure")
   .def(
     "add_subscription", &WaitSet::add_subscription,
-    "Add a subcription to the wait set structure")
+    "Add a subscription to the wait set structure")
   .def(
     "add_client", &WaitSet::add_client,
     "Add a client to the wait set structure")

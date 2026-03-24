@@ -16,7 +16,7 @@ from enum import Enum
 import inspect
 import sys
 import threading
-from typing import Any, Coroutine, Generator, Optional
+from typing import Any, Callable, Coroutine, Generator, Optional
 import warnings
 import weakref
 
@@ -67,7 +67,7 @@ class Future:
             raise RuntimeError('Future awaited a second time before it was done')
         return self.result()
 
-    def _pending(self):
+    def _pending(self) -> bool:
         return self._state == FutureState.PENDING
 
     def cancel(self):
@@ -184,7 +184,7 @@ class Future:
         The callback may be called immediately by this method if the future is already done.
         If this happens and the callback raises, the exception will be raised by this method.
 
-        :param callback: a callback taking the future as an agrument to be run when completed
+        :param callback: a callback taking the future as an argument to be run when completed
         """
         invoke = False
         with self._lock:
@@ -200,6 +200,20 @@ class Future:
         # Invoke when not holding self._lock
         if invoke:
             callback(self)
+
+    def remove_done_callback(self, callback: Callable[['Future'], None]) -> bool:
+        """
+        Remove a previously-added done callback.
+
+        Returns true if the given callback was found and removed.  Always fails if the Future was
+        already complete.
+        """
+        with self._lock:
+            try:
+                self._callbacks.remove(callback)
+            except ValueError:
+                return False
+            return True
 
 
 class Task(Future):
