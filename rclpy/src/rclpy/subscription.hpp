@@ -115,6 +115,9 @@ public:
   void
   clear_on_new_message_callback();
 
+  /// Check if subscription instance supports content filter.
+  bool is_cft_supported() const;
+
   /// Check if the content filtered topic of this subscription is enabled
   bool is_cft_enabled() const;
 
@@ -123,7 +126,7 @@ public:
    * \param[in] filter_expression A filter expression to set.
    *   An empty string ("") will clear the content filter setting of the subscription.
    * \param[in] expression_parameters Array of expression parameters to set.
-   * \throws RCLError if an unexpect error occurs
+   * \throws RCLError if an unexpected error occurs
    */
   void
   set_content_filter(
@@ -133,7 +136,7 @@ public:
   /// Get the filter expression and expression parameters for the subscription.
   /**
    * \return The content filter options to get.
-   * \throws RCLError if an unexpect error occurs
+   * \throws RCLError if an unexpected error occurs
    */
   py::object
   get_content_filter() const;
