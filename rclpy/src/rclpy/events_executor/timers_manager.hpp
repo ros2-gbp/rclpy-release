@@ -26,6 +26,7 @@
 #include <unordered_map>
 
 #include "events_executor/events_queue.hpp"
+#include "events_executor/python_eq_handler.hpp"
 #include "events_executor/python_hasher.hpp"
 #include "events_executor/scoped_with.hpp"
 
@@ -42,7 +43,7 @@ public:
   explicit RclTimersManager(EventsQueue *);
   ~RclTimersManager();
 
-  void AddTimer(rcl_timer_t *, std::function<void()> ready_callback);
+  void AddTimer(rcl_timer_t *, std::function<void(const rcl_timer_call_info_t &)> ready_callback);
   void RemoveTimer(rcl_timer_t *);
 
 private:
@@ -62,7 +63,7 @@ public:
   /// timer is ready for servicing.
   TimersManager(
     EventsQueue * events_queue,
-    std::function<void(pybind11::handle)> timer_ready_callback);
+    std::function<void(pybind11::handle, const rcl_timer_call_info_t &)> timer_ready_callback);
   ~TimersManager();
 
   /// Accessor for underlying rcl timer manager, for management of non-Python timers.
@@ -84,9 +85,9 @@ private:
   };
 
   RclTimersManager rcl_manager_;
-  const std::function<void(pybind11::handle)> ready_callback_;
+  const std::function<void(pybind11::handle, const rcl_timer_call_info_t &)> ready_callback_;
 
-  std::unordered_map<pybind11::handle, PyRclMapping, PythonHasher> timer_mappings_;
+  std::unordered_map<pybind11::handle, PyRclMapping, PythonHasher, PythonEqHandler> timer_mappings_;
 };
 
 }  // namespace events_executor

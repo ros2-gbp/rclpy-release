@@ -13,12 +13,14 @@
 # limitations under the License.
 
 import time
+from typing import TYPE_CHECKING
 import unittest
 
 from rcl_interfaces.srv import GetParameters
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.callback_groups import ReentrantCallbackGroup
+import rclpy.context
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.task import Future
 from test_msgs.msg import BasicTypes, Empty
@@ -26,18 +28,22 @@ from test_msgs.msg import BasicTypes, Empty
 
 class TestCallbackGroup(unittest.TestCase):
 
+    if TYPE_CHECKING:
+        context: rclpy.context.Context
+        node: rclpy.node.Node
+
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls.context = rclpy.context.Context()
         rclpy.init(context=cls.context)
         cls.node = rclpy.create_node('TestCallbackGroup', namespace='/rclpy', context=cls.context)
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         cls.node.destroy_node()
         rclpy.shutdown(context=cls.context)
 
-    def test_reentrant_group(self):
+    def test_reentrant_group(self) -> None:
         self.assertIsNotNone(self.node.handle)
         group = ReentrantCallbackGroup()
         t1 = self.node.create_timer(1.0, lambda: None, callback_group=group)
@@ -48,7 +54,7 @@ class TestCallbackGroup(unittest.TestCase):
         self.assertTrue(group.beginning_execution(t1))
         self.assertTrue(group.beginning_execution(t2))
 
-    def test_reentrant_group_not_blocking(self):
+    def test_reentrant_group_not_blocking(self) -> None:
         self.assertIsNotNone(self.node.handle)
         # Create multithreaded executor needed for parallel callback handling
         executor = MultiThreadedExecutor(num_threads=2, context=self.context)
@@ -60,12 +66,12 @@ class TestCallbackGroup(unittest.TestCase):
             received_short_callback_in_long_callback = False
 
             # Setup two future objects that control the executor
-            future_up = Future()
-            future_down = Future()
+            future_up: Future[None] = Future()
+            future_down: Future[None] = Future()
 
             # This callback is used to check if a callback can be received while another
             # long running callback is being executed
-            def short_callback(msg):
+            def short_callback(msg: Empty) -> None:
                 nonlocal got_short_callback
                 # Set flag so signal that the callback has been received
                 got_short_callback = True
@@ -73,10 +79,8 @@ class TestCallbackGroup(unittest.TestCase):
             # This callback is as a long running callback
             # It will be checking that the short callback can
             # run in parallel to this long running one
-            def long_callback(msg):
+            def long_callback(msg: Empty) -> None:
                 nonlocal received_short_callback_in_long_callback
-                nonlocal future_up
-                nonlocal future_down
                 # The following future is used to delay the publishing of
                 # the message that triggers the short callback.
                 # This is done to ensure the long running callback is being executed
@@ -129,7 +133,7 @@ class TestCallbackGroup(unittest.TestCase):
         finally:
             executor.shutdown()
 
-    def test_mutually_exclusive_group(self):
+    def test_mutually_exclusive_group(self) -> None:
         self.assertIsNotNone(self.node.handle)
         group = MutuallyExclusiveCallbackGroup()
         t1 = self.node.create_timer(1.0, lambda: None, callback_group=group)
@@ -146,7 +150,7 @@ class TestCallbackGroup(unittest.TestCase):
         self.assertTrue(group.can_execute(t2))
         self.assertTrue(group.beginning_execution(t2))
 
-    def test_create_timer_with_group(self):
+    def test_create_timer_with_group(self) -> None:
         tmr1 = self.node.create_timer(1.0, lambda: None)
         group = ReentrantCallbackGroup()
         tmr2 = self.node.create_timer(1.0, lambda: None, callback_group=group)
@@ -154,7 +158,7 @@ class TestCallbackGroup(unittest.TestCase):
         self.assertFalse(group.has_entity(tmr1))
         self.assertTrue(group.has_entity(tmr2))
 
-    def test_create_subscription_with_group(self):
+    def test_create_subscription_with_group(self) -> None:
         sub1 = self.node.create_subscription(BasicTypes, 'chatter', lambda msg: print(msg), 1)
         group = ReentrantCallbackGroup()
         sub2 = self.node.create_subscription(
@@ -163,7 +167,7 @@ class TestCallbackGroup(unittest.TestCase):
         self.assertFalse(group.has_entity(sub1))
         self.assertTrue(group.has_entity(sub2))
 
-    def test_create_client_with_group(self):
+    def test_create_client_with_group(self) -> None:
         cli1 = self.node.create_client(GetParameters, 'get/parameters')
         group = ReentrantCallbackGroup()
         cli2 = self.node.create_client(GetParameters, 'get/parameters', callback_group=group)
@@ -171,11 +175,13 @@ class TestCallbackGroup(unittest.TestCase):
         self.assertFalse(group.has_entity(cli1))
         self.assertTrue(group.has_entity(cli2))
 
-    def test_create_service_with_group(self):
-        srv1 = self.node.create_service(GetParameters, 'get/parameters', lambda req: None)
+    def test_create_service_with_group(self) -> None:
+        srv1 = self.node.create_service(GetParameters, 'get/parameters',
+                                        lambda req, res: GetParameters.Response())
         group = ReentrantCallbackGroup()
         srv2 = self.node.create_service(
-            GetParameters, 'get/parameters', lambda req: None, callback_group=group)
+            GetParameters, 'get/parameters', lambda req, res: GetParameters.Response(),
+            callback_group=group)
 
         self.assertFalse(group.has_entity(srv1))
         self.assertTrue(group.has_entity(srv2))

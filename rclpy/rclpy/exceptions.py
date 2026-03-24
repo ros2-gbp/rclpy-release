@@ -11,9 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List, Optional, TYPE_CHECKING, Union
+from typing import Any, List, Optional, TYPE_CHECKING, Union
 
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
+
+if TYPE_CHECKING:
+    from rclpy.parameter import AllowableParameterValue
 
 
 class NotInitializedException(Exception):
@@ -110,7 +113,7 @@ class InvalidParameterTypeException(ParameterException):
 
     from rclpy.parameter import Parameter
 
-    def __init__(self, desired_parameter: Parameter, expected_type: Parameter.Type) -> None:
+    def __init__(self, desired_parameter: Parameter[Any], expected_type: str) -> None:
         from rclpy.parameter import Parameter
         ParameterException.__init__(
             self,
@@ -122,9 +125,6 @@ class InvalidParameterTypeException(ParameterException):
 
 class InvalidParameterValueException(ParameterException):
     """Raised when a parameter is rejected by a user callback or when applying a descriptor."""
-
-    if TYPE_CHECKING:
-        from rclpy.parameter import AllowableParameterValue
 
     def __init__(self, parameter: str, value: 'AllowableParameterValue', reason: str) -> None:
         ParameterException.__init__(

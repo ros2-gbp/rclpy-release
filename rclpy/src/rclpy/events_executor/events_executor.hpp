@@ -34,6 +34,7 @@
 #include <vector>
 
 #include "events_executor/events_queue.hpp"
+#include "events_executor/python_eq_handler.hpp"
 #include "events_executor/rcl_support.hpp"
 #include "events_executor/scoped_with.hpp"
 #include "events_executor/timers_manager.hpp"
@@ -110,7 +111,7 @@ private:
 
   void HandleAddedTimer(pybind11::handle);
   void HandleRemovedTimer(pybind11::handle);
-  void HandleTimerReady(pybind11::handle);
+  void HandleTimerReady(pybind11::handle, const rcl_timer_call_info_t &);
 
   void HandleAddedClient(pybind11::handle);
   void HandleRemovedClient(pybind11::handle);
@@ -165,6 +166,7 @@ private:
   const pybind11::object inspect_signature_;
   const pybind11::object rclpy_task_;
   const pybind11::object rclpy_future_;
+  const pybind11::object rclpy_timer_timer_info_;
 
   EventsQueue events_queue_;
   ScopedSignalCallback signal_callback_;
@@ -186,7 +188,8 @@ private:
 
   /// Cache for rcl pointers underlying each waitables_ entry, because those are harder to retrieve
   /// than the other entity types.
-  std::unordered_map<pybind11::handle, WaitableSubEntities, PythonHasher> waitable_entities_;
+  std::unordered_map<pybind11::handle, WaitableSubEntities, PythonHasher,
+    PythonEqHandler> waitable_entities_;
 
   RclCallbackManager rcl_callback_manager_;
   TimersManager timers_manager_;

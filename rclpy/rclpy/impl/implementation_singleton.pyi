@@ -1,4 +1,4 @@
-# Copyright 2022 Open Source Robotics Foundation, Inc.
+# Copyright 2024 Open Source Robotics Foundation, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import warnings
 
-from rclpy.event_handler import *  # noqa: F401, F403
+from rclpy.impl import _rclpy_pybind11
 
-warnings.warn("importing 'qos_event' is deprecated; import 'event_handler' instead")
+rclpy_implementation = _rclpy_pybind11

@@ -12,6 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Generator
+from typing import List
+from typing import Optional
+from unittest.mock import Mock
+
 import pytest
 
 import rclpy
@@ -24,24 +29,24 @@ NODE_NAME = 'test_node'
 
 
 @pytest.fixture(autouse=True)
-def default_context():
+def default_context() -> Generator[None, None, None]:
     rclpy.init()
     yield
     rclpy.shutdown()
 
 
 @pytest.fixture
-def test_node():
+def test_node() -> Generator[Node, None, None]:
     node = Node(NODE_NAME)
     yield node
     node.destroy_node()
 
 
-def test_logger_name_is_equal_to_node_name(test_node):
+def test_logger_name_is_equal_to_node_name(test_node: Node) -> None:
     srv = test_node.create_service(
         srv_type=Empty,
         srv_name='test_srv',
-        callback=lambda _: None
+        callback=lambda _1, _2: Empty.Response()
     )
 
     assert srv.logger_name == NODE_NAME
@@ -60,12 +65,12 @@ def test_logger_name_is_equal_to_node_name(test_node):
     ('/service', 'ns', '/service'),
     ('/example/service', 'ns', '/example/service'),
 ])
-def test_get_service_name(service_name, namespace, expected):
+def test_get_service_name(service_name: str, namespace: Optional[str], expected: str) -> None:
     node = Node('node_name', namespace=namespace, cli_args=None, start_parameter_services=False)
     srv = node.create_service(
         srv_type=Empty,
         srv_name=service_name,
-        callback=lambda _: None
+        callback=lambda _1, _2: Empty.Response()
     )
 
     assert srv.service_name == expected
@@ -82,7 +87,8 @@ def test_get_service_name(service_name, namespace, expected):
     ('example/service', 'ns', ['--ros-args', '--remap', 'example/service:=new_service'],
      '/ns/new_service'),
 ])
-def test_get_service_name_after_remapping(service_name, namespace, cli_args, expected):
+def test_get_service_name_after_remapping(service_name: str, namespace: Optional[str],
+                                          cli_args: List[str], expected: str) -> None:
     node = Node(
         'node_name',
         namespace=namespace,
@@ -91,10 +97,32 @@ def test_get_service_name_after_remapping(service_name, namespace, cli_args, exp
     srv = node.create_service(
         srv_type=Empty,
         srv_name=service_name,
-        callback=lambda _: None
+        callback=lambda _1, _2: Empty.Response()
     )
 
     assert srv.service_name == expected
 
     srv.destroy()
     node.destroy_node()
+
+
+def test_service_context_manager() -> None:
+    with rclpy.create_node('ctx_mgr_test') as node:
+        with node.create_service(
+                srv_type=Empty,
+                srv_name='empty_service',
+                callback=lambda _1, _2: Empty.Response()) as srv:
+            assert srv.service_name == '/empty_service'
+
+
+def test_set_on_new_request_callback(test_node: Node) -> None:
+    cli = test_node.create_client(Empty, '/service')
+    srv = test_node.create_service(Empty, '/service', lambda req, res: res)
+    cb = Mock()
+    srv.handle.set_on_new_request_callback(cb)
+    cb.assert_not_called()
+    cli.call_async(Empty.Request())
+    cb.assert_called_once_with(1)
+    srv.handle.clear_on_new_request_callback()
+    cli.call_async(Empty.Request())
+    cb.assert_called_once()

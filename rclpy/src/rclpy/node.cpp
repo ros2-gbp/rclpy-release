@@ -408,7 +408,8 @@ Node::Node(
   Context & context,
   py::object pycli_args,
   bool use_global_arguments,
-  bool enable_rosout)
+  bool enable_rosout,
+  py::object rosout_qos_profile)
 : context_(context)
 {
   rcl_ret_t ret;
@@ -500,6 +501,10 @@ Node::Node(
   options.arguments = arguments;
   options.enable_rosout = enable_rosout;
 
+  if (!rosout_qos_profile.is_none()) {
+    options.rosout_qos = rosout_qos_profile.cast<rmw_qos_profile_t>();
+  }
+
   ret = rcl_node_init(
     rcl_node_.get(), node_name, namespace_, context.rcl_ptr(), &options);
 
@@ -530,6 +535,7 @@ py::list
 Node::get_action_client_names_and_types_by_node(
   const char * remote_node_name, const char * remote_node_namespace)
 {
+  // Deprecated: Use _rclpy.rclpy_get_action_client_names_and_types_by_node function instead
   rcl_names_and_types_t names_and_types = rcl_get_zero_initialized_names_and_types();
   rcl_allocator_t allocator = rcl_get_default_allocator();
   rcl_ret_t ret = rcl_action_get_client_names_and_types_by_node(
@@ -549,6 +555,7 @@ py::list
 Node::get_action_server_names_and_types_by_node(
   const char * remote_node_name, const char * remote_node_namespace)
 {
+  // Deprecated: Use _rclpy.rclpy_get_action_server_names_and_types_by_node function instead
   rcl_names_and_types_t names_and_types = rcl_get_zero_initialized_names_and_types();
   rcl_allocator_t allocator = rcl_get_default_allocator();
   rcl_ret_t ret = rcl_action_get_server_names_and_types_by_node(
@@ -567,6 +574,7 @@ Node::get_action_server_names_and_types_by_node(
 py::list
 Node::get_action_names_and_types()
 {
+  // Deprecated: Use _rclpy.rclpy_get_action_names_and_types function instead
   rcl_names_and_types_t names_and_types = rcl_get_zero_initialized_names_and_types();
   rcl_allocator_t allocator = rcl_get_default_allocator();
   rcl_ret_t ret = rcl_action_get_names_and_types(rcl_node_.get(), &allocator, &names_and_types);
@@ -581,7 +589,7 @@ void
 define_node(py::object module)
 {
   py::class_<Node, Destroyable, std::shared_ptr<Node>>(module, "Node")
-  .def(py::init<const char *, const char *, Context &, py::object, bool, bool>())
+  .def(py::init<const char *, const char *, Context &, py::object, bool, bool, py::object>())
   .def_property_readonly(
     "pointer", [](const Node & node) {
       return reinterpret_cast<size_t>(node.rcl_ptr());
