@@ -36,7 +36,7 @@ find_package(rosidl_runtime_c REQUIRED)
 # /usr/bin/python3.10, /usr/bin/python3.11, and /usr/bin/python3, it will find
 # /usr/bin/python3.11, even if /usr/bin/python3 points to /usr/bin/python3.10.
 # The behavior we want is to prefer the "system" installed version unless the
-# user specifically tells us othewise through the Python3_EXECUTABLE hint.
+# user specifically tells us otherwise through the Python3_EXECUTABLE hint.
 # Setting CMP0094 to NEW means that the search will stop after the first
 # python version is found.  Setting Python3_FIND_UNVERSIONED_NAMES means that
 # the search will prefer /usr/bin/python3 over /usr/bin/python3.11.  And that
@@ -129,7 +129,7 @@ target_link_libraries(_rclpy_pybind11 PRIVATE
   lifecycle_msgs::lifecycle_msgs__rosidl_typesupport_c
   rcl::rcl
   rcl_action::rcl_action
-  ${rcl_interfaces_TARGETS}
+  rcl_interfaces::rcl_interfaces
   rcl_lifecycle::rcl_lifecycle
   rcl_logging_interface::rcl_logging_interface
   rcpputils::rcpputils
