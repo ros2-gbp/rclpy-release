@@ -353,5 +353,4 @@ tracks:
     ros_distro: rolling
     vcs_type: git
     vcs_uri: https://github.com/ros2/rclpy.git
-    version: 10.0.9
-    version_saved: :{auto}
+    version: :{auto}
