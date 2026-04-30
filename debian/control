@@ -1,0 +1,12 @@
+Source: ros-lyrical-rclpy
+Section: misc
+Priority: optional
+Maintainer: Shane Loretz <sloretz@openrobotics.org>
+Build-Depends: debhelper (>= 9.0.0), pybind11-dev, python3-dev, python3-pytest <!nocheck>, python3-pytest-asyncio <!nocheck>, ros-lyrical-ament-cmake, ros-lyrical-ament-cmake-gtest <!nocheck>, ros-lyrical-ament-cmake-pytest <!nocheck>, ros-lyrical-ament-lint-auto <!nocheck>, ros-lyrical-ament-lint-common <!nocheck>, ros-lyrical-lifecycle-msgs, ros-lyrical-rcl, ros-lyrical-rcl-action, ros-lyrical-rcl-interfaces, ros-lyrical-rcl-lifecycle, ros-lyrical-rcl-logging-interface, ros-lyrical-rcl-yaml-param-parser, ros-lyrical-rcpputils, ros-lyrical-rcutils, ros-lyrical-rmw, ros-lyrical-rmw-implementation, ros-lyrical-rmw-implementation-cmake, ros-lyrical-rosidl-generator-py <!nocheck>, ros-lyrical-rosidl-runtime-c, ros-lyrical-test-msgs <!nocheck>, ros-lyrical-type-description-interfaces, ros-lyrical-ros-workspace
+Homepage: https://index.ros.org/p/rclpy/#lyrical
+Standards-Version: 3.9.2
+
+Package: ros-lyrical-rclpy
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, python3-typing-extensions, python3-yaml, ros-lyrical-action-msgs, ros-lyrical-ament-index-python, ros-lyrical-builtin-interfaces, ros-lyrical-lifecycle-msgs, ros-lyrical-rcl, ros-lyrical-rcl-action, ros-lyrical-rcl-interfaces, ros-lyrical-rcl-lifecycle, ros-lyrical-rcl-logging-interface, ros-lyrical-rcl-yaml-param-parser, ros-lyrical-rcpputils, ros-lyrical-rcutils, ros-lyrical-rmw, ros-lyrical-rmw-implementation, ros-lyrical-rosgraph-msgs, ros-lyrical-rosidl-pycommon, ros-lyrical-rosidl-runtime-c, ros-lyrical-rpyutils, ros-lyrical-service-msgs, ros-lyrical-type-description-interfaces, ros-lyrical-unique-identifier-msgs, ros-lyrical-ros-workspace
+Description: Package containing the Python client.
