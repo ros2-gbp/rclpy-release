@@ -1,3 +1,26 @@
+## rclpy (rolling) - 11.0.1-1
+
+The packages in the `rclpy` repository were released into the `rolling` distro by running `/usr/bin/bloom-release --rosdistro rolling --track rolling rclpy` on `Fri, 22 May 2026 09:49:55 -0000`
+
+The `rclpy` package was released.
+
+Version of package(s) in repository `rclpy`:
+
+- upstream repository: https://github.com/ros2/rclpy.git
+- release repository: https://github.com/ros2-gbp/rclpy-release.git
+- rosdistro version: `11.0.0-1`
+- old version: `11.0.0-1`
+- new version: `11.0.1-1`
+
+Versions of tools used:
+
+- bloom version: `0.14.3`
+- catkin_pkg version: `1.1.0`
+- rosdep version: `0.26.0`
+- rosdistro version: `1.0.1`
+- vcstools version: `0.1.42`
+
+
 ## rclpy (rolling) - 11.0.0-1
 
 The packages in the `rclpy` repository were released into the `rolling` distro by running `/usr/local/google/home/sloretz/projects/lyrical/env3/bin/bloom-release -r rolling -t rolling rclpy` on `Thu, 07 May 2026 23:15:55 -0000`
