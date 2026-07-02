@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import time
+from typing import Any
 import unittest
 import uuid
 
@@ -291,7 +292,7 @@ class TestActionServer(unittest.TestCase):
             goal_handle.canceled()
             return Fibonacci.Result()
 
-        def cancel_callback(request):
+        def cancel_callback(goal_handle: ServerGoalHandle[Any, Any, Any]) -> CancelResponse:
             return CancelResponse.ACCEPT
 
         executor = MultiThreadedExecutor(context=self.context)
@@ -337,7 +338,7 @@ class TestActionServer(unittest.TestCase):
             goal_handle.canceled()
             return Fibonacci.Result()
 
-        def cancel_callback(request):
+        def cancel_callback(goal_handle: ServerGoalHandle[Any, Any, Any]) -> CancelResponse:
             return CancelResponse.REJECT
 
         executor = MultiThreadedExecutor(context=self.context)
@@ -373,14 +374,14 @@ class TestActionServer(unittest.TestCase):
         action_server.destroy()
         executor.shutdown()
 
-    def test_cancel_defered_goal(self) -> None:
+    def test_cancel_deferred_goal(self) -> None:
         server_goal_handle = None
 
         def handle_accepted_callback(gh):
             nonlocal server_goal_handle
             server_goal_handle = gh
 
-        def cancel_callback(request):
+        def cancel_callback(goal_handle: ServerGoalHandle[Any, Any, Any]) -> CancelResponse:
             return CancelResponse.ACCEPT
 
         def execute_callback(gh):
