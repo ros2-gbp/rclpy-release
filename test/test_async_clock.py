@@ -13,6 +13,8 @@
 # limitations under the License.
 
 import asyncio
+from collections.abc import Generator
+import time
 
 import pytest
 
@@ -25,14 +27,14 @@ from rclpy.time import Time
 
 
 @pytest.fixture(autouse=True)
-def rclpy_context():
+def rclpy_context() -> Generator[None, None, None]:
     """Initialize and shut down rclpy for each test."""
     with rclpy.init():
         yield
 
 
 @pytest.mark.asyncio
-async def test_sleep_wall_clock():
+async def test_sleep_wall_clock() -> None:
     """Sleep completes after the requested duration (wall clock)."""
     async with AsyncNode('test_sleep_node') as node:
         async with asyncio.timeout(5):
@@ -40,7 +42,7 @@ async def test_sleep_wall_clock():
 
 
 @pytest.mark.asyncio
-async def test_sleep_cancelled_on_close():
+async def test_sleep_cancelled_on_close() -> None:
     """Pending sleeps are cancelled when node.destroy_node() is called."""
     async with AsyncNode('test_sleep_cancel_node') as node:
         loop = asyncio.get_running_loop()
@@ -51,7 +53,7 @@ async def test_sleep_cancelled_on_close():
 
 
 @pytest.mark.asyncio
-async def test_sleep_raises_on_clock_change():
+async def test_sleep_raises_on_clock_change() -> None:
     """Wall clock sleep raises TimeSourceChangedError when sim time activates."""
     async with AsyncNode('test_sleep_clock_change_node') as node:
         # Activate sim time — triggers ROS_TIME_ACTIVATED jump callback
@@ -65,7 +67,7 @@ async def test_sleep_raises_on_clock_change():
 
 
 @pytest.mark.asyncio
-async def test_clock_sleep_zero_duration():
+async def test_clock_sleep_zero_duration() -> None:
     """Sleeping for zero duration returns immediately."""
     async with AsyncNode('test_clock_zero_node') as node:
         async with asyncio.timeout(1):
@@ -74,7 +76,7 @@ async def test_clock_sleep_zero_duration():
 
 
 @pytest.mark.asyncio
-async def test_clock_sleep_on_destroyed_clock():
+async def test_clock_sleep_on_destroyed_clock() -> None:
     """Sleeping on a destroyed clock raises RuntimeError."""
     node = AsyncNode('test_clock_destroyed_node')
     clock = node.get_clock()
@@ -84,7 +86,7 @@ async def test_clock_sleep_on_destroyed_clock():
 
 
 @pytest.mark.asyncio
-async def test_sleep_sim_time_resolves_on_jump():
+async def test_sleep_sim_time_resolves_on_jump() -> None:
     """Sim-time sleep resolves when ROS time advances past its target."""
     async with AsyncNode(
         'test_sleep_sim_node',
@@ -110,33 +112,34 @@ async def test_sleep_sim_time_resolves_on_jump():
 
 
 @pytest.mark.asyncio
-async def test_sleep_multiple_concurrent_waiters():
+async def test_sleep_multiple_concurrent_waiters() -> None:
     """Multiple concurrent sleeps resolve independently on a shared clock."""
     async with AsyncNode('test_multi_sleep_node') as node:
         clock = node.get_clock()
         loop = asyncio.get_running_loop()
         t0 = loop.time()
 
-        async def timed(duration):
+        async def timed(duration: float) -> float:
             await clock.sleep(duration)
             return loop.time() - t0
 
         async with asyncio.timeout(5):
             async with asyncio.TaskGroup() as tg:
-                t_long = tg.create_task(timed(0.2))
-                t_short = tg.create_task(timed(0.05))
-                t_mid = tg.create_task(timed(0.1))
+                t_long = tg.create_task(timed(0.5))
+                t_short = tg.create_task(timed(0.1))
+                t_mid = tg.create_task(timed(0.25))
 
-        # Each waiter respected its requested duration (sleep never fires early)
-        assert t_long.result() >= 0.2
-        assert t_mid.result() >= 0.1
-        assert t_short.result() >= 0.05
-        # Concurrent completes at ~0.2s; serial would be 0.35s.
-        assert t_long.result() < 0.3
+        # asyncio loop.call_later may fire up to one clock tick early
+        tol = time.get_clock_info('monotonic').resolution
+        # allowed loop overshoot
+        slack = 0.1
+        assert 0.1 - tol <= t_short.result() < 0.1 + slack
+        assert 0.25 - tol <= t_mid.result() < 0.25 + slack
+        assert 0.5 - tol <= t_long.result() < 0.5 + slack
 
 
 @pytest.mark.asyncio
-async def test_sleep_sim_time_partial_resolution():
+async def test_sleep_sim_time_partial_resolution() -> None:
     """A ROS-time jump resolves only sleepers whose target has passed."""
     async with AsyncNode(
         'test_sim_partial_node',
