@@ -12,23 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING
 import unittest
 
 import rclpy
-import rclpy.context
 from rclpy.executors import SingleThreadedExecutor
 
 
 class TestGuardCondition(unittest.TestCase):
 
-    if TYPE_CHECKING:
-        context: rclpy.context.Context
-        node: rclpy.node.Node
-        executor: SingleThreadedExecutor
-
     @classmethod
-    def setUpClass(cls) -> None:
+    def setUpClass(cls):
         cls.context = rclpy.context.Context()
         rclpy.init(context=cls.context)
         cls.node = rclpy.create_node(
@@ -37,7 +30,7 @@ class TestGuardCondition(unittest.TestCase):
         cls.executor.add_node(cls.node)
 
     @classmethod
-    def tearDownClass(cls) -> None:
+    def tearDownClass(cls):
         cls.executor.shutdown()
         cls.node.destroy_node()
         rclpy.shutdown(context=cls.context)

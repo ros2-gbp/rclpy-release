@@ -22,6 +22,7 @@ import warnings
 import weakref
 
 if TYPE_CHECKING:
+
     from rclpy.executors import Executor
 
 T = TypeVar('T')
@@ -50,8 +51,8 @@ class Future(Generic[T]):
         # An exception raised by the handler when called
         self._exception: Optional[Exception] = None
         self._exception_fetched = False
-        # callbacks or tasks to be scheduled after this task completes
-        self._callbacks: List[Union[Callable[['Future[T]'], None], 'Task[Any]']] = []
+        # callbacks to be scheduled after this task completes
+        self._callbacks: List[Callable[['Future[T]'], None]] = []
         # Lock for threadsafety
         self._lock = threading.Lock()
         # An executor to use when scheduling done callbacks
@@ -164,18 +165,10 @@ class Future(Generic[T]):
         if executor is not None:
             # Have the executor take care of the callbacks
             for callback in callbacks:
-                if isinstance(callback, Task):
-                    executor._call_task_in_next_spin(callback)
-                else:
-                    executor.create_task(callback, self)
+                executor.create_task(callback, self)
         else:
             # No executor, call right away
             for callback in callbacks:
-                if isinstance(callback, Task):
-                    warnings.warn(
-                        'Dropping task awaiting future: '
-                        'executor reference could not be resolved')
-                    continue
                 try:
                     callback(self)
                 except Exception as e:
@@ -216,21 +209,6 @@ class Future(Generic[T]):
         # Invoke when not holding self._lock
         if invoke:
             callback(self)
-
-    def _add_waiting_task(self, task: 'Task[Any]') -> None:
-        """Schedule a task to resume when this future completes."""
-        with self._lock:
-            if not self._pending():
-                assert self._executor is not None
-                executor = self._executor()
-                if executor is not None:
-                    executor._call_task_in_next_spin(task)
-                else:
-                    warnings.warn(
-                        'Dropping task awaiting future: '
-                        'executor reference could not be resolved')
-            else:
-                self._callbacks.append(task)
 
     def remove_done_callback(self, callback: Callable[['Future[T]'], None]) -> bool:
         """
@@ -351,7 +329,6 @@ class Task(Future[T]):
             self._complete_task()
         else:
             # The coroutine yielded; suspend the task until it is resumed
-            assert self._executor
             executor = self._executor()
             if executor is None:
                 raise RuntimeError(
@@ -368,7 +345,6 @@ class Task(Future[T]):
                     f'Expected coroutine to yield a Future or None, got: {type(result)}')
 
     def _add_resume_callback(self, future: Future[T], executor: 'Executor') -> None:
-        assert future._executor
         future_executor = future._executor()
         if future_executor is None:
             # The future is not associated with an executor yet, so associate it with ours
@@ -376,8 +352,9 @@ class Task(Future[T]):
         elif future_executor is not executor:
             raise RuntimeError('A task can only await futures associated with the same executor')
 
-        # Register the task to resume when the future is done or cancelled
-        future._add_waiting_task(self)
+        # The future is associated with the same executor, so we can resume the task directly
+        # in the done callback
+        future.add_done_callback(lambda _: self.__call__())
 
     def _complete_task(self) -> None:
         """Cleanup after task finished."""

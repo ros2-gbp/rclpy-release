@@ -454,7 +454,11 @@ Node::Node(
   RCPPUTILS_SCOPE_EXIT(
     {
       if (RCL_RET_OK != rcl_arguments_fini(&arguments)) {
-        warn_fini_failure("arguments");
+        int stack_level = 1;
+        PyErr_WarnFormat(
+          PyExc_RuntimeWarning, stack_level, "Failed to fini arguments: %s",
+          rcl_get_error_string().str);
+        rcl_reset_error();
       }
     });
 
@@ -470,13 +474,23 @@ Node::Node(
         if (rcl_logging_rosout_enabled() && enable_rosout) {
           ret = rcl_logging_rosout_fini_publisher_for_node(node);
           if (ret != RCL_RET_OK) {
-            warn_fini_failure("rosout publisher");
+            // Warning should use line number of the current stack frame
+            int stack_level = 1;
+            PyErr_WarnFormat(
+              PyExc_RuntimeWarning, stack_level, "Failed to fini rosout publisher: %s",
+              rcl_get_error_string().str);
+            rcl_reset_error();
           }
         }
       }
       ret = rcl_node_fini(node);
       if (RCL_RET_OK != ret) {
-        warn_fini_failure("node");
+        // Warning should use line number of the current stack frame
+        int stack_level = 1;
+        PyErr_WarnFormat(
+          PyExc_RuntimeWarning, stack_level, "Failed to fini node: %s",
+          rcl_get_error_string().str);
+        rcl_reset_error();
       }
       delete node;
     });
@@ -521,7 +535,6 @@ py::list
 Node::get_action_client_names_and_types_by_node(
   const char * remote_node_name, const char * remote_node_namespace)
 {
-  // Deprecated: Use _rclpy.rclpy_get_action_client_names_and_types_by_node function instead
   rcl_names_and_types_t names_and_types = rcl_get_zero_initialized_names_and_types();
   rcl_allocator_t allocator = rcl_get_default_allocator();
   rcl_ret_t ret = rcl_action_get_client_names_and_types_by_node(
@@ -541,7 +554,6 @@ py::list
 Node::get_action_server_names_and_types_by_node(
   const char * remote_node_name, const char * remote_node_namespace)
 {
-  // Deprecated: Use _rclpy.rclpy_get_action_server_names_and_types_by_node function instead
   rcl_names_and_types_t names_and_types = rcl_get_zero_initialized_names_and_types();
   rcl_allocator_t allocator = rcl_get_default_allocator();
   rcl_ret_t ret = rcl_action_get_server_names_and_types_by_node(
@@ -560,7 +572,6 @@ Node::get_action_server_names_and_types_by_node(
 py::list
 Node::get_action_names_and_types()
 {
-  // Deprecated: Use _rclpy.rclpy_get_action_names_and_types function instead
   rcl_names_and_types_t names_and_types = rcl_get_zero_initialized_names_and_types();
   rcl_allocator_t allocator = rcl_get_default_allocator();
   rcl_ret_t ret = rcl_action_get_names_and_types(rcl_node_.get(), &allocator, &names_and_types);

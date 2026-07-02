@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from collections import deque
-from collections.abc import Awaitable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from dataclasses import dataclass
@@ -27,7 +26,6 @@ import time
 from types import TracebackType
 from typing import Any
 from typing import Callable
-from typing import cast
 from typing import ContextManager
 from typing import Coroutine
 from typing import Deque
@@ -41,7 +39,6 @@ from typing import Tuple
 from typing import Type
 from typing import TYPE_CHECKING
 from typing import TypeVar
-from typing import TypeVarTuple
 from typing import Union
 
 import warnings
@@ -59,29 +56,26 @@ from rclpy.subscription import MessageInfo
 from rclpy.subscription import Subscription
 from rclpy.task import Future
 from rclpy.task import Task
-from rclpy.timer import EmptyCallback
-from rclpy.timer import Timer
-from rclpy.timer import TimerCallbackUnion
-from rclpy.timer import TimerInfo
+from rclpy.timer import Timer, TimerInfo
 from rclpy.type_support import Msg
 from rclpy.utilities import get_default_context
 from rclpy.utilities import timeout_sec_to_nsec
 from rclpy.waitable import NumberOfEntities
 from rclpy.waitable import Waitable
 
-if TYPE_CHECKING:  # Avoid import cycle
-    from typing import TypeAlias
-
-    from rclpy.callback_groups import Entity
-    from rclpy.node import Node  # noqa: F401
-    EntityT = TypeVar('EntityT', bound=Entity)
-
-
 # For documentation purposes
 # TODO(jacobperron): Make all entities implement the 'Waitable' interface for better type checking
 
 T = TypeVar('T')
-Ts = TypeVarTuple('Ts')
+
+# Avoid import cycle
+if TYPE_CHECKING:
+    from typing import TypeAlias
+
+    from rclpy.node import Node  # noqa: F401
+    from .callback_groups import Entity
+    EntityT = TypeVar('EntityT', bound=Entity)
+
 
 YieldedCallback: 'TypeAlias' = Generator[Tuple[Task[None],
                                                'Optional[Entity]',
@@ -126,16 +120,21 @@ class _WorkTracker:
         return True
 
 
-async def await_or_execute(callback: Callable[[*Ts], Awaitable[T] | T], *args: *Ts) -> T:
+@overload
+async def await_or_execute(callback: Callable[..., Coroutine[Any, Any, T]], *args: Any) -> T: ...
+
+
+@overload
+async def await_or_execute(callback: Callable[..., T], *args: Any) -> T: ...
+
+
+async def await_or_execute(callback: Callable[..., Any], *args: Any) -> Any:
     """Await a callback if it is a coroutine, else execute it."""
     if inspect.iscoroutinefunction(callback):
         # Await a coroutine
-        # See https://github.com/python/typeshed/issues/15529
-        callback = cast(Callable[[*Ts], Awaitable[T]], callback)
         return await callback(*args)
     else:
         # Call a normal function
-        callback = cast(Callable[[*Ts], T], callback)
         return callback(*args)
 
 
@@ -214,7 +213,7 @@ class Executor(ContextManager['Executor']):
         self._nodes: Set[Node] = set()
         self._nodes_lock = RLock()
         # all tasks that are not complete or canceled
-        self._pending_tasks: Dict[Task[Any], TaskData] = {}
+        self._pending_tasks: Dict[Task, TaskData] = {}
         # tasks that are ready to execute
         self._ready_tasks: Deque[Task[Any]] = deque()
         self._tasks_lock = Lock()
@@ -284,13 +283,13 @@ class Executor(ContextManager['Executor']):
 
         :param callback: A callback to be run in the executor.
         """
-        task: Task[Any] = Task(callback, args, kwargs, executor=self)
+        task = Task(callback, args, kwargs, executor=self)
         with self._tasks_lock:
             self._pending_tasks[task] = TaskData()
         self._call_task_in_next_spin(task)
         return task
 
-    def _call_task_in_next_spin(self, task: Task[Any]) -> None:
+    def _call_task_in_next_spin(self, task: Task) -> None:
         """
         Add a task to the executor to be executed in the next spin.
 
@@ -301,7 +300,7 @@ class Executor(ContextManager['Executor']):
             if self._guard:
                 self._guard.trigger()
 
-    def create_future(self) -> Future[Any]:
+    def create_future(self) -> Future:
         """Create a Future object attached to the Executor."""
         return Future(executor=self)
 
@@ -442,18 +441,6 @@ class Executor(ContextManager['Executor']):
         finally:
             self._exit_spin()
 
-        # If the future completed with an exception, re-raise it. The
-        # SingleThreadedExecutor re-raises synchronously inside _spin_once_impl
-        # so we never reach this code in that case. The MultiThreadedExecutor
-        # runs handlers on worker threads; the outer loop above can observe
-        # future.done() == True and exit before the next _spin_once_impl
-        # iteration would have called future.result(). Surfacing the
-        # exception here keeps the contract uniform across executor types.
-        if future.done():
-            exc = future.exception()
-            if exc is not None:
-                raise exc
-
     def spin_once(self, timeout_sec: Optional[float] = None) -> None:
         """
         Wait for and execute a single callback.
@@ -507,7 +494,8 @@ class Executor(ContextManager['Executor']):
                     actual_call_time=info['actual_call_time'],
                     clock_type=tmr.clock.clock_type)
 
-                def check_argument_type(callback_func: TimerCallbackUnion,
+                def check_argument_type(callback_func: Union[Callable[[], None],
+                                                             Callable[[TimerInfo], None]],
                                         target_type: Type[TimerInfo]) -> Optional[str]:
                     sig = inspect.signature(callback_func)
                     for param in sig.parameters.values():
@@ -531,7 +519,7 @@ class Executor(ContextManager['Executor']):
                 else:
                     async def _execute() -> None:
                         if tmr.callback:
-                            await await_or_execute(cast(EmptyCallback, tmr.callback))
+                            await await_or_execute(tmr.callback)
                     return _execute
         except InvalidHandle:
             # Timer is a Destroyable, which means that on __enter__ it can throw an
@@ -554,8 +542,7 @@ class Executor(ContextManager['Executor']):
                     return None
 
                 if sub._callback_type is Subscription.CallbackType.MessageOnly:
-                    msg_tuple: Union[tuple[Msg | bytes],
-                                     tuple[Msg | bytes, MessageInfo]] = (msg_info[0], )
+                    msg_tuple: Union[Tuple[Msg], Tuple[Msg, MessageInfo]] = (msg_info[0], )
                 else:
                     msg_tuple = msg_info
 
@@ -734,9 +721,7 @@ class Executor(ContextManager['Executor']):
         timeout_nsec = timeout_sec_to_nsec(
             timeout_sec.timeout if isinstance(timeout_sec, TimeoutObject) else timeout_sec)
         if timeout_nsec > 0:
-            timeout_timer = Timer(
-                None, timeout_nsec, self._clock, context=self._context
-            )
+            timeout_timer = Timer(None, None, timeout_nsec, self._clock, context=self._context)
 
         yielded_work = False
         while not yielded_work and not self._is_shutdown and not condition():
@@ -755,10 +740,6 @@ class Executor(ContextManager['Executor']):
                 ready_tasks_count = len(self._ready_tasks)
             for _ in range(ready_tasks_count):
                 task = self._ready_tasks.popleft()
-                # Skip tasks that were cancelled or set done while awaiting a
-                # future and got rescheduled when the future completed
-                if task.cancelled() or task.done():
-                    continue
                 task_data = self._pending_tasks[task]
                 node = task_data.source_node
                 if node is None or node in nodes_to_use:
@@ -1087,7 +1068,6 @@ class MultiThreadedExecutor(Executor):
                 'Use the SingleThreadedExecutor instead.')
         self._futures: List[Future[Any]] = []
         self._executor = ThreadPoolExecutor(num_threads)
-        self._futures_lock = Lock()
 
     def _spin_once_impl(
         self,
@@ -1108,14 +1088,12 @@ class MultiThreadedExecutor(Executor):
         else:
             self._executor.submit(handler)
             self._futures.append(handler)
-            with self._futures_lock:
-                for future in self._futures:
-                    if future.done():
-                        self._futures.remove(future)
-                        future.result()  # raise any exceptions
-
-            # Yield GIL so executor threads have a chance to run.
-            os.sched_yield() if hasattr(os, 'sched_yield') else time.sleep(0)
+            # make a copy of the list that we iterate over while modifying it
+            # (https://stackoverflow.com/q/1207406/3753684)
+            for future in self._futures[:]:
+                if future.done():
+                    self._futures.remove(future)
+                    future.result()  # raise any exceptions
 
     def spin_once(self, timeout_sec: Optional[float] = None) -> None:
         # Mark executor as spinning to prevent concurrent spins

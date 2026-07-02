@@ -34,20 +34,10 @@ from rclpy.subscription import MessageInfo
 from rclpy.subscription_content_filter_options import ContentFilterOptions
 from rclpy.task import Future
 from rclpy.task import Task
-from rclpy.type_support import Action
-from rclpy.type_support import Srv
-from rclpy.type_support import FeedbackMessage
-from rclpy.type_support import FeedbackT
-from rclpy.type_support import ImplT
-from rclpy.type_support import GetResultServiceRequest
-from rclpy.type_support import GetResultServiceResponse
-from rclpy.type_support import GoalT
-from rclpy.type_support import MsgT
-from rclpy.type_support import ResultT
-from rclpy.type_support import SendGoalServiceRequest
-from rclpy.type_support import SendGoalServiceResponse
-from rclpy.type_support import SrvRequestT
-from rclpy.type_support import SrvResponseT
+from rclpy.type_support import (Action, FeedbackMessage, FeedbackT, GetResultServiceRequest,
+                                GetResultServiceResponse, GoalT, Msg, MsgT, ResultT,
+                                SendGoalServiceRequest, SendGoalServiceResponse, Srv, SrvRequestT,
+                                SrvResponseT)
 from type_description_interfaces.srv import GetTypeDescription
 
 T = TypeVar('T')
@@ -127,17 +117,17 @@ class QoSCheckCompatibleResult:
 
 class RCUtilsError(RuntimeError):
 
-    def __init__(self, error_text: str) -> None: ...
+    def __init__(self, error_text: str): ...
 
 
 class RMWError(RuntimeError):
 
-    def __init__(self, error_text: str) -> None: ...
+    def __init__(self, error_text: str): ...
 
 
 class RCLError(RuntimeError):
 
-    def __init__(self, error_text: str) -> None: ...
+    def __init__(self, error_text: str): ...
 
 
 class RCLInvalidROSArgsError(RCLError):
@@ -173,7 +163,7 @@ class InvalidHandle(RuntimeError):
 
 class Client(Destroyable, Generic[SrvRequestT, SrvResponseT]):
 
-    def __init__(self, node: Node, srv_type: type[Srv[SrvRequestT, SrvResponseT]],
+    def __init__(self, node: Node, srv_type: type[Srv],
                  srv_name: str, pyqos_profile: rmw_qos_profile_t) -> None: ...
 
     @property
@@ -205,12 +195,6 @@ class Client(Destroyable, Generic[SrvRequestT, SrvResponseT]):
 
     def get_logger_name(self) -> str:
         """Get the name of the logger associated with the node of the client."""
-
-    def set_on_new_response_callback(self, callback: Callable[[int], None]) -> None:
-        """Set the on new response callback function for the client."""
-
-    def clear_on_new_response_callback(self) -> None:
-        """Clear the on new response callback function for the client."""
 
 
 class Context(Destroyable):
@@ -269,7 +253,7 @@ class Publisher(Destroyable, Generic[MsgT]):
 
 class Service(Destroyable, Generic[SrvRequestT, SrvResponseT]):
 
-    def __init__(self, node: Node, pysrv_type: type[Srv[SrvRequestT, SrvResponseT]],
+    def __init__(self, node: Node, pysrv_type: type[Srv],
                  name: str, pyqos_profile: rmw_qos_profile_t) -> None: ...
 
     @property
@@ -290,7 +274,7 @@ class Service(Destroyable, Generic[SrvRequestT, SrvResponseT]):
     def service_take_request(
         self,
         pyrequest_type: type[SrvRequestT]
-    ) -> tuple[SrvRequestT, rmw_service_info_t] | tuple[None, None]:
+    ) -> tuple[rmw_service_info_t, SrvRequestT] | tuple[None, None]:
         """Take a request from a given service."""
 
     def configure_introspection(
@@ -302,12 +286,6 @@ class Service(Destroyable, Generic[SrvRequestT, SrvResponseT]):
 
     def get_logger_name(self) -> str:
         """Get the name of the logger associated with the node of the service."""
-
-    def set_on_new_request_callback(self, callback: Callable[[int], None]) -> None:
-        """Set the on new request callback function for the service."""
-
-    def clear_on_new_request_callback(self) -> None:
-        """Clear the on new request callback function for the service."""
 
 
 class TypeDescriptionService(Destroyable):
@@ -350,19 +328,18 @@ def rclpy_qos_check_compatible(publisher_qos_profile: rmw_qos_profile_t,
     """Check if two QoS profiles are compatible."""
 
 
-class ActionClient(Generic[GoalT, ResultT, FeedbackT, ImplT], Destroyable):
+class ActionClient(Generic[GoalT, ResultT, FeedbackT], Destroyable):
 
     def __init__(
             self,
             node: Node,
-            pyaction_type: type[Action[GoalT, ResultT, FeedbackT, ImplT]],
+            pyaction_type: type[Action],
             action_name: str,
             goal_service_qos: rmw_qos_profile_t,
             result_service_qos: rmw_qos_profile_t,
             cancel_service_qos: rmw_qos_profile_t,
             feedback_service_qos: rmw_qos_profile_t,
-            status_topic_qos: rmw_qos_profile_t,
-            enable_feedback_msg_optimization: bool
+            status_topci_qos: rmw_qos_profile_t
         ) -> None: ...
 
     @property
@@ -419,15 +396,10 @@ class ActionClient(Generic[GoalT, ResultT, FeedbackT, ImplT], Destroyable):
     ) -> None:
         """Configure whether internal client introspection is enabled."""
 
-    def configure_feedback_subscription_filter_add_goal_id(self, goal_id: bytes) -> bool:
-        """Configure feedback subscription content filter to add a goal ID."""
-
-    def configure_feedback_subscription_filter_remove_goal_id(self, goal_id: bytes) -> bool:
-        """Configure feedback subscription content filter to remove a goal ID."""
 
 class ActionGoalHandle(Destroyable):
 
-    def __init__(self, action_server: ActionServer[Any, Any, Any, Any],
+    def __init__(self, action_server: ActionServer[Any, Any, Any],
                  pygoal_info_msg: GoalInfo) -> None:
         ...
 
@@ -445,13 +417,13 @@ class ActionGoalHandle(Destroyable):
         """Check if a goal is active."""
 
 
-class ActionServer(Generic[GoalT, ResultT, FeedbackT, ImplT], Destroyable):
+class ActionServer(Generic[GoalT, ResultT, FeedbackT], Destroyable):
 
     def __init__(
         self,
         node: Node,
         rclpy_clock: Clock,
-        pyaction_type: type[Action[GoalT, ResultT, FeedbackT, ImplT]],
+        pyaction_type: type[Action],
         action_name: str,
         goal_service_qos: rmw_qos_profile_t,
         result_service_qos: rmw_qos_profile_t,
@@ -500,13 +472,13 @@ class ActionServer(Generic[GoalT, ResultT, FeedbackT, ImplT], Destroyable):
     def send_cancel_response(
         self,
         header: rmw_request_id_t,
-        pyresponse: CancelGoal.Response
+        pyresponse: int
     ) -> None:
         """Send an action cancel response."""
 
     def publish_feedback(
         self,
-        pymsg: FeedbackT
+        pymsg: FeedbackMessage[FeedbackT]
     ) -> None:
         """Publish a feedback message from a given action server."""
 
@@ -607,12 +579,6 @@ class Timer(Destroyable):
     def is_timer_canceled(self) -> bool:
         """Check if a timer is canceled."""
 
-    def set_on_reset_callback(self, callback: Callable[[int], None]) -> None:
-        """Set the on reset callback function for the timer."""
-
-    def clear_on_reset_callback(self) -> None:
-        """Clear the on reset callback function for the timer."""
-
 
 class Subscription(Destroyable, Generic[MsgT]):
 
@@ -624,14 +590,7 @@ class Subscription(Destroyable, Generic[MsgT]):
     def pointer(self) -> int:
         """Get the address of the entity as an integer."""
 
-    @overload
-    def take_message(self, pymsg_type: type[MsgT], raw: Literal[True]) -> tuple[bytes, MessageInfo] | None: ...
-
-    @overload
-    def take_message(self, pymsg_type: type[MsgT], raw: Literal[False]) -> tuple[MsgT, MessageInfo] | None: ...
-
-    @overload
-    def take_message(self, pymsg_type: type[MsgT], raw: bool) -> tuple[MsgT | bytes, MessageInfo] | None:
+    def take_message(self, pymsg_type: type[MsgT], raw: bool) -> tuple[MsgT, MessageInfo]:
         """Take a message and its metadata from a subscription."""
 
     def get_logger_name(self) -> str:
@@ -642,15 +601,6 @@ class Subscription(Destroyable, Generic[MsgT]):
 
     def get_publisher_count(self) -> int:
         """Count the publishers from a subscription."""
-
-    def set_on_new_message_callback(self, callback: Callable[[int], None]) -> None:
-        """Set the on new message callback function for the subscription."""
-
-    def clear_on_new_message_callback(self) -> None:
-        """Clear the on new message callback function for the subscription."""
-
-    def is_cft_supported(self) -> bool:
-        """Check if content filtering is supported for this subscription."""
 
     def is_cft_enabled(self) -> bool:
         """Check if content filtering is enabled for this subscription."""
@@ -803,17 +753,6 @@ class _TopicEndpointInfoDict(TypedDict):
     qos_profile: _rmw_qos_profile_dict
 
 
-class _ServiceEndpointInfoDict(TypedDict):
-    node_name: str
-    node_namespace: str
-    service_type: str
-    service_type_hash: _TypeHashDict
-    qos_profiles: list[_rmw_qos_profile_dict]
-    endpoint_gids: list[list[int]]
-    endpoint_type: int
-    endpoint_count: int
-
-
 def rclpy_get_publishers_info_by_topic(node: Node, topic_name: str, no_mangle: bool
                                        ) -> list[_TopicEndpointInfoDict]:
     """Get publishers info for a topic."""
@@ -822,16 +761,6 @@ def rclpy_get_publishers_info_by_topic(node: Node, topic_name: str, no_mangle: b
 def rclpy_get_subscriptions_info_by_topic(node: Node, topic_name: str, no_mangle: bool
                                           ) -> list[_TopicEndpointInfoDict]:
     """Get subscriptions info for a topic."""
-
-
-def rclpy_get_clients_info_by_service(node: Node, service_name: str, no_mangle: bool
-                                      ) -> list[_ServiceEndpointInfoDict]:
-    """Get clients info for a service."""
-
-
-def rclpy_get_servers_info_by_service(node: Node, service_name: str, no_mangle: bool
-                                      ) -> list[_ServiceEndpointInfoDict]:
-    """Get servers info for a service."""
 
 
 def rclpy_get_service_names_and_types(node: Node) -> list[tuple[str, list[str]]]:
@@ -848,23 +777,7 @@ def rclpy_get_client_names_and_types_by_node(node: Node, node_name: str, node_na
     """Get service names and types for which a remote node has servers."""
 
 
-def rclpy_get_action_client_names_and_types_by_node(node: Node, node_name: str,
-                                                     node_namespace: str
-                                                     ) -> list[tuple[str, list[str]]]:
-    """Get action client names and types by node."""
-
-
-def rclpy_get_action_server_names_and_types_by_node(node: Node, node_name: str,
-                                                     node_namespace: str
-                                                     ) -> list[tuple[str, list[str]]]:
-    """Get action server names and types by node."""
-
-
-def rclpy_get_action_names_and_types(node: Node) -> list[tuple[str, list[str]]]:
-    """Get all action names and types in the ROS graph."""
-
-
-def rclpy_serialize(pymsg: MsgT, py_msg_type: type[MsgT]) -> bytes:
+def rclpy_serialize(pymsg: Msg, py_msg_type: type[Msg]) -> bytes:
     """Serialize a ROS message."""
 
 
@@ -1241,7 +1154,7 @@ _LifecycleStateMachineState: TypeAlias = tuple[int, str]
 
 class LifecycleStateMachine(Destroyable):
 
-    def __init__(self, node: Node, clock: Clock, enable_com_interface: bool) -> None: ...
+    def __init__(self, node: Node, enable_com_interface: bool) -> None: ...
 
     @property
     def initialized(self) -> bool:

@@ -26,7 +26,6 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include <rcpputils/scope_exit.hpp>
@@ -36,14 +35,11 @@
 #include "serialization.hpp"
 #include "subscription.hpp"
 #include "utils.hpp"
-#include "events_executor/rcl_support.hpp"
 
 using pybind11::literals::operator""_a;
 
 namespace rclpy
 {
-using events_executor::RclEventCallbackTrampoline;
-
 namespace
 {
 std::vector<const char *>
@@ -62,8 +58,7 @@ get_c_vector_string(const std::vector<std::string> & strings_in)
 
 Subscription::Subscription(
   Node & node, py::object pymsg_type, std::string topic,
-  py::object pyqos_profile, py::object content_filter_options,
-  py::object acceptable_buffer_backends)
+  py::object pyqos_profile, py::object content_filter_options)
 : node_(node)
 {
   auto msg_type = static_cast<rosidl_message_type_support_t *>(
@@ -78,16 +73,6 @@ Subscription::Subscription(
     subscription_ops.qos = pyqos_profile.cast<rmw_qos_profile_t>();
   }
 
-  if (!acceptable_buffer_backends.is_none()) {
-    std::string acceptable_backends_str = acceptable_buffer_backends.cast<std::string>();
-    rcl_ret_t ret = rcl_subscription_options_set_acceptable_buffer_backends(
-      acceptable_backends_str.c_str(),
-      &subscription_ops);
-    if (RCL_RET_OK != ret) {
-      throw rclpy::RCLError("Failed to set acceptable_buffer_backends");
-    }
-  }
-
   rcl_subscription_ = std::shared_ptr<rcl_subscription_t>(
     new rcl_subscription_t,
     [node](rcl_subscription_t * subscription)
@@ -95,7 +80,12 @@ Subscription::Subscription(
       // Intentionally capture node by copy so shared_ptr can be transferred to copies
       rcl_ret_t ret = rcl_subscription_fini(subscription, node.rcl_ptr());
       if (RCL_RET_OK != ret) {
-        warn_fini_failure("subscription");
+        // Warning should use line number of the current stack frame
+        int stack_level = 1;
+        PyErr_WarnFormat(
+          PyExc_RuntimeWarning, stack_level, "Failed to fini subscription: %s",
+          rcl_get_error_string().str);
+        rcl_reset_error();
       }
       delete subscription;
     });
@@ -130,16 +120,12 @@ Subscription::Subscription(
       error_text += "'";
       throw py::value_error(error_text);
     }
-    throw rclpy::RCLError("Failed to create subscription");
+    throw RCLError("Failed to create subscription");
   }
 }
 
 void Subscription::destroy()
 {
-  try {
-    clear_on_new_message_callback();
-  } catch (const rclpy::RCLError &) {
-  }
   rcl_subscription_.reset();
   node_.destroy();
 }
@@ -247,47 +233,6 @@ Subscription::get_publisher_count() const
   return count;
 }
 
-void
-Subscription::set_callback(
-  rcl_event_callback_t callback,
-  const void * user_data)
-{
-  rcl_ret_t ret = rcl_subscription_set_on_new_message_callback(
-    rcl_subscription_.get(),
-    callback,
-    user_data);
-
-  if (RCL_RET_OK != ret) {
-    throw RCLError(std::string("Failed to set the on new message callback for subscription: ") +
-      rcl_get_error_string().str);
-  }
-}
-
-void
-Subscription::set_on_new_message_callback(std::function<void(size_t)> callback)
-{
-  clear_on_new_message_callback();
-  on_new_message_callback_ = std::move(callback);
-  set_callback(
-    RclEventCallbackTrampoline,
-    static_cast<const void *>(&on_new_message_callback_));
-}
-
-void
-Subscription::clear_on_new_message_callback()
-{
-  if (on_new_message_callback_) {
-    set_callback(nullptr, nullptr);
-    on_new_message_callback_ = nullptr;
-  }
-}
-
-bool
-Subscription::is_cft_supported() const
-{
-  return rcl_subscription_is_cft_supported(rcl_subscription_.get());
-}
-
 bool
 Subscription::is_cft_enabled() const
 {
@@ -374,13 +319,12 @@ void
 define_subscription(py::object module)
 {
   py::class_<Subscription, Destroyable, std::shared_ptr<Subscription>>(module, "Subscription")
-  .def(py::init<Node &, py::object, std::string, py::object, py::object, py::object>(),
+  .def(py::init<Node &, py::object, std::string, py::object, py::object>(),
     py::arg("node"),
     py::arg("msg_type"),
     py::arg("topic"),
     py::arg("qos_profile"),
-    py::arg("content_filter_options") = py::none(),
-    py::arg("acceptable_buffer_backends") = py::none())
+    py::arg("content_filter_options") = py::none())
   .def_property_readonly(
     "pointer", [](const Subscription & subscription) {
       return reinterpret_cast<size_t>(subscription.rcl_ptr());
@@ -398,12 +342,6 @@ define_subscription(py::object module)
   .def(
     "get_publisher_count", &Subscription::get_publisher_count,
     "Count the publishers from a subscription.")
-  .def(
-    "set_on_new_message_callback", &Subscription::set_on_new_message_callback,
-    py::arg("callback"))
-  .def("clear_on_new_message_callback", &Subscription::clear_on_new_message_callback)
-  .def("is_cft_supported", &Subscription::is_cft_supported,
-    "Check if subscription instance supports content filtering.")
   .def("is_cft_enabled", &Subscription::is_cft_enabled,
     "Check if content filtering is enabled for this subscription.")
   .def(

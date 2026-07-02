@@ -15,7 +15,6 @@
 from typing import Any
 from typing import Callable
 from typing import Dict
-from typing import Final
 from typing import List
 from typing import Literal
 from typing import NamedTuple
@@ -35,9 +34,7 @@ from rclpy.impl.rcutils_logger import RcutilsLogger
 from rclpy.node import Node
 from rclpy.qos import QoSProfile
 from rclpy.service import Service
-from rclpy.type_support import check_is_valid_srv_type
-from rclpy.type_support import MsgT
-from rclpy.type_support import Srv
+from rclpy.type_support import check_is_valid_srv_type, MsgT
 
 from typing_extensions import TypeAlias
 from typing_extensions import Unpack
@@ -47,9 +44,9 @@ from .publisher import LifecyclePublisher
 
 if TYPE_CHECKING:
     from rclpy.context import Context
-    from rclpy.event_handler import PublisherEventCallbacks
     from rclpy.parameter import Parameter
     from rclpy.qos_overriding_options import QoSOverridingOptions
+    from rclpy.event_handler import PublisherEventCallbacks
 
 TransitionCallbackReturn: TypeAlias = _rclpy.TransitionCallbackReturnType
 
@@ -67,14 +64,6 @@ class CreateLifecyclePublisherArgs(TypedDict, total=False):
     callback_group: Optional[CallbackGroup]
     event_callbacks: 'Optional[PublisherEventCallbacks]'
     qos_overriding_options: 'Optional[QoSOverridingOptions]'
-
-
-SRV_TYPES: Final[tuple[type[Srv[Any, Any]], ...]] = (
-    lifecycle_msgs.srv.ChangeState,
-    lifecycle_msgs.srv.GetState,
-    lifecycle_msgs.srv.GetAvailableStates,
-    lifecycle_msgs.srv.GetAvailableTransitions,
-)
 
 
 class LifecycleNodeMixin(ManagedEntity):
@@ -128,56 +117,54 @@ class LifecycleNodeMixin(ManagedEntity):
         if callback_group is None:
             callback_group = self.default_callback_group
         self._managed_entities: Set[ManagedEntity] = set()
-        for srv_type in SRV_TYPES:
+        for srv_type in (
+            lifecycle_msgs.srv.ChangeState,
+            lifecycle_msgs.srv.GetState,
+            lifecycle_msgs.srv.GetAvailableStates,
+            lifecycle_msgs.srv.GetAvailableTransitions,
+        ):
             # this doesn't only checks, but also imports some stuff we need later
             check_is_valid_srv_type(srv_type)
 
-        clock = self.get_clock()
-
         with self.handle:
-            self._state_machine = _rclpy.LifecycleStateMachine(
-                self.handle, clock.handle, enable_communication_interface)
+            self._state_machine: _rclpy.LifecycleStateMachine = _rclpy.LifecycleStateMachine(
+                self.handle, enable_communication_interface)
         if enable_communication_interface:
             self._service_change_state = Service(
                 self._state_machine.service_change_state,
                 lifecycle_msgs.srv.ChangeState,
                 self._state_machine.service_change_state.name,
                 self.__on_change_state,
-                QoSProfile(**self._state_machine.service_change_state.qos),
-                on_destroy=self._on_destroy_service,
-                callback_group=callback_group)
+                callback_group,
+                QoSProfile(**self._state_machine.service_change_state.qos))
             self._service_get_state = Service(
                 self._state_machine.service_get_state,
                 lifecycle_msgs.srv.GetState,
                 self._state_machine.service_get_state.name,
                 self.__on_get_state,
-                QoSProfile(**self._state_machine.service_get_state.qos),
-                on_destroy=self._on_destroy_service,
-                callback_group=callback_group)
+                callback_group,
+                QoSProfile(**self._state_machine.service_get_state.qos))
             self._service_get_available_states = Service(
                 self._state_machine.service_get_available_states,
                 lifecycle_msgs.srv.GetAvailableStates,
                 self._state_machine.service_get_available_states.name,
                 self.__on_get_available_states,
-                QoSProfile(**self._state_machine.service_get_available_states.qos),
-                on_destroy=self._on_destroy_service,
-                callback_group=callback_group)
+                callback_group,
+                QoSProfile(**self._state_machine.service_get_available_states.qos))
             self._service_get_available_transitions = Service(
                 self._state_machine.service_get_available_transitions,
                 lifecycle_msgs.srv.GetAvailableTransitions,
                 self._state_machine.service_get_available_transitions.name,
                 self.__on_get_available_transitions,
-                QoSProfile(**self._state_machine.service_get_available_transitions.qos),
-                on_destroy=self._on_destroy_service,
-                callback_group=callback_group)
+                callback_group,
+                QoSProfile(**self._state_machine.service_get_available_transitions.qos))
             self._service_get_transition_graph = Service(
                 self._state_machine.service_get_transition_graph,
                 lifecycle_msgs.srv.GetAvailableTransitions,
                 self._state_machine.service_get_transition_graph.name,
                 self.__on_get_transition_graph,
-                QoSProfile(**self._state_machine.service_get_transition_graph.qos),
-                on_destroy=self._on_destroy_service,
-                callback_group=callback_group)
+                callback_group,
+                QoSProfile(**self._state_machine.service_get_transition_graph.qos))
 
             lifecycle_services = [
                 self._service_change_state,

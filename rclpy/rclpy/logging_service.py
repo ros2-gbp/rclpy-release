@@ -23,12 +23,12 @@ from rclpy.qos import qos_profile_services_default
 from rclpy.validate_topic_name import TOPIC_SEPARATOR_STRING
 
 if TYPE_CHECKING:
-    from rclpy.node import BaseNode
+    from rclpy.node import Node
 
 
 class LoggingService:
 
-    def __init__(self, node: 'BaseNode'):
+    def __init__(self, node: 'Node'):
         node_name = node.get_name()
 
         get_logger_name_service_name = \

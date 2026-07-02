@@ -28,10 +28,20 @@ from typing import Type
 from typing import TypedDict
 from typing import Union
 
-from rclpy.clock import BaseClock
+from rclpy.clock import Clock
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.impl.logging_severity import LoggingSeverity
 from typing_extensions import Unpack
+
+
+try:
+    from typing_extensions import deprecated
+except ImportError:
+    # Compatibility with Debian Bookworm
+    def deprecated(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 
 
 SupportedFiltersKeys = Literal['throttle', 'skip_first', 'once']
@@ -45,6 +55,7 @@ _populate_internal_callers = True
 def _find_caller(frame: Optional[FrameType]) -> FrameType:
     """Get the first calling frame that is outside of rclpy."""
     global _populate_internal_callers
+    global _internal_callers
     if _populate_internal_callers:
         # Populate the list of internal filenames from which logging methods can be called.
         # This has to be done from within a function to avoid cyclic module imports.
@@ -102,7 +113,7 @@ class OnceContext(RcutilsLoggerContext):
 
 class ThrottleContext(RcutilsLoggerContext):
     throttle_duration_sec: float
-    throttle_time_source_type: BaseClock
+    throttle_time_source_type: Clock
     throttle_last_logged: int
 
 
@@ -113,14 +124,14 @@ class SkipFirstContext(RcutilsLoggerContext):
 class LoggingFilterArgs(TypedDict, total=False):
     once: bool
     throttle_duration_sec: float
-    throttle_time_source_type: BaseClock
+    throttle_time_source_type: Clock
     skip_first: bool
 
 
 class LoggingFilterParams(TypedDict, total=False):
     once: Optional[bool]
     throttle_duration_sec: Optional[float]
-    throttle_time_source_type: BaseClock
+    throttle_time_source_type: Clock
     skip_first: Optional[bool]
 
 
@@ -191,7 +202,7 @@ class Throttle(LoggingFilter):
 
     params: ClassVar[LoggingFilterParams] = {
         'throttle_duration_sec': None,
-        'throttle_time_source_type': BaseClock(),
+        'throttle_time_source_type': Clock(),
     }
 
     @classmethod
@@ -200,7 +211,7 @@ class Throttle(LoggingFilter):
         context = cast(ThrottleContext, context)
         super(Throttle, cls).initialize_context(context, **kwargs)
         context['throttle_last_logged'] = 0
-        if not isinstance(context['throttle_time_source_type'], BaseClock):
+        if not isinstance(context['throttle_time_source_type'], Clock):
             raise ValueError(
                 'Received throttle_time_source_type of "{0}" '
                 'is not a clock instance'
@@ -421,6 +432,15 @@ class RcutilsLogger:
     def warning(self, message: str, **kwargs: 'Unpack[LoggingArgs]') -> bool:
         """Log a message with `WARN` severity via :py:classmethod:RcutilsLogger.log:."""
         return self.log(message, LoggingSeverity.WARN, **kwargs)
+
+    @deprecated('Deprecated in favor of :py:classmethod:RcutilsLogger.warning:.')
+    def warn(self, message: str, **kwargs: 'Unpack[LoggingArgs]') -> bool:
+        """
+        Log a message with `WARN` severity via :py:classmethod:RcutilsLogger.log:.
+
+        Deprecated in favor of :py:classmethod:RcutilsLogger.warning:.
+        """
+        return self.warning(message, **kwargs)
 
     def error(self, message: str, **kwargs: 'Unpack[LoggingArgs]') -> bool:
         """Log a message with `ERROR` severity via :py:classmethod:RcutilsLogger.log:."""

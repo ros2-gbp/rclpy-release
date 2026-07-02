@@ -29,7 +29,7 @@ import weakref
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 
 if TYPE_CHECKING:
-    from rclpy.node import BaseNode
+    from rclpy.node import Node
 
 g_logging_configure_lock = threading.Lock()
 g_logging_ref_count: int = 0
@@ -55,7 +55,7 @@ class Context(ContextManager['Context']):
         self._callbacks: List[Union['weakref.WeakMethod[MethodType]', Callable[[], None]]] = []
         self._logging_initialized = False
         self.__context: Optional[_rclpy.Context] = None
-        self.__node_weak_ref_list: List[weakref.ReferenceType['BaseNode']] = []
+        self.__node_weak_ref_list: List[weakref.ReferenceType['Node']] = []
 
     @property
     def handle(self) -> Optional[_rclpy.Context]:
@@ -102,23 +102,23 @@ class Context(ContextManager['Context']):
                         _rclpy.rclpy_logging_configure(self.__context)
                 self._logging_initialized = True
 
-    def track_node(self, node: 'BaseNode') -> None:
+    def track_node(self, node: 'Node') -> None:
         """
-        Track a BaseNode associated with this Context.
+        Track a Node associated with this Context.
 
-        When the Context is destroyed, it will destroy every BaseNode it tracks.
+        When the Context is destroyed, it will destroy every Node it tracks.
 
         :param node: The node to take a weak reference to.
         """
         with self._lock:
             self.__node_weak_ref_list.append(weakref.ref(node))
 
-    def untrack_node(self, node: 'BaseNode') -> None:
+    def untrack_node(self, node: 'Node') -> None:
         """
-        Stop tracking a BaseNode associated with this Context.
+        Stop tracking a Node associated with this Context.
 
-        If a BaseNode is destroyed before the context, we no longer need to track it for
-        destruction of the Context, so remove it here.
+        If a Node is destroyed before the context, we no longer need to track it for destruction of
+        the Context, so remove it here.
         """
         with self._lock:
             for index, weak_node in enumerate(self.__node_weak_ref_list):
