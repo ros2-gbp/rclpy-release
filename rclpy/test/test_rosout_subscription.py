@@ -12,27 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
-from typing import TYPE_CHECKING
 import unittest
 
 from rcl_interfaces.msg import Log
 import rclpy
-import rclpy.context
 from rclpy.executors import SingleThreadedExecutor
-from rclpy.impl.rcutils_logger import RcutilsLogger
 from rclpy.task import Future
 
 
 class TestRosoutSubscription(unittest.TestCase):
 
-    if TYPE_CHECKING:
-        context: rclpy.context.Context
-        node: rclpy.node.Node
-        executor: SingleThreadedExecutor
-
     @classmethod
-    def setUpClass(cls) -> None:
+    def setUpClass(cls):
         cls.context = rclpy.context.Context()
         rclpy.init(context=cls.context)
         cls.node = rclpy.create_node('test_rosout_subscription', context=cls.context)
@@ -40,7 +31,7 @@ class TestRosoutSubscription(unittest.TestCase):
         cls.executor.add_node(cls.node)
 
     @classmethod
-    def tearDownClass(cls) -> None:
+    def tearDownClass(cls):
         cls.node.destroy_node()
         rclpy.shutdown(context=cls.context)
 
@@ -52,10 +43,10 @@ class TestRosoutSubscription(unittest.TestCase):
             self._rosout_subscription_callback,
             1
         )
-        self.fut: Future[None] = Future()
-        self.rosout_msg_name: Optional[str] = None
+        self.fut = Future()
+        self.rosout_msg_name = None
 
-    def _rosout_subscription_callback(self, msg: Log) -> None:
+    def _rosout_subscription_callback(self, msg):
         if msg.name == self.rosout_msg_name:
             self.fut.set_result(None)
 
@@ -103,7 +94,7 @@ class TestRosoutSubscription(unittest.TestCase):
         logger.info('test')
         self.executor.spin_until_future_complete(self.fut, 3)
         self.assertTrue(self.fut.done())
-        logger = None  # type: ignore[assignment]
+        logger = None
         logger2.info('test')
         self.executor.spin_until_future_complete(self.fut, 3)
         self.assertTrue(self.fut.done())
@@ -112,7 +103,7 @@ class TestRosoutSubscription(unittest.TestCase):
         self.rosout_msg_name = 'test_rosout_subscription.child'
         logger = self.node.get_logger().get_child('child')
 
-        def call_logger(logger: RcutilsLogger) -> None:
+        def call_logger(logger):
             logger1 = logger
             logger1.info('test')
         call_logger(logger)

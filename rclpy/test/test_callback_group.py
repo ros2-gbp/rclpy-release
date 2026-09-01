@@ -13,14 +13,12 @@
 # limitations under the License.
 
 import time
-from typing import TYPE_CHECKING
 import unittest
 
 from rcl_interfaces.srv import GetParameters
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.callback_groups import ReentrantCallbackGroup
-import rclpy.context
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.task import Future
 from test_msgs.msg import BasicTypes, Empty
@@ -28,18 +26,14 @@ from test_msgs.msg import BasicTypes, Empty
 
 class TestCallbackGroup(unittest.TestCase):
 
-    if TYPE_CHECKING:
-        context: rclpy.context.Context
-        node: rclpy.node.Node
-
     @classmethod
-    def setUpClass(cls) -> None:
+    def setUpClass(cls):
         cls.context = rclpy.context.Context()
         rclpy.init(context=cls.context)
         cls.node = rclpy.create_node('TestCallbackGroup', namespace='/rclpy', context=cls.context)
 
     @classmethod
-    def tearDownClass(cls) -> None:
+    def tearDownClass(cls):
         cls.node.destroy_node()
         rclpy.shutdown(context=cls.context)
 
@@ -71,7 +65,7 @@ class TestCallbackGroup(unittest.TestCase):
 
             # This callback is used to check if a callback can be received while another
             # long running callback is being executed
-            def short_callback(msg: Empty) -> None:
+            def short_callback(msg):
                 nonlocal got_short_callback
                 # Set flag so signal that the callback has been received
                 got_short_callback = True
@@ -79,8 +73,10 @@ class TestCallbackGroup(unittest.TestCase):
             # This callback is as a long running callback
             # It will be checking that the short callback can
             # run in parallel to this long running one
-            def long_callback(msg: Empty) -> None:
+            def long_callback(msg):
                 nonlocal received_short_callback_in_long_callback
+                nonlocal future_up
+                nonlocal future_down
                 # The following future is used to delay the publishing of
                 # the message that triggers the short callback.
                 # This is done to ensure the long running callback is being executed
@@ -176,12 +172,10 @@ class TestCallbackGroup(unittest.TestCase):
         self.assertTrue(group.has_entity(cli2))
 
     def test_create_service_with_group(self) -> None:
-        srv1 = self.node.create_service(GetParameters, 'get/parameters',
-                                        lambda req, res: GetParameters.Response())
+        srv1 = self.node.create_service(GetParameters, 'get/parameters', lambda req: None)
         group = ReentrantCallbackGroup()
         srv2 = self.node.create_service(
-            GetParameters, 'get/parameters', lambda req, res: GetParameters.Response(),
-            callback_group=group)
+            GetParameters, 'get/parameters', lambda req: None, callback_group=group)
 
         self.assertFalse(group.has_entity(srv1))
         self.assertTrue(group.has_entity(srv2))

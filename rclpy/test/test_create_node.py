@@ -12,12 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING
 import unittest
 
 import rclpy
 
-import rclpy.context
 from rclpy.duration import Duration
 from rclpy.exceptions import InvalidNamespaceException
 from rclpy.exceptions import InvalidNodeNameException
@@ -31,20 +29,16 @@ from rclpy.qos import QoSReliabilityPolicy
 
 class TestCreateNode(unittest.TestCase):
 
-    if TYPE_CHECKING:
-        context: rclpy.context.Context
-
     @classmethod
-    def setUpClass(cls) -> None:
+    def setUpClass(cls):
         cls.context = rclpy.context.Context()
         rclpy.init(context=cls.context)
 
     @classmethod
-    def tearDownClass(cls) -> None:
+    def tearDownClass(cls):
         rclpy.shutdown(context=cls.context)
 
-    def assert_qos_equal(self, expected_qos_profile: QoSProfile,
-                         actual_qos_profile: QoSProfile, *, is_publisher: bool) -> None:
+    def assert_qos_equal(self, expected_qos_profile, actual_qos_profile, *, is_publisher):
         # Depth and history are skipped because they are not retrieved.
         self.assertEqual(
             expected_qos_profile.durability,
@@ -122,7 +116,7 @@ class TestCreateNode(unittest.TestCase):
             ]
         ).destroy_node()
 
-    def test_create_node_disable_rosout(self) -> None:
+    def test_create_node_disable_rosout(self):
         node_name = 'create_node_test_disable_rosout'
         namespace = '/ns'
         node = rclpy.create_node(
@@ -131,7 +125,7 @@ class TestCreateNode(unittest.TestCase):
         self.assertFalse(node.get_publishers_info_by_topic('/rosout'))
         node.destroy_node()
 
-    def test_create_node_rosout_qos_profile(self) -> None:
+    def test_create_node_rosout_qos_profile(self):
         test_qos_profile = QoSProfile(
             depth=10,
             history=QoSHistoryPolicy.KEEP_ALL,

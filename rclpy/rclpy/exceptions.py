@@ -15,9 +15,6 @@ from typing import Any, List, Optional, TYPE_CHECKING, Union
 
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 
-if TYPE_CHECKING:
-    from rclpy.parameter import AllowableParameterValue
-
 
 class NotInitializedException(Exception):
     """Raised when the rclpy implementation is accessed before rclpy.init()."""
@@ -126,6 +123,9 @@ class InvalidParameterTypeException(ParameterException):
 class InvalidParameterValueException(ParameterException):
     """Raised when a parameter is rejected by a user callback or when applying a descriptor."""
 
+    if TYPE_CHECKING:
+        from rclpy.parameter import AllowableParameterValue
+
     def __init__(self, parameter: str, value: 'AllowableParameterValue', reason: str) -> None:
         ParameterException.__init__(
             self,
@@ -156,9 +156,3 @@ class ROSInterruptException(Exception):
 
     def __init__(self) -> None:
         Exception.__init__(self, 'rclpy.shutdown() has been called')
-
-
-class TimeSourceChangedError(Exception):
-    """Raised when a sleep is interrupted by a time source change."""
-
-    pass

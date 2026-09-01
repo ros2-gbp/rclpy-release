@@ -2,136 +2,65 @@
 Changelog for package rclpy
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-10.0.11 (2026-09-01)
---------------------
-* Fix future-wait callback accumulation on every spin path (`#1702 <https://github.com/ros2/rclpy/issues/1702>`_) (`#1716 <https://github.com/ros2/rclpy/issues/1716>`_)
-* fix: node lingering after destroy (backport lyrical `#1711 <https://github.com/ros2/rclpy/issues/1711>`_) (`#1714 <https://github.com/ros2/rclpy/issues/1714>`_)
-* Use perf_counter() rather than monotonic() for consistency. (`#1712 <https://github.com/ros2/rclpy/issues/1712>`_) (`#1715 <https://github.com/ros2/rclpy/issues/1715>`_)
-* Fix rclpy async executor sleep. (`#1661 <https://github.com/ros2/rclpy/issues/1661>`_) (`#1676 <https://github.com/ros2/rclpy/issues/1676>`_)
-* Handle exceptions in lifecycle transition callbacks (`#1696 <https://github.com/ros2/rclpy/issues/1696>`_) (`#1698 <https://github.com/ros2/rclpy/issues/1698>`_)
-* Fix incorrect parameter names in docstrings (`#1685 <https://github.com/ros2/rclpy/issues/1685>`_) (`#1691 <https://github.com/ros2/rclpy/issues/1691>`_)
-* Fix incorrect parameter names in docstrings (`#1683 <https://github.com/ros2/rclpy/issues/1683>`_) (`#1686 <https://github.com/ros2/rclpy/issues/1686>`_)
+9.1.7 (2026-09-01)
+------------------
+* Handle exceptions in lifecycle transition callbacks (`#1696 <https://github.com/ros2/rclpy/issues/1696>`_) (`#1699 <https://github.com/ros2/rclpy/issues/1699>`_)
+* Bugfix: executor doesn't propagate exception from task that awaited a future (`#1643 <https://github.com/ros2/rclpy/issues/1643>`_) (`#1651 <https://github.com/ros2/rclpy/issues/1651>`_)
+* Fix incorrect parameter names in docstrings (`#1685 <https://github.com/ros2/rclpy/issues/1685>`_) (`#1692 <https://github.com/ros2/rclpy/issues/1692>`_)
+* Fix incorrect parameter names in docstrings (`#1683 <https://github.com/ros2/rclpy/issues/1683>`_) (`#1687 <https://github.com/ros2/rclpy/issues/1687>`_)
 * Contributors: mergify[bot]
 
-10.0.10 (2026-04-30)
---------------------
-* Feature: async node (`#1620 <https://github.com/ros2/rclpy/issues/1620>`_)
-* Refactor: moved TypeDescriptionService, LoggingService, ParameterService to BaseNode (`#1645 <https://github.com/ros2/rclpy/issues/1645>`_)
-* Refactor: base node (`#1637 <https://github.com/ros2/rclpy/issues/1637>`_)
-* Bugfix: executor doesn't propagate exception from task that awaited a future (`#1643 <https://github.com/ros2/rclpy/issues/1643>`_)
-* Fix: disable flaky executor test (`#1648 <https://github.com/ros2/rclpy/issues/1648>`_) (`#1649 <https://github.com/ros2/rclpy/issues/1649>`_)
-* Contributors: Nadav Elkabets
-
-10.0.9 (2026-04-14)
--------------------
-
-* Streamline entity destroy (`#1629 <https://github.com/ros2/rclpy/issues/1629>`_)
-
-* Contributors: Nadav Elkabets
-
-10.0.8 (2026-04-09)
--------------------
-* Add acceptable_buffer_backends as subscription option in rclpy (`#1628 <https://github.com/ros2/rclpy/issues/1628>`_)
-* publish_feedback should effect only on executing state. (`#1639 <https://github.com/ros2/rclpy/issues/1639>`_)
-* Support to configure feedback subscription content filter for action client (`#1633 <https://github.com/ros2/rclpy/issues/1633>`_)
-* fix flaky test_multi_threaded_executor_closes_threads. (`#1636 <https://github.com/ros2/rclpy/issues/1636>`_)
-* Fix violation (`#1635 <https://github.com/ros2/rclpy/issues/1635>`_)
-* Fix test_executor types (`#1632 <https://github.com/ros2/rclpy/issues/1632>`_)
-* Refactor: base clock (`#1627 <https://github.com/ros2/rclpy/issues/1627>`_)
-* Contributors: Barry Xu, CY Chen, Michael Carlstrom, Nadav Elkabets, Tomoya Fujita
-
-10.0.7 (2026-03-24)
--------------------
-* Fix future flake8 (`#1634 <https://github.com/ros2/rclpy/issues/1634>`_)
-* Use new ROSIDL aggregate CMake target (`#1630 <https://github.com/ros2/rclpy/issues/1630>`_)
-* Update type hints for parameters (`#1631 <https://github.com/ros2/rclpy/issues/1631>`_)
-* Add support check for content filter feature in subscription (`#1618 <https://github.com/ros2/rclpy/issues/1618>`_)
-* Refactor: base entity classes (`#1624 <https://github.com/ros2/rclpy/issues/1624>`_)
-* Fix more test typings and remove unused type aliases (`#1626 <https://github.com/ros2/rclpy/issues/1626>`_)
-* Add types to test_waitable (`#1625 <https://github.com/ros2/rclpy/issues/1625>`_)
-* Correct typos (`#1619 <https://github.com/ros2/rclpy/issues/1619>`_)
-* Contributors: Auguste Lalande, Barry Xu, Emerson Knapp, Michael Carlstrom, Nadav Elkabets
-
-10.0.6 (2026-03-09)
--------------------
-* Fix incorrect action client/server callback type hints (`#1616 <https://github.com/ros2/rclpy/issues/1616>`_)
-* avoid stale parameter events in content filter tests. (`#1615 <https://github.com/ros2/rclpy/issues/1615>`_)
-* fix violations (`#1614 <https://github.com/ros2/rclpy/issues/1614>`_)
-* Typing Regression Fixes (`#1612 <https://github.com/ros2/rclpy/issues/1612>`_)
-* CFT is only supported rmw_fastrtps and rmw_connextdds. (`#1611 <https://github.com/ros2/rclpy/issues/1611>`_)
-* Contributors: Błażej Sowa, Michael Carlstrom, Tomoya Fujita
-
-10.0.5 (2026-02-09)
--------------------
-* Prevents the Future result from being set twice. (`#1599 <https://github.com/ros2/rclpy/issues/1599>`_)
-* Wrap up ActionClient construction before spining (`#1591 <https://github.com/ros2/rclpy/issues/1591>`_)
-* Compatiblity with 'Populate Transitions' `ros2/rcl#1269 <https://github.com/ros2/rcl/issues/1269>`_ (`#1528 <https://github.com/ros2/rclpy/issues/1528>`_)
-* Drop invalid waitables from wait set (`#1590 <https://github.com/ros2/rclpy/issues/1590>`_)
-* give some time for the discovery for test_on_new_message_callback. (`#1585 <https://github.com/ros2/rclpy/issues/1585>`_)
-* print warning message on owner node if the parameter operation fails. (`#1584 <https://github.com/ros2/rclpy/issues/1584>`_)
-* Update release version to 10.0.4 (`#1583 <https://github.com/ros2/rclpy/issues/1583>`_)
-* Update `type_support.py` to use new message abstract base classes  (`#1509 <https://github.com/ros2/rclpy/issues/1509>`_)
-* Contributors: Jasper van Brakel, Michael Carlstrom, Tomoya Fujita, mhidalgo-rai
-
-10.0.4 (2026-01-09)
--------------------
-* Fix performance bug in MultiThreadedExecutor (hopefully) (`#1547 <https://github.com/ros2/rclpy/issues/1547>`_)
-* Expose action graph functions as Node class methods. (`#1574 <https://github.com/ros2/rclpy/issues/1574>`_)
-* Improve wildcard parsing and optimize the logic for parsing YAML para… (`#1571 <https://github.com/ros2/rclpy/issues/1571>`_)
-* Improve the compatibility of processing YAML parameter files (`#1548 <https://github.com/ros2/rclpy/issues/1548>`_)
-* Fix parameter parsing for unspecified target nodes (`#1552 <https://github.com/ros2/rclpy/issues/1552>`_)
-* Remove default from switch with enum, so that compiler warns. (`#1566 <https://github.com/ros2/rclpy/issues/1566>`_)
-* Use unconditional wait when possible. (`#1563 <https://github.com/ros2/rclpy/issues/1563>`_)
-* Increase clock accuracy (`#1564 <https://github.com/ros2/rclpy/issues/1564>`_)
-* Contributors: Barry Xu, Florian Vahl, Michael Tandy, Tomoya Fujita
-
-10.0.3 (2025-12-12)
--------------------
-* Fix issues with resuming async tasks awaiting a future (`#1469 <https://github.com/ros2/rclpy/issues/1469>`_)
-* ParameterEventHandler support ContentFiltering (`#1531 <https://github.com/ros2/rclpy/issues/1531>`_)
-* Contributors: Barry Xu, Błażej Sowa, Nadav Elkabets
-
-10.0.2 (2025-11-17)
--------------------
-* add : get clients, servers info (`#1307 <https://github.com/ros2/rclpy/issues/1307>`_)
-* Allow action servers without execute callback (`#1219 <https://github.com/ros2/rclpy/issues/1219>`_)
-* Remove accidental tuple (`#1542 <https://github.com/ros2/rclpy/issues/1542>`_)
-* fix(test_events_executor): destroy all nodes before shutdown (`#1538 <https://github.com/ros2/rclpy/issues/1538>`_)
-* Remove duplicate future handling from send_goal_async (`#1532 <https://github.com/ros2/rclpy/issues/1532>`_)
-* Contributors: Michael Carlstrom, Minju, Lee, Nathan Wiebe Neufeldt, Tim Clephas, Yuyuan Yuan
-
-10.0.1 (2025-10-21)
--------------------
-* remove unused 'param_type' (`#1524 <https://github.com/ros2/rclpy/issues/1524>`_)
-* Fixes Action.*_async futures never complete (`#1308 <https://github.com/ros2/rclpy/issues/1308>`_)
-* add spinning state for the Executor classes. (`#1510 <https://github.com/ros2/rclpy/issues/1510>`_)
-* EventsExecutor: Handle async callbacks for services and subscriptions (`#1478 <https://github.com/ros2/rclpy/issues/1478>`_)
-* Added lock to protect futures for multithreaded executor (`#1477 <https://github.com/ros2/rclpy/issues/1477>`_)
-* Add content-filtered-topic interfaces (`#1506 <https://github.com/ros2/rclpy/issues/1506>`_)
-* Fix warnings from gcc. (`#1501 <https://github.com/ros2/rclpy/issues/1501>`_)
-* Feature: expose event callback setter in subscription, service, client and timer (`#1496 <https://github.com/ros2/rclpy/issues/1496>`_)
-* Feature: add executor.create_future() (`#1495 <https://github.com/ros2/rclpy/issues/1495>`_)
-* Add More Test Typings (`#1472 <https://github.com/ros2/rclpy/issues/1472>`_)
-* Use pybind11 from deb or pixi (`#1497 <https://github.com/ros2/rclpy/issues/1497>`_)
-* Do not execute the timer if call_timer_with_info() fails (`#1488 <https://github.com/ros2/rclpy/issues/1488>`_)
-* Fix msbuild warnings on `operator==` deprecation for pybind11 >=2.2 (`#1483 <https://github.com/ros2/rclpy/issues/1483>`_)
-* Cleanup the rclpy dependencies. (`#1482 <https://github.com/ros2/rclpy/issues/1482>`_)
-* Contributors: Alejandro Hernández Cordero, Barry Xu, Brad Martin, Brennan Miller-Klugman, Chris Lalancette, Christian Rauch, Clara Berendsen, Jonathan, Michael Carlstrom, Nadav Elkabets, Tomoya Fujita
-
-10.0.0 (2025-07-01)
--------------------
-* Feature: add logger_name property to subscription, publisher, service and client (`#1471 <https://github.com/ros2/rclpy/issues/1471>`_)
-* Update `test_node` Types (`#1464 <https://github.com/ros2/rclpy/issues/1464>`_)
-* Add method that get datetime.datetime from Time (`#1443 <https://github.com/ros2/rclpy/issues/1443>`_)
-* add `MessageInfo.publisher_gid` (`#1466 <https://github.com/ros2/rclpy/issues/1466>`_)
-* Add types to `test_action\_*.py` (`#1444 <https://github.com/ros2/rclpy/issues/1444>`_)
-* Revert "Fix Duration, Clock, and QoS Docs (`#1428 <https://github.com/ros2/rclpy/issues/1428>`_)" (`#1447 <https://github.com/ros2/rclpy/issues/1447>`_)
-* remove all deprecated classes and methods (`#1456 <https://github.com/ros2/rclpy/issues/1456>`_)
-* [rclpy] Fix spin() incorrectly removing node from executor if already attached (`#1446 <https://github.com/ros2/rclpy/issues/1446>`_)
-* Contributors: Alon Borenshtein, Jean Paul, Michael Carlstrom, Nadav Elkabets, Tomoya Fujita
-
-9.2.0 (2025-04-25)
+9.1.6 (2026-07-02)
 ------------------
+* Fix incorrect action client/server callback type hints (backport `#1616 <https://github.com/ros2/rclpy/issues/1616>`_) (`#1655 <https://github.com/ros2/rclpy/issues/1655>`_)
+* Correct typos (`#1619 <https://github.com/ros2/rclpy/issues/1619>`_) (`#1621 <https://github.com/ros2/rclpy/issues/1621>`_)
+* Contributors: Błażej Sowa, mergify[bot]
+
+9.1.5 (2026-02-09)
+------------------
+* Prevents the Future result from being set twice. (`#1599 <https://github.com/ros2/rclpy/issues/1599>`_) (`#1603 <https://github.com/ros2/rclpy/issues/1603>`_)
+* Wrap up ActionClient construction before spining (`#1591 <https://github.com/ros2/rclpy/issues/1591>`_) (`#1600 <https://github.com/ros2/rclpy/issues/1600>`_)
+* Drop invalid waitables from wait set (`#1590 <https://github.com/ros2/rclpy/issues/1590>`_) (`#1592 <https://github.com/ros2/rclpy/issues/1592>`_)
+* print warning message on owner node if the parameter operation fails. (`#1584 <https://github.com/ros2/rclpy/issues/1584>`_) (`#1595 <https://github.com/ros2/rclpy/issues/1595>`_)
+* add spinning state for the Executor classes. (`#1510 <https://github.com/ros2/rclpy/issues/1510>`_) (`#1578 <https://github.com/ros2/rclpy/issues/1578>`_)
+* Contributors: mergify[bot]
+
+9.1.4 (2026-01-09)
+------------------
+* Improve wildcard parsing and optimize the logic for parsing YAML para… (`#1571 <https://github.com/ros2/rclpy/issues/1571>`_) (`#1573 <https://github.com/ros2/rclpy/issues/1573>`_)
+* Improve the compatibility of processing YAML parameter files (`#1548 <https://github.com/ros2/rclpy/issues/1548>`_) (`#1572 <https://github.com/ros2/rclpy/issues/1572>`_)
+* Fix parameter parsing for unspecified target nodes (`#1552 <https://github.com/ros2/rclpy/issues/1552>`_) (`#1569 <https://github.com/ros2/rclpy/issues/1569>`_)
+* Use unconditional wait when possible. (`#1563 <https://github.com/ros2/rclpy/issues/1563>`_) (`#1567 <https://github.com/ros2/rclpy/issues/1567>`_)
+* Allow action servers without execute callback (backport `#1219 <https://github.com/ros2/rclpy/issues/1219>`_) (`#1557 <https://github.com/ros2/rclpy/issues/1557>`_)
+* Fix issues with resuming async tasks awaiting a future (`#1469 <https://github.com/ros2/rclpy/issues/1469>`_) (`#1553 <https://github.com/ros2/rclpy/issues/1553>`_)
+* Contributors: mergify[bot]
+
+9.1.3 (2025-11-18)
+------------------
+* Remove accidental tuple (`#1542 <https://github.com/ros2/rclpy/issues/1542>`_) (`#1543 <https://github.com/ros2/rclpy/issues/1543>`_)
+* fix(test_events_executor): destroy all nodes before shutdown (`#1538 <https://github.com/ros2/rclpy/issues/1538>`_) (`#1539 <https://github.com/ros2/rclpy/issues/1539>`_)
+* Remove duplicate future handling from send_goal_async (`#1532 <https://github.com/ros2/rclpy/issues/1532>`_) (`#1534 <https://github.com/ros2/rclpy/issues/1534>`_)
+* Contributors: mergify[bot]
+
+9.1.2 (2025-10-21)
+------------------
+* remove unused 'param_type' (`#1524 <https://github.com/ros2/rclpy/issues/1524>`_) (`#1525 <https://github.com/ros2/rclpy/issues/1525>`_)
+* Fixes Action.*_async futures never complete (`#1308 <https://github.com/ros2/rclpy/issues/1308>`_) (`#1514 <https://github.com/ros2/rclpy/issues/1514>`_)
+* Add content-filtered-topic interfaces (backport `#1506 <https://github.com/ros2/rclpy/issues/1506>`_) (`#1520 <https://github.com/ros2/rclpy/issues/1520>`_)
+* EventsExecutor: Handle async callbacks for services and subscriptions (`#1478 <https://github.com/ros2/rclpy/issues/1478>`_) (`#1512 <https://github.com/ros2/rclpy/issues/1512>`_)
+* Do not execute the timer if call_timer_with_info() fails (`#1488 <https://github.com/ros2/rclpy/issues/1488>`_) (`#1498 <https://github.com/ros2/rclpy/issues/1498>`_)
+* Feature: add executor.create_future() (`#1495 <https://github.com/ros2/rclpy/issues/1495>`_) (`#1499 <https://github.com/ros2/rclpy/issues/1499>`_)
+* Contributors: mergify[bot]
+
+9.1.1 (2025-07-07)
+------------------
+* Add logger_name property to subscription, publisher, service and client (`#1471 <https://github.com/ros2/rclpy/issues/1471>`_) (`#1474 <https://github.com/ros2/rclpy/issues/1474>`_)
+* Add `MessageInfo.publisher_gid` (`#1466 <https://github.com/ros2/rclpy/issues/1466>`_) (`#1468 <https://github.com/ros2/rclpy/issues/1468>`_)
+* Make no-op deprecated decorator ignore arguments (`#1463 <https://github.com/ros2/rclpy/issues/1463>`_)
+* Make deprecated decorator a no-op on Debian bookworm (`#1458 <https://github.com/ros2/rclpy/issues/1458>`_)
+* Fix spin() incorrectly removing node from executor if already attached (`#1446 <https://github.com/ros2/rclpy/issues/1446>`_) (`#1449 <https://github.com/ros2/rclpy/issues/1449>`_)
+* Revert "Fix Duration, Clock, and QoS Docs (`#1428 <https://github.com/ros2/rclpy/issues/1428>`_)" (`#1447 <https://github.com/ros2/rclpy/issues/1447>`_) (`#1457 <https://github.com/ros2/rclpy/issues/1457>`_)
+* Contributors: Alon Borenshtein, Nadav Elkabets, Shane Loretz, Tomoya Fujita
 
 9.1.0 (2025-04-18)
 ------------------

@@ -14,13 +14,6 @@
 
 #include <pybind11/pybind11.h>
 
-#include <rcl/node.h>
-#include <rcl/service.h>
-
-#include <rmw/types.h>
-
-#include <type_description_interfaces/msg/type_description.h>
-
 #include "type_description_service.hpp"
 #include "utils.hpp"
 
@@ -37,9 +30,9 @@ TypeDescriptionService::TypeDescriptionService(Node & node)
   service_ = std::make_shared<Service>(node, srv_ptr);
 }
 
-std::shared_ptr<Service> TypeDescriptionService::get_impl()
+Service TypeDescriptionService::get_impl()
 {
-  return service_;
+  return *service_;
 }
 
 py::object TypeDescriptionService::handle_request(

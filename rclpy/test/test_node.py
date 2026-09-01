@@ -16,10 +16,7 @@ import pathlib
 import platform
 import time
 from typing import Any
-from typing import Callable
-from typing import cast
 from typing import List
-from typing import Optional
 from typing import Tuple
 from typing import TYPE_CHECKING
 from typing import Union
@@ -41,7 +38,6 @@ import rclpy
 from rclpy.clock_type import ClockType
 import rclpy.context
 from rclpy.duration import Duration
-from rclpy.endpoint_info import EndpointTypeEnum
 from rclpy.exceptions import InvalidParameterException
 from rclpy.exceptions import InvalidParameterTypeException
 from rclpy.exceptions import InvalidParameterValueException
@@ -52,7 +48,6 @@ from rclpy.exceptions import ParameterImmutableException
 from rclpy.exceptions import ParameterNotDeclaredException
 from rclpy.exceptions import ParameterUninitializedException
 from rclpy.executors import SingleThreadedExecutor
-from rclpy.impl.logging_severity import LoggingSeverity
 from rclpy.parameter import Parameter
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.qos import QoSDurabilityPolicy
@@ -64,22 +59,11 @@ from rclpy.time_source import USE_SIM_TIME_NAME
 from rclpy.type_description_service import START_TYPE_DESCRIPTION_SERVICE_PARAM
 from rclpy.utilities import get_rmw_implementation_identifier
 from test_msgs.msg import BasicTypes
-from test_msgs.srv import Empty
 
 TEST_NODE = 'my_node'
 TEST_NAMESPACE = '/my_ns'
 
 TEST_RESOURCES_DIR = pathlib.Path(__file__).resolve().parent / 'resources' / 'test_node'
-
-
-def _wait_until(predicate: Callable[[], bool], timeout: float = 10.0) -> bool:
-    """Poll ``predicate`` until it is true, returning whether it became true within ``timeout``."""
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        if predicate():
-            return True
-        time.sleep(0.05)
-    return predicate()
 
 
 class TestNodeAllowUndeclaredParameters(unittest.TestCase):
@@ -142,11 +126,11 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
             self.node.create_subscription(BasicTypes,
                                           'chatter',
                                           lambda msg: print(msg),
-                                          'foo')  # type: ignore[call-overload]
+                                          'foo')  # type: ignore[arg-type]
 
-    def raw_subscription_callback(self, msg: bytes) -> None:
-        print('Raw subscription callback: %s length %d' % (msg.decode(), len(msg)))
-        self.raw_subscription_msg: Optional[bytes] = msg
+    def raw_subscription_callback(self, msg):
+        print('Raw subscription callback: %s length %d' % (msg, len(msg)))
+        self.raw_subscription_msg = msg
 
     def test_create_raw_subscription(self) -> None:
         executor = SingleThreadedExecutor(context=self.context)
@@ -170,12 +154,11 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
         self.assertIs(type(self.raw_subscription_msg), bytes, 'raw subscribe did not return bytes')
         # The length might be implementation dependent, but shouldn't be zero
         # There may be a canonical serialization in the future at which point this can be updated
-        self.assertNotEqual(len(cast(bytes, self.raw_subscription_msg)), 0,
-                            'raw subscribe invalid length')
+        self.assertNotEqual(len(self.raw_subscription_msg), 0, 'raw subscribe invalid length')
 
         executor.shutdown()
 
-    def dummy_cb(self, msg: BasicTypes) -> None:
+    def dummy_cb(self, msg):
         pass
 
     @unittest.skipIf(
@@ -196,7 +179,6 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
             if result is not None:
                 msg, info = result
                 self.assertNotEqual(0, info['source_timestamp'])
-                assert info['publisher_gid'] is not None
                 self.assertIn('data', info['publisher_gid'])
                 self.assertIsInstance(info['publisher_gid']['data'], (bytes, bytearray))
                 self.assertGreater(len(info['publisher_gid']['data']), 0)
@@ -217,13 +199,13 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
             self.node.create_client(GetParameters, 'foo/{bad_sub}')
 
     def test_create_service(self) -> None:
-        self.node.create_service(GetParameters, 'get/parameters', lambda req, res: res)
+        self.node.create_service(GetParameters, 'get/parameters', lambda req: None)
         with self.assertRaisesRegex(InvalidServiceNameException, 'must not contain characters'):
-            self.node.create_service(GetParameters, 'get/parameters?', lambda req, res: res)
+            self.node.create_service(GetParameters, 'get/parameters?', lambda req: None)
         with self.assertRaisesRegex(InvalidServiceNameException, 'must not start with a number'):
-            self.node.create_service(GetParameters, '/get/42parameters', lambda req, res: res)
+            self.node.create_service(GetParameters, '/get/42parameters', lambda req: None)
         with self.assertRaisesRegex(ValueError, 'unknown substitution'):
-            self.node.create_service(GetParameters, 'foo/{bad_sub}', lambda req, res: res)
+            self.node.create_service(GetParameters, 'foo/{bad_sub}', lambda req: None)
 
     def test_service_names_and_types(self) -> None:
         # test that it doesn't raise
@@ -236,18 +218,6 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
     def test_client_names_and_types_by_node(self) -> None:
         # test that it doesn't raise
         self.node.get_client_names_and_types_by_node(TEST_NODE, TEST_NAMESPACE)
-
-    def test_action_client_names_and_types_by_node(self) -> None:
-        # test that it doesn't raise
-        self.node.get_action_client_names_and_types_by_node(TEST_NODE, TEST_NAMESPACE)
-
-    def test_action_server_names_and_types_by_node(self) -> None:
-        # test that it doesn't raise
-        self.node.get_action_server_names_and_types_by_node(TEST_NODE, TEST_NAMESPACE)
-
-    def test_action_names_and_types(self) -> None:
-        # test that it doesn't raise
-        self.node.get_action_names_and_types()
 
     def test_topic_names_and_types(self) -> None:
         # test that it doesn't raise
@@ -266,28 +236,7 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
         # test that it doesn't raise
         self.node.get_node_names_and_namespaces_with_enclaves()
 
-    def test_destroyed_node_leaves_the_graph(self) -> None:
-        # destroy_node() must release every reference to the node handle so rcl_node_fini() runs.
-        # Any surviving reference leaves the node advertised in the graph until its process exits.
-        doomed = rclpy.create_node('doomed_node', context=self.context)
-
-        def in_graph() -> bool:
-            return any(
-                name == 'doomed_node'
-                for name, _ in self.node.get_node_names_and_namespaces()
-            )
-
-        self.assertTrue(
-            _wait_until(in_graph), 'node under test never appeared in the graph')
-
-        doomed.destroy_node()
-
-        self.assertTrue(
-            _wait_until(lambda: not in_graph()),
-            'destroyed node is still in the graph, so its handle was never finalized')
-
-    def assert_qos_equal(self, expected_qos_profile: QoSProfile,
-                         actual_qos_profile: QoSProfile, *, is_publisher: bool) -> None:
+    def assert_qos_equal(self, expected_qos_profile, actual_qos_profile, *, is_publisher):
         # Depth and history are skipped because they are not retrieved.
         self.assertEqual(
             expected_qos_profile.durability,
@@ -373,84 +322,11 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
 
         # Error cases
         with self.assertRaises(TypeError):
-            self.node.get_subscriptions_info_by_topic(1)  # type: ignore[arg-type]
-            self.node.get_publishers_info_by_topic(1)  # type: ignore[arg-type]
+            self.node.get_subscriptions_info_by_topic(1)
+            self.node.get_publishers_info_by_topic(1)
         with self.assertRaisesRegex(ValueError, 'is invalid'):
             self.node.get_subscriptions_info_by_topic('13')
             self.node.get_publishers_info_by_topic('13')
-
-    def test_get_clients_servers_info_by_service(self) -> None:
-        service_name = 'test_service_endpoint_info'
-        fq_service_name = '{namespace}/{name}'.format(namespace=TEST_NAMESPACE, name=service_name)
-        # Lists should be empty
-        self.assertFalse(self.node.get_clients_info_by_service(fq_service_name))
-        self.assertFalse(self.node.get_servers_info_by_service(fq_service_name))
-
-        # Add a client
-        qos_profile = QoSProfile(
-            depth=10,
-            history=QoSHistoryPolicy.KEEP_ALL,
-            deadline=Duration(seconds=1, nanoseconds=12345),
-            lifespan=Duration(seconds=20, nanoseconds=9887665),
-            reliability=QoSReliabilityPolicy.BEST_EFFORT,
-            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
-            liveliness_lease_duration=Duration(seconds=5, nanoseconds=23456),
-            liveliness=QoSLivelinessPolicy.MANUAL_BY_TOPIC)
-        self.node.create_client(Empty, service_name, qos_profile=qos_profile)
-        # List should have at least one item
-        client_list = self.node.get_clients_info_by_service(fq_service_name)
-        self.assertGreaterEqual(len(client_list), 1)
-        # Server list should be empty
-        self.assertFalse(self.node.get_servers_info_by_service(fq_service_name))
-
-        # Verify client list has the right data
-        self.assertEqual(self.node.get_name(), client_list[0].node_name)
-        self.assertEqual(self.node.get_namespace(), client_list[0].node_namespace)
-        self.assertEqual('test_msgs/srv/Empty', client_list[0].service_type)
-        self.assertTrue(client_list[0].endpoint_count == 1 or client_list[0].endpoint_count == 2)
-        self.assertEqual(client_list[0].endpoint_type, EndpointTypeEnum.CLIENT)
-        for i in range(client_list[0].endpoint_count):
-            actual_qos_profile = client_list[0].qos_profiles[i]
-            self.assert_qos_equal(qos_profile, actual_qos_profile, is_publisher=False)
-
-        # Add a server
-        qos_profile2 = QoSProfile(
-            depth=1,
-            history=QoSHistoryPolicy.KEEP_LAST,
-            deadline=Duration(seconds=15, nanoseconds=1678),
-            lifespan=Duration(seconds=29, nanoseconds=2345),
-            reliability=QoSReliabilityPolicy.RELIABLE,
-            durability=QoSDurabilityPolicy.VOLATILE,
-            liveliness_lease_duration=Duration(seconds=5, nanoseconds=23456),
-            liveliness=QoSLivelinessPolicy.AUTOMATIC)
-        self.node.create_service(
-            Empty,
-            service_name,
-            lambda req, res: res,
-            qos_profile=qos_profile2
-        )
-        # Both lists should have at least one item
-        client_list = self.node.get_clients_info_by_service(fq_service_name)
-        server_list = self.node.get_servers_info_by_service(fq_service_name)
-        self.assertGreaterEqual(len(client_list), 1)
-        self.assertGreaterEqual(len(server_list), 1)
-        # Verify server list has the right data
-        self.assertEqual(self.node.get_name(), server_list[0].node_name)
-        self.assertEqual(self.node.get_namespace(), server_list[0].node_namespace)
-        self.assertEqual('test_msgs/srv/Empty', server_list[0].service_type)
-        self.assertTrue(server_list[0].endpoint_count == 1 or server_list[0].endpoint_count == 2)
-        self.assertEqual(server_list[0].endpoint_type, EndpointTypeEnum.SERVER)
-        for i in range(server_list[0].endpoint_count):
-            actual_qos_profile = server_list[0].qos_profiles[i]
-            self.assert_qos_equal(qos_profile2, actual_qos_profile, is_publisher=False)
-
-        # Error cases
-        with self.assertRaises(TypeError):
-            self.node.get_clients_info_by_service(1)  # type: ignore[arg-type]
-            self.node.get_servers_info_by_service(1)  # type: ignore[arg-type]
-        with self.assertRaisesRegex(ValueError, 'is invalid'):
-            self.node.get_clients_info_by_service('13')
-            self.node.get_servers_info_by_service('13')
 
     def test_count_publishers_subscribers(self) -> None:
         short_topic_name = 'chatter'
@@ -476,7 +352,7 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
 
         # error cases
         with self.assertRaises(TypeError):
-            self.node.count_subscribers(1)  # type: ignore[arg-type]
+            self.node.count_subscribers(1)
         with self.assertRaisesRegex(ValueError, 'is invalid'):
             self.node.count_subscribers('42')
         with self.assertRaisesRegex(ValueError, 'is invalid'):
@@ -495,7 +371,7 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
         self.assertEqual(0, self.node.count_services(short_service_name))
         self.assertEqual(0, self.node.count_services(fq_service_name))
 
-        self.node.create_service(GetParameters, short_service_name, lambda req, res: res)
+        self.node.create_service(GetParameters, short_service_name, lambda req: None)
         self.assertEqual(1, self.node.count_clients(short_service_name))
         self.assertEqual(1, self.node.count_clients(fq_service_name))
         self.assertEqual(1, self.node.count_services(short_service_name))
@@ -507,7 +383,7 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
         self.assertEqual(1, self.node.count_services(short_service_name))
         self.assertEqual(1, self.node.count_services(fq_service_name))
 
-        self.node.create_service(GetParameters, short_service_name, lambda req, res: res)
+        self.node.create_service(GetParameters, short_service_name, lambda req: None)
         self.assertEqual(2, self.node.count_clients(short_service_name))
         self.assertEqual(2, self.node.count_clients(fq_service_name))
         self.assertEqual(2, self.node.count_services(short_service_name))
@@ -515,9 +391,9 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
 
         # error cases
         with self.assertRaises(TypeError):
-            self.node.count_clients(1)  # type: ignore[arg-type]
+            self.node.count_clients(1)
         with self.assertRaises(TypeError):
-            self.node.count_services(1)  # type: ignore[arg-type]
+            self.node.count_services(1)
         with self.assertRaisesRegex(ValueError, 'is invalid'):
             self.node.count_clients('42')
         with self.assertRaisesRegex(ValueError, 'is invalid'):
@@ -527,11 +403,10 @@ class TestNodeAllowUndeclaredParameters(unittest.TestCase):
         node_logger = self.node.get_logger()
         expected_name = '%s.%s' % (TEST_NAMESPACE.replace('/', '.')[1:], TEST_NODE)
         self.assertEqual(node_logger.name, expected_name)
-        node_logger.set_level(LoggingSeverity.INFO)
+        node_logger.set_level(rclpy.logging.LoggingSeverity.INFO)
         node_logger.debug('test')
 
-    def modify_parameter_callback(self, parameters_list: List[Parameter[Any]]
-                                  ) -> List[Parameter[Any]]:
+    def modify_parameter_callback(self, parameters_list: List[Parameter[Any]]):
         modified_list = parameters_list.copy()
         for param in parameters_list:
             if param.name == 'foo':
@@ -698,12 +573,12 @@ class TestExecutor(unittest.TestCase):
         context: rclpy.context.Context
 
     @classmethod
-    def setUpClass(cls) -> None:
+    def setUpClass(cls):
         cls.context = rclpy.context.Context()
         rclpy.init(context=cls.context)
 
     @classmethod
-    def tearDownClass(cls) -> None:
+    def tearDownClass(cls):
         rclpy.shutdown(context=cls.context)
 
     def setUp(self) -> None:
@@ -749,12 +624,12 @@ class TestNode(unittest.TestCase):
         context: rclpy.context.Context
 
     @classmethod
-    def setUpClass(cls) -> None:
+    def setUpClass(cls):
         cls.context = rclpy.context.Context()
         rclpy.init(context=cls.context)
 
     @classmethod
-    def tearDownClass(cls) -> None:
+    def tearDownClass(cls):
         rclpy.shutdown(context=cls.context)
 
     def setUp(self) -> None:
@@ -809,8 +684,11 @@ class TestNode(unittest.TestCase):
             'bar', 'hello', ParameterDescriptor())
         result_baz = self.node.declare_parameter(
             'baz', 2.41, ParameterDescriptor())
-        with self.assertRaises(TypeError):
-            self.node.declare_parameter('value_not_set')
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always', category=UserWarning)
+            result_value_not_set = self.node.declare_parameter('value_not_set')
+            assert len(w) == 1
+            assert issubclass(w[0].category, UserWarning)
 
         # OK cases.
         self.assertIsInstance(result_initial_foo, Parameter)
@@ -820,6 +698,7 @@ class TestNode(unittest.TestCase):
         self.assertIsInstance(result_foo, Parameter)
         self.assertIsInstance(result_bar, Parameter)
         self.assertIsInstance(result_baz, Parameter)
+        self.assertIsInstance(result_value_not_set, Parameter)
         # initial_foo and initial_fizz get override values; initial_bar does not.
         self.assertEqual(result_initial_foo.value, 4321)
         self.assertEqual(result_initial_bar.value, 'ignoring_override')
@@ -831,6 +710,7 @@ class TestNode(unittest.TestCase):
         self.assertEqual(result_foo.value, 42)
         self.assertEqual(result_bar.value, 'hello')
         self.assertEqual(result_baz.value, 2.41)
+        self.assertIsNone(result_value_not_set.value)
         self.assertEqual(self.node.get_parameter('initial_foo').value, 4321)
         self.assertEqual(self.node.get_parameter('initial_bar').value, 'ignoring_override')
         self.assertEqual(self.node.get_parameter('initial_fizz').value, 'param_file_override')
@@ -840,6 +720,8 @@ class TestNode(unittest.TestCase):
         self.assertEqual(self.node.get_parameter('foo').value, 42)
         self.assertEqual(self.node.get_parameter('bar').value, 'hello')
         self.assertEqual(self.node.get_parameter('baz').value, 2.41)
+        self.assertIsNone(self.node.get_parameter('value_not_set').value)
+        self.assertTrue(self.node.has_parameter('value_not_set'))
 
         # Error cases.
         # TODO(@jubeira): add failing test cases with invalid names once name
@@ -871,9 +753,7 @@ class TestNode(unittest.TestCase):
 
         with self.assertRaises(TypeError):
             self.node.declare_parameter(
-                'wrong_parameter_descriptor_type',
-                1,
-                ParameterValue())  # type: ignore[call-overload]
+                'wrong_parameter_descriptor_type', 1, ParameterValue())
 
         with self.assertRaises(ValueError):
             self.node.declare_parameter(
@@ -892,13 +772,12 @@ class TestNode(unittest.TestCase):
                 descriptor=ParameterDescriptor(dynamic_typing=True))
 
     def test_declare_parameters(self) -> None:
-        parameters: List[
-            Union[Tuple[str, Union[int, str, float], ParameterDescriptor],
-                  Tuple[str, float]]] = [
+        parameters = [
             ('initial_foo', 0, ParameterDescriptor()),
             ('foo', 42, ParameterDescriptor()),
             ('bar', 'hello', ParameterDescriptor()),
-            ('baz', 2.41)
+            ('baz', 2.41),
+            ('value_not_set',)
         ]
 
         # Declare uninitialized parameter
@@ -912,7 +791,11 @@ class TestNode(unittest.TestCase):
             self.node.declare_parameter('initial_decl_with_type', Parameter.Type.DOUBLE).value,
             3.14)
 
-        result = self.node.declare_parameters('', parameters)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always', category=UserWarning)
+            result = self.node.declare_parameters('', parameters)
+            assert len(w) == 1
+            assert issubclass(w[0].category, UserWarning)
 
         # OK cases - using overrides.
         self.assertIsInstance(result, list)
@@ -921,23 +804,31 @@ class TestNode(unittest.TestCase):
         self.assertIsInstance(result[1], Parameter)
         self.assertIsInstance(result[2], Parameter)
         self.assertIsInstance(result[3], Parameter)
+        self.assertIsInstance(result[4], Parameter)
         self.assertEqual(result[0].value, 4321)
         self.assertEqual(result[1].value, 42)
         self.assertEqual(result[2].value, 'hello')
         self.assertEqual(result[3].value, 2.41)
+        self.assertIsNone(result[4].value)
         self.assertEqual(self.node.get_parameter('initial_foo').value, 4321)
         self.assertEqual(self.node.get_parameter('foo').value, 42)
         self.assertEqual(self.node.get_parameter('bar').value, 'hello')
         self.assertEqual(self.node.get_parameter('baz').value, 2.41)
+        self.assertIsNone(self.node.get_parameter('value_not_set').value)
+        self.assertTrue(self.node.has_parameter('value_not_set'))
 
         parameters = [
             ('k_initial_foo', 0, ParameterDescriptor()),
             ('k_foo', 42, ParameterDescriptor()),
             ('k_bar', 'hello', ParameterDescriptor()),
-            ('k_baz', 2.41)
+            ('k_baz', 2.41),
+            ('k_value_not_set',)
         ]
 
-        result = self.node.declare_parameters('namespace', parameters)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always', category=UserWarning)
+            result = self.node.declare_parameters('namespace', parameters)
+            assert len(w) == 1
 
         # OK cases.
         self.assertIsInstance(result, list)
@@ -946,14 +837,18 @@ class TestNode(unittest.TestCase):
         self.assertIsInstance(result[1], Parameter)
         self.assertIsInstance(result[2], Parameter)
         self.assertIsInstance(result[3], Parameter)
+        self.assertIsInstance(result[4], Parameter)
         self.assertEqual(result[0].value, 4321)
         self.assertEqual(result[1].value, 42)
         self.assertEqual(result[2].value, 'hello')
         self.assertEqual(result[3].value, 2.41)
+        self.assertIsNone(result[4].value)
         self.assertEqual(self.node.get_parameter('namespace.k_initial_foo').value, 4321)
         self.assertEqual(self.node.get_parameter('namespace.k_foo').value, 42)
         self.assertEqual(self.node.get_parameter('namespace.k_bar').value, 'hello')
         self.assertEqual(self.node.get_parameter('namespace.k_baz').value, 2.41)
+        self.assertIsNone(self.node.get_parameter('namespace.k_value_not_set').value)
+        self.assertTrue(self.node.has_parameter('namespace.k_value_not_set'))
 
         parameters = [
             ('initial_bar', 'ignoring_override', ParameterDescriptor()),
@@ -1008,7 +903,7 @@ class TestNode(unittest.TestCase):
         with self.assertRaises(TypeError):
             self.node.declare_parameters(
                 '',
-                [(  # type: ignore[list-item]
+                [(
                     1,
                     'wrong_name_type',
                     ParameterDescriptor()
@@ -1028,8 +923,8 @@ class TestNode(unittest.TestCase):
         with self.assertRaises(TypeError):
             self.node.declare_parameters(
                 '',
-                [(  # type: ignore[list-item]
-                    'wrong_parameter_descriptor_type',
+                [(
+                    'wrong_parameter_descriptor_tpye',
                     ParameterValue(),
                     ParameterValue()
                 )]
@@ -1040,16 +935,14 @@ class TestNode(unittest.TestCase):
             self.node.declare_parameter(
                 'wrong_parameter_value_type_not_set', Parameter.Type.NOT_SET)
 
-    def return_none_parameter_callback(self, parameter_list: List[Parameter[Any]]) -> None:
+    def return_none_parameter_callback(self, parameter_list):
         return None
 
-    def reject_parameter_callback(self, parameter_list: List[Parameter[Any]]
-                                  ) -> SetParametersResult:
+    def reject_parameter_callback(self, parameter_list):
         rejected_parameters = (param for param in parameter_list if 'reject' in param.name)
         return SetParametersResult(successful=(not any(rejected_parameters)))
 
-    def reject_parameter_callback_1(self, parameter_list: List[Parameter[Any]]
-                                    ) -> SetParametersResult:
+    def reject_parameter_callback_1(self, parameter_list):
         rejected_parameters = (
             param for param in parameter_list if 'refuse' in param.name)
         return SetParametersResult(successful=(not any(rejected_parameters)))
@@ -1189,7 +1082,7 @@ class TestNode(unittest.TestCase):
         integer_value = 42
         string_value = 'hello'
         float_value = 2.41
-        parameter_tuples: list[tuple[str, Union[int, str, float], ParameterDescriptor]] = [
+        parameter_tuples = [
             (
                 'foo',
                 integer_value,
@@ -1313,8 +1206,7 @@ class TestNode(unittest.TestCase):
         )
         self.node.declare_parameter(*parameter_tuple)
         # Tries to set the parameter with a callback that returns None.
-        self.node.add_on_set_parameters_callback(
-            self.return_none_parameter_callback)  # type: ignore[arg-type]
+        self.node.add_on_set_parameters_callback(self.return_none_parameter_callback)
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter('always', category=UserWarning)
             result = self.node.set_parameters(
@@ -1527,8 +1419,7 @@ class TestNode(unittest.TestCase):
 
         return modified_list
 
-    def empty_parameter_callback(self, parameter_list: List[Parameter[Any]]
-                                 ) -> List[Parameter[Any]]:
+    def empty_parameter_callback(self, parameter_list: List[Parameter[Any]]):
         return []
 
     def test_add_remove_pre_set_parameter_callback(self) -> None:
@@ -1707,7 +1598,7 @@ class TestNode(unittest.TestCase):
         integer_value = 42
         string_value = 'hello'
         float_value = 2.41
-        parameter_tuples: list[tuple[str, Union[int, str, float], ParameterDescriptor]] = [
+        parameter_tuples = [
             (
                 'immutable_foo',
                 integer_value,
@@ -1807,7 +1698,7 @@ class TestNode(unittest.TestCase):
         self.assertFalse(self.node.has_parameter('bar'))
 
     def test_node_set_parameters_implicit_undeclare(self) -> None:
-        parameter_tuples: list[tuple[str, Union[int, str, float], ParameterDescriptor]] = [
+        parameter_tuples = [
             (
                 'foo',
                 42,
@@ -1842,7 +1733,7 @@ class TestNode(unittest.TestCase):
         integer_value = 42
         string_value = 'hello'
         float_value = 2.41
-        parameter_tuples: list[tuple[str, Union[int, str, float], ParameterDescriptor]] = [
+        parameter_tuples = [
             (
                 'foo',
                 integer_value,
@@ -1985,7 +1876,7 @@ class TestNode(unittest.TestCase):
         integer_value = 42
         string_value = 'hello'
         float_value = 2.41
-        parameter_tuples: list[tuple[str, Union[int, str, float], ParameterDescriptor]] = [
+        parameter_tuples = [
             (
                 'foo',
                 integer_value,
@@ -2052,7 +1943,7 @@ class TestNode(unittest.TestCase):
         self.assertEqual(self.node.get_parameter('immutable_baz').value, 2.41)
 
     def test_node_set_parameters_atomically_implicit_undeclare(self) -> None:
-        parameter_tuples: list[tuple[str, Union[int, str, float], ParameterDescriptor]] = [
+        parameter_tuples = [
             (
                 'foo',
                 42,
@@ -2272,7 +2163,7 @@ class TestNode(unittest.TestCase):
     def test_floating_point_range_descriptor(self) -> None:
         # OK cases; non-floats are not affected by the range.
         fp_range = FloatingPointRange(from_value=0.0, to_value=10.0, step=0.5)
-        parameters: list[tuple[str, Union[int, str, float], ParameterDescriptor]] = [
+        parameters = [
             ('from_value', 0.0, ParameterDescriptor(floating_point_range=[fp_range])),
             ('to_value', 10.0, ParameterDescriptor(floating_point_range=[fp_range])),
             ('in_range', 4.5, ParameterDescriptor(floating_point_range=[fp_range])),
@@ -2300,17 +2191,17 @@ class TestNode(unittest.TestCase):
         self.assertAlmostEqual(self.node.get_parameter('int_value').value, 123)
 
         # Try to set a parameter out of range.
-        set_result = self.node.set_parameters([Parameter('in_range', value=12.0)])
-        self.assertIsInstance(set_result, list)
-        self.assertIsInstance(set_result[0], SetParametersResult)
-        self.assertFalse(set_result[0].successful)
+        result = self.node.set_parameters([Parameter('in_range', value=12.0)])
+        self.assertIsInstance(result, list)
+        self.assertIsInstance(result[0], SetParametersResult)
+        self.assertFalse(result[0].successful)
         self.assertEqual(self.node.get_parameter('in_range').value, 4.5)
 
         # Try to set a parameter out of range (bad step).
-        set_result = self.node.set_parameters([Parameter('in_range', value=4.25)])
-        self.assertIsInstance(set_result, list)
-        self.assertIsInstance(set_result[0], SetParametersResult)
-        self.assertFalse(set_result[0].successful)
+        result = self.node.set_parameters([Parameter('in_range', value=4.25)])
+        self.assertIsInstance(result, list)
+        self.assertIsInstance(result[0], SetParametersResult)
+        self.assertFalse(result[0].successful)
         self.assertEqual(self.node.get_parameter('in_range').value, 4.5)
 
         # From and to are always valid.
@@ -2338,15 +2229,15 @@ class TestNode(unittest.TestCase):
             ('in_range_no_step', 5.37, ParameterDescriptor(floating_point_range=[fp_range])),
         ]
 
-        declare_result = self.node.declare_parameters('', parameters)
+        result = self.node.declare_parameters('', parameters)
 
-        self.assertIsInstance(declare_result, list)
-        self.assertIsInstance(declare_result[0], Parameter)
-        self.assertIsInstance(declare_result[1], Parameter)
-        self.assertIsInstance(declare_result[2], Parameter)
-        self.assertAlmostEqual(declare_result[0].value, -10.0)
-        self.assertAlmostEqual(declare_result[1].value, 10.0)
-        self.assertAlmostEqual(declare_result[2].value, 5.37)
+        self.assertIsInstance(result, list)
+        self.assertIsInstance(result[0], Parameter)
+        self.assertIsInstance(result[1], Parameter)
+        self.assertIsInstance(result[2], Parameter)
+        self.assertAlmostEqual(result[0].value, -10.0)
+        self.assertAlmostEqual(result[1].value, 10.0)
+        self.assertAlmostEqual(result[2].value, 5.37)
         self.assertAlmostEqual(self.node.get_parameter('from_value_no_step').value, -10.0)
         self.assertAlmostEqual(self.node.get_parameter('to_value_no_step').value, 10.0)
         self.assertAlmostEqual(self.node.get_parameter('in_range_no_step').value, 5.37)
@@ -2354,7 +2245,7 @@ class TestNode(unittest.TestCase):
     def test_integer_range_descriptor(self) -> None:
         # OK cases; non-integers are not affected by the range.
         integer_range = IntegerRange(from_value=0, to_value=10, step=2)
-        parameters: list[tuple[str, Union[int, str, float], ParameterDescriptor]] = [
+        parameters = [
             ('from_value', 0, ParameterDescriptor(integer_range=[integer_range])),
             ('to_value', 10, ParameterDescriptor(integer_range=[integer_range])),
             ('in_range', 4, ParameterDescriptor(integer_range=[integer_range])),
@@ -2382,17 +2273,17 @@ class TestNode(unittest.TestCase):
         self.assertAlmostEqual(self.node.get_parameter('float_value').value, 123.0)
 
         # Try to set a parameter out of range.
-        set_result = self.node.set_parameters([Parameter('in_range', value=12)])
-        self.assertIsInstance(set_result, list)
-        self.assertIsInstance(set_result[0], SetParametersResult)
-        self.assertFalse(set_result[0].successful)
+        result = self.node.set_parameters([Parameter('in_range', value=12)])
+        self.assertIsInstance(result, list)
+        self.assertIsInstance(result[0], SetParametersResult)
+        self.assertFalse(result[0].successful)
         self.assertEqual(self.node.get_parameter('in_range').value, 4)
 
         # Try to set a parameter out of range (bad step).
-        set_result = self.node.set_parameters([Parameter('in_range', value=5)])
-        self.assertIsInstance(set_result, list)
-        self.assertIsInstance(set_result[0], SetParametersResult)
-        self.assertFalse(set_result[0].successful)
+        result = self.node.set_parameters([Parameter('in_range', value=5)])
+        self.assertIsInstance(result, list)
+        self.assertIsInstance(result[0], SetParametersResult)
+        self.assertFalse(result[0].successful)
         self.assertEqual(self.node.get_parameter('in_range').value, 4)
 
         # From and to are always valid.
@@ -2420,24 +2311,21 @@ class TestNode(unittest.TestCase):
             ('in_range_no_step', 5, ParameterDescriptor(integer_range=[integer_range])),
         ]
 
-        declare_result = self.node.declare_parameters('', parameters)
+        result = self.node.declare_parameters('', parameters)
 
-        self.assertIsInstance(declare_result, list)
-        self.assertIsInstance(declare_result[0], Parameter)
-        self.assertIsInstance(declare_result[1], Parameter)
-        self.assertIsInstance(declare_result[2], Parameter)
-        self.assertEqual(declare_result[0].value, -10)
-        self.assertEqual(declare_result[1].value, 10)
-        self.assertEqual(declare_result[2].value, 5)
+        self.assertIsInstance(result, list)
+        self.assertIsInstance(result[0], Parameter)
+        self.assertIsInstance(result[1], Parameter)
+        self.assertIsInstance(result[2], Parameter)
+        self.assertEqual(result[0].value, -10)
+        self.assertEqual(result[1].value, 10)
+        self.assertEqual(result[2].value, 5)
         self.assertEqual(self.node.get_parameter('from_value_no_step').value, -10)
         self.assertEqual(self.node.get_parameter('to_value_no_step').value, 10)
         self.assertEqual(self.node.get_parameter('in_range_no_step').value, 5)
 
     def test_static_dynamic_typing(self) -> None:
-        parameters: List[Union[
-            Tuple[str, int],
-            Tuple[str, None, ParameterDescriptor]
-        ]] = [
+        parameters = [
             ('int_param', 0),
             ('int_param_no_default', Parameter.Type.INTEGER),
             ('dynamic_param', None, ParameterDescriptor(dynamic_typing=True)),
@@ -2736,11 +2624,11 @@ def test_node_resolve_name() -> None:
 class TestNodeParamsFile(unittest.TestCase):
 
     @classmethod
-    def setUpClass(cls) -> None:
+    def setUpClass(cls):
         rclpy.init()
 
     @classmethod
-    def tearDownClass(cls) -> None:
+    def tearDownClass(cls):
         rclpy.shutdown()
 
     def test_node_ns_params_file_with_wildcards(self) -> None:

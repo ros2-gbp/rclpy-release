@@ -22,6 +22,7 @@ import warnings
 import weakref
 
 if TYPE_CHECKING:
+
     from rclpy.executors import Executor
 
 T = TypeVar('T')
@@ -190,12 +191,7 @@ class Future(Generic[T]):
             else:
                 self._executor = weakref.ref(executor)
 
-    def add_done_callback(
-        self,
-        callback: Callable[['Future[T]'], None],
-        *,
-        unique: bool = False,
-    ) -> None:
+    def add_done_callback(self, callback: Callable[['Future[T]'], None]) -> None:
         """
         Add a callback to be executed when the task is done.
 
@@ -205,12 +201,9 @@ class Future(Generic[T]):
         If this happens and the callback raises, the exception will be raised by this method.
 
         :param callback: a callback taking the future as an argument to be run when completed
-        :param unique: only add the callback if it is not already pending
         """
         invoke = False
         with self._lock:
-            if unique and callback in self._callbacks:
-                return
             if not self._pending():
                 assert self._executor is not None
                 executor = self._executor()
@@ -359,7 +352,6 @@ class Task(Future[T]):
             self._complete_task()
         else:
             # The coroutine yielded; suspend the task until it is resumed
-            assert self._executor
             executor = self._executor()
             if executor is None:
                 raise RuntimeError(
@@ -376,7 +368,6 @@ class Task(Future[T]):
                     f'Expected coroutine to yield a Future or None, got: {type(result)}')
 
     def _add_resume_callback(self, future: Future[T], executor: 'Executor') -> None:
-        assert future._executor
         future_executor = future._executor()
         if future_executor is None:
             # The future is not associated with an executor yet, so associate it with ours

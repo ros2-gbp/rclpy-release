@@ -202,14 +202,6 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
     &rclpy::graph_get_subscriptions_info_by_topic,
     "Get subscriptions info for a topic.");
   m.def(
-    "rclpy_get_clients_info_by_service",
-    &rclpy::graph_get_clients_info_by_service,
-    "Get clients info for a service.");
-  m.def(
-    "rclpy_get_servers_info_by_service",
-    &rclpy::graph_get_servers_info_by_service,
-    "Get servers info for a service.");
-  m.def(
     "rclpy_get_service_names_and_types",
     &rclpy::graph_get_service_names_and_types,
     "Get all service names and types in the ROS graph.");
@@ -221,18 +213,7 @@ PYBIND11_MODULE(_rclpy_pybind11, m) {
     "rclpy_get_client_names_and_types_by_node",
     &rclpy::graph_get_client_names_and_types_by_node,
     "Get service names and types for which a remote node has clients.");
-  m.def(
-    "rclpy_get_action_client_names_and_types_by_node",
-    &rclpy::graph_get_action_client_names_and_types_by_node,
-    "Get action client names and types by node.");
-  m.def(
-    "rclpy_get_action_server_names_and_types_by_node",
-    &rclpy::graph_get_action_server_names_and_types_by_node,
-    "Get action server names and types by node.");
-  m.def(
-    "rclpy_get_action_names_and_types",
-    &rclpy::graph_get_action_names_and_types,
-    "Get all action names and types in the ROS graph.");
+
   m.def(
     "rclpy_serialize", &rclpy::serialize,
     "Serialize a ROS message.");

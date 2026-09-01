@@ -18,6 +18,7 @@ from rcl_interfaces.msg import ParameterType
 from rcl_interfaces.srv import DescribeParameters
 from rcl_interfaces.srv import GetParameters
 import rclpy
+from rclpy.client import Client
 import rclpy.context
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.parameter import Parameter
@@ -34,12 +35,14 @@ class TestParameterService(unittest.TestCase):
             namespace='/rclpy',
             context=self.context)
 
-        self.get_parameter_client = self.test_node.create_client(
+        self.get_parameter_client: Client[GetParameters.Request,
+                                          GetParameters.Response] = self.test_node.create_client(
             GetParameters, '/rclpy/test_parameter_service/get_parameters',
             qos_profile=qos_profile_services_default
         )
 
-        self.describe_parameters_client = \
+        self.describe_parameters_client: Client[DescribeParameters.Response,
+                                                DescribeParameters.Response] = \
             self.test_node.create_client(
                 DescribeParameters,
                 '/rclpy/test_parameter_service/describe_parameters',
@@ -57,24 +60,24 @@ class TestParameterService(unittest.TestCase):
         self.test_node.declare_parameter('uninitialized_parameter', Parameter.Type.STRING)
 
         # The type in description should be STRING
-        descr_request = DescribeParameters.Request()
-        descr_request.names = ['uninitialized_parameter']
-        descr_future = self.describe_parameters_client.call_async(descr_request)
-        self.executor.spin_until_future_complete(descr_future)
-        descr_results = descr_future.result()
-        assert descr_results is not None
-        assert len(descr_results.descriptors) == 1
-        assert descr_results.descriptors[0].type == ParameterType.PARAMETER_STRING
-        assert descr_results.descriptors[0].name == 'uninitialized_parameter'
+        request = DescribeParameters.Request()
+        request.names = ['uninitialized_parameter']
+        future = self.describe_parameters_client.call_async(request)
+        self.executor.spin_until_future_complete(future)
+        results = future.result()
+        assert results is not None
+        assert len(results.descriptors) == 1
+        assert results.descriptors[0].type == ParameterType.PARAMETER_STRING
+        assert results.descriptors[0].name == 'uninitialized_parameter'
 
         # The value should be empty
-        get_request = GetParameters.Request()
-        get_request.names = ['uninitialized_parameter']
-        get_future = self.get_parameter_client.call_async(get_request)
-        self.executor.spin_until_future_complete(get_future)
-        get_results = get_future.result()
-        assert get_results is not None
-        assert get_results.values == []
+        request = GetParameters.Request()
+        request.names = ['uninitialized_parameter']
+        future = self.get_parameter_client.call_async(request)
+        self.executor.spin_until_future_complete(future)
+        results = future.result()
+        assert results is not None
+        assert results.values == []
 
 
 if __name__ == '__main__':

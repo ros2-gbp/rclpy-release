@@ -12,15 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import threading
-import time
 from typing import Any
-from typing import Callable, Optional
+from typing import Union
 import unittest
 
 import pytest
 
-from rcl_interfaces.msg import Parameter as ParameterMsg
 from rcl_interfaces.msg import ParameterEvent
 import rclpy.context
 from rclpy.executors import SingleThreadedExecutor
@@ -45,7 +42,7 @@ class CallbackChecker:
     def __init__(self) -> None:
         self.received = False
 
-    def callback(self, _: Any) -> None:
+    def callback(self, _: Union[Parameter[Any], ParameterEvent]) -> None:
         self.received = True
 
 
@@ -56,11 +53,11 @@ class CallCounter:
         self.first_callback_call_order = 0
         self.second_callback_call_order = 0
 
-    def first_callback(self, _: Any) -> None:
+    def first_callback(self, _: Union[Parameter[Any], ParameterEvent]) -> None:
         self.counter += 1
         self.first_callback_call_order = self.counter
 
-    def second_callback(self, _: Any) -> None:
+    def second_callback(self, _: Union[Parameter[Any], ParameterEvent]) -> None:
         self.counter += 1
         self.second_callback_call_order = self.counter
 
@@ -114,8 +111,8 @@ class TestParameterEventHandler(unittest.TestCase):
             self.parameter_event_handler._callbacks.parameter_callbacks
 
     def test_get_parameter_from_event(self) -> None:
-        int_param = Parameter('int_param', Parameter.Type.INTEGER, 1).to_parameter_msg()
-        str_param = Parameter('str_param', Parameter.Type.STRING, 'hello world').to_parameter_msg()
+        int_param = Parameter('int_param', Parameter.Type.INTEGER, 1)
+        str_param = Parameter('str_param', Parameter.Type.STRING, 'hello world')
 
         new_params_event = ParameterEvent(
             node=self.target_node.get_fully_qualified_name(),
@@ -155,8 +152,8 @@ class TestParameterEventHandler(unittest.TestCase):
         )
 
     def test_get_parameters_from_event(self) -> None:
-        int_param = Parameter('int_param', Parameter.Type.INTEGER, 1).to_parameter_msg()
-        str_param = Parameter('str_param', Parameter.Type.STRING, 'hello world').to_parameter_msg()
+        int_param = Parameter('int_param', Parameter.Type.INTEGER, 1)
+        str_param = Parameter('str_param', Parameter.Type.STRING, 'hello world')
 
         event = ParameterEvent(
             node=self.target_node.get_fully_qualified_name(),
@@ -165,11 +162,7 @@ class TestParameterEventHandler(unittest.TestCase):
 
         res = ParameterEventHandler.get_parameters_from_event(event)
 
-        # Ensure both exist
-        res_list = list(res)
-        assert len(res_list) == 2
-        assert int_param in res_list
-        assert str_param in res_list
+        assert {int_param, str_param} == set(res)
 
     def test_register_parameter_event_callback(self) -> None:
         self.parameter_event_handler._callbacks.event_callbacks.clear()
@@ -187,7 +180,7 @@ class TestParameterEventHandler(unittest.TestCase):
         parameter_name = 'int_param'
         node_name = self.target_node.get_fully_qualified_name()
 
-        parameter = Parameter(parameter_name, Parameter.Type.INTEGER, 1).to_parameter_msg()
+        parameter = Parameter(parameter_name, Parameter.Type.INTEGER, 1)
         parameter_event = ParameterEvent(
             node=node_name,
             changed_parameters=[parameter]
@@ -216,7 +209,7 @@ class TestParameterEventHandler(unittest.TestCase):
         parameter_name = 'int_param'
         node_name = self.target_node.get_fully_qualified_name()
 
-        parameter = Parameter(parameter_name, Parameter.Type.INTEGER, 1).to_parameter_msg()
+        parameter = Parameter(parameter_name, Parameter.Type.INTEGER, 1)
         parameter_event = ParameterEvent(
             node=node_name,
             changed_parameters=[parameter]
@@ -243,7 +236,7 @@ class TestParameterEventHandler(unittest.TestCase):
         call_counter = CallCounter()
 
         parameter_name = 'int_param'
-        parameter = Parameter(parameter_name, Parameter.Type.INTEGER, 1).to_parameter_msg()
+        parameter = Parameter(parameter_name, Parameter.Type.INTEGER, 1)
 
         node_name = self.target_node.get_fully_qualified_name()
         parameter_event = ParameterEvent(
@@ -270,7 +263,7 @@ class TestParameterEventHandler(unittest.TestCase):
         call_counter = CallCounter()
 
         parameter_name = 'int_param'
-        parameter = Parameter(parameter_name, Parameter.Type.INTEGER, 1).to_parameter_msg()
+        parameter = Parameter(parameter_name, Parameter.Type.INTEGER, 1)
 
         node_name = self.target_node.get_fully_qualified_name()
         parameter_event = ParameterEvent(
@@ -302,215 +295,6 @@ class TestParameterEventHandler(unittest.TestCase):
 
     def test_resolve_path_other_namespace(self) -> None:
         assert '/test_node' == self.parameter_event_handler._resolve_path('/test_node')
-
-    def test_configure_nodes_filter_with_check_add_parameter_event_callback(self) -> None:
-        if rclpy.get_rmw_implementation_identifier() != 'rmw_fastrtps_cpp' and \
-           rclpy.get_rmw_implementation_identifier() != 'rmw_connextdds':
-            pytest.skip('Content filter is now only supported in FastDDS and ConnextDDS.')
-
-        remote_node_name1 = 'remote_node_1'
-        remote_node1 = rclpy.create_node(
-            remote_node_name1,
-            namespace='/rclpy',
-            context=self.context)
-        remote_node_name2 = 'remote_node_2'
-        remote_node2 = rclpy.create_node(
-            remote_node_name2,
-            namespace='/rclpy',
-            context=self.context)
-
-        remote_node1_param_name = 'param_node1'
-        remote_node2_param_name = 'param_node2'
-        remote_node1.declare_parameter(remote_node1_param_name, 10)
-        remote_node2.declare_parameter(remote_node2_param_name, 'Default')
-
-        received_event_from_remote_node1 = False
-        received_event_from_remote_node2 = False
-
-        # The ParameterEventHandler creates its /parameter_events subscription (with no
-        # content filter) at construction time. When declare_parameter is later called on
-        # remote nodes, it internally triggers set_parameter which publishes a ParameterEvent
-        # with the parameter in the new_parameters field. That event arrives on the
-        # already-existing, unfiltered subscription and is stored in its queue.
-        # When configure_nodes_filter is subsequently called, it applies a content filter to
-        # the subscription, but events already sitting in the subscriber's queue are not
-        # affected. Per the DDS specification, a content-filtered topic filter applies at the
-        # point of data delivery/insertion into the reader's cache. Once data is in the cache,
-        # it has been "received." Retroactively purging it when the filter changes is not
-        # standard behavior.
-        # rmw_connextdds correctly honors this: only future incoming samples are filtered, so
-        # queued declaration events would still be delivered. rmw_fastrtps_cpp may retroactively
-        # apply filters to already-queued messages or deliver them lazily, causing those
-        # events to be silently discarded - which is arguably incorrect but happens to make
-        # naive tests pass.
-        # Only track changed_parameters to ignore queued declare_parameter events.
-        def callback(param: ParameterEvent) -> None:
-            nonlocal received_event_from_remote_node1, received_event_from_remote_node2
-            for changed_parameter in param.changed_parameters:
-                if (param.node == f'/rclpy/{remote_node_name1}'
-                        and changed_parameter.name == remote_node1_param_name):
-                    received_event_from_remote_node1 = True
-                elif (param.node == f'/rclpy/{remote_node_name2}'
-                        and changed_parameter.name == remote_node2_param_name):
-                    received_event_from_remote_node2 = True
-
-        # Configure to only receive parameter events from remote_node_name2
-        assert self.parameter_event_handler.configure_nodes_filter(
-            [f'/rclpy/{remote_node_name2}'])
-
-        self.parameter_event_handler.add_parameter_event_callback(callback)
-
-        def wait_param_event(executor: SingleThreadedExecutor, timeout: int,
-                             condition: Optional[Callable[[], bool]] = None) -> None:
-            start = time.monotonic()
-            while time.monotonic() - start < timeout:
-                executor.spin_once(0.2)
-                if condition is not None and condition():
-                    break
-
-        thread = threading.Thread(
-            target=wait_param_event,
-            args=(self.executor, 3, lambda: received_event_from_remote_node2))
-        thread.start()
-        time.sleep(0.1)  # 100ms
-        remote_node1.set_parameters(
-            [Parameter(remote_node1_param_name, Parameter.Type.INTEGER, 20)])
-        remote_node2.set_parameters(
-            [Parameter(remote_node2_param_name, Parameter.Type.STRING, 'abc')])
-        thread.join()
-
-        assert not received_event_from_remote_node1
-        assert received_event_from_remote_node2
-
-        # Clear node filter and all parameter events from remote nodes should be received
-        assert self.parameter_event_handler.configure_nodes_filter()
-
-        received_event_from_remote_node1 = False
-        received_event_from_remote_node2 = False
-
-        def check_both_received() -> bool:
-            return received_event_from_remote_node1 and received_event_from_remote_node2
-
-        thread = threading.Thread(
-            target=wait_param_event,
-            args=(self.executor, 2, check_both_received))
-        thread.start()
-        time.sleep(0.1)  # 100ms
-        remote_node1.set_parameters(
-            [Parameter(remote_node1_param_name, Parameter.Type.INTEGER, 30)])
-        remote_node2.set_parameters(
-            [Parameter(remote_node2_param_name, Parameter.Type.STRING, 'def')])
-        thread.join()
-
-        assert received_event_from_remote_node1
-        assert received_event_from_remote_node2
-
-        remote_node1.destroy_node()
-        remote_node2.destroy_node()
-
-    def test_configure_nodes_filter_with_check_add_parameter_callback(self) -> None:
-        if rclpy.get_rmw_implementation_identifier() != 'rmw_fastrtps_cpp' and \
-           rclpy.get_rmw_implementation_identifier() != 'rmw_connextdds':
-            pytest.skip('Content filter is now only supported in FastDDS and ConnextDDS.')
-
-        remote_node_name1 = 'remote_node_1'
-        remote_node1 = rclpy.create_node(
-            remote_node_name1,
-            namespace='/rclpy',
-            context=self.context)
-        remote_node_name2 = 'remote_node_2'
-        remote_node2 = rclpy.create_node(
-            remote_node_name2,
-            namespace='/rclpy',
-            context=self.context)
-
-        remote_node1_param_name = 'param_node1'
-        remote_node2_param_name = 'param_node2'
-        remote_node1.declare_parameter(remote_node1_param_name, 10)
-        remote_node2.declare_parameter(remote_node2_param_name, 'Default')
-
-        # Recreate the ParameterEventHandler after declaring parameters so that
-        # its subscription starts with an empty queue. This avoids leftover
-        # declare_parameter events (new_parameters) that would trigger
-        # add_parameter_callback before the content filter takes effect.
-        self.parameter_event_handler = ParameterEventHandlerTester(
-            self.handler_node,
-            qos_profile_parameter_events,
-        )
-
-        received_event_from_remote_node1 = False
-        received_event_from_remote_node2 = False
-
-        def callback_node1(param: ParameterMsg) -> None:
-            nonlocal received_event_from_remote_node1
-            received_event_from_remote_node1 = True
-
-        def callback_node2(param: ParameterMsg) -> None:
-            nonlocal received_event_from_remote_node2
-            received_event_from_remote_node2 = True
-
-        # Configure to only receive parameter events from remote_node_name2
-        assert self.parameter_event_handler.configure_nodes_filter(
-            [f'/rclpy/{remote_node_name2}'])
-
-        self.parameter_event_handler.add_parameter_callback(
-            remote_node1_param_name,
-            f'/rclpy/{remote_node_name1}',
-            callback_node1
-        )
-        self.parameter_event_handler.add_parameter_callback(
-            remote_node2_param_name,
-            f'/rclpy/{remote_node_name2}',
-            callback_node2
-        )
-
-        def wait_param_event(executor: SingleThreadedExecutor, timeout: int,
-                             condition: Optional[Callable[[], bool]] = None) -> None:
-            start = time.monotonic()
-            while time.monotonic() - start < timeout:
-                executor.spin_once(0.2)
-                if condition is not None and condition():
-                    break
-
-        thread = threading.Thread(
-            target=wait_param_event,
-            args=(self.executor, 3, lambda: received_event_from_remote_node2))
-        thread.start()
-        time.sleep(0.1)  # 100ms
-        remote_node1.set_parameters(
-            [Parameter(remote_node1_param_name, Parameter.Type.INTEGER, 20)])
-        remote_node2.set_parameters(
-            [Parameter(remote_node2_param_name, Parameter.Type.STRING, 'abc')])
-        thread.join()
-
-        assert not received_event_from_remote_node1
-        assert received_event_from_remote_node2
-
-        # Clear node filter and all parameter events from remote nodes should be received
-        assert self.parameter_event_handler.configure_nodes_filter()
-
-        received_event_from_remote_node1 = False
-        received_event_from_remote_node2 = False
-
-        def check_both_received() -> bool:
-            return received_event_from_remote_node1 and received_event_from_remote_node2
-
-        thread = threading.Thread(
-            target=wait_param_event,
-            args=(self.executor, 2, check_both_received))
-        thread.start()
-        time.sleep(0.1)  # 100ms
-        remote_node1.set_parameters(
-            [Parameter(remote_node1_param_name, Parameter.Type.INTEGER, 30)])
-        remote_node2.set_parameters(
-            [Parameter(remote_node2_param_name, Parameter.Type.STRING, 'def')])
-        thread.join()
-
-        assert received_event_from_remote_node1
-        assert received_event_from_remote_node2
-
-        remote_node1.destroy_node()
-        remote_node2.destroy_node()
 
 
 if __name__ == '__main__':
