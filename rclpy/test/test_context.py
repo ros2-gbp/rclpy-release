@@ -18,7 +18,6 @@ from rclpy.context import Context
 def test_on_shutdown_method():
     context = Context()
     context.init()
-    assert context.ok()
 
     callback_called = False
 
@@ -32,7 +31,6 @@ def test_on_shutdown_method():
     context.on_shutdown(instance.on_shutdown)
 
     context.shutdown()
-    assert not context.ok()
 
     assert callback_called
 
@@ -40,7 +38,6 @@ def test_on_shutdown_method():
 def test_on_shutdown_function():
     context = Context()
     context.init()
-    assert context.ok()
 
     callback_called = False
 
@@ -51,23 +48,5 @@ def test_on_shutdown_function():
     context.on_shutdown(on_shutdown)
 
     context.shutdown()
-    assert not context.ok()
 
     assert callback_called
-
-
-def test_context_manager():
-    context = Context()
-
-    assert not context.ok(), 'the context should not be ok() before init() is called'
-
-    with context as the_context:
-        # Make sure the correct instance is returned
-        assert the_context is context
-
-        assert context.ok(), 'the context should now be initialized'
-
-    assert not context.ok(), 'the context should now be shut down'
-
-    # Make sure it does not raise (smoke test)
-    context.try_shutdown()

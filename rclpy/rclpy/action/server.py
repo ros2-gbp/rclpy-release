@@ -120,22 +120,12 @@ class ServerGoalHandle:
             if not self._goal_handle.is_active():
                 self._action_server.notify_goal_done()
 
-    def _set_result(self, response):
-        # Set result
-        result_response = self._action_server._action_type.Impl.GetResultService.Response()
-        result_response.status = self.status
-        if response is not None:
-            result_response.result = response
-        else:
-            result_response.result = self._action_server._action_type.Result()
-        self._action_server._result_futures[bytes(self.goal_id.uuid)].set_result(result_response)
-
     def execute(self, execute_callback=None):
         # It's possible that there has been a request to cancel the goal prior to executing.
         # In this case we want to avoid the illegal state transition to EXECUTING
         # but still call the users execute callback to let them handle canceling the goal.
         if not self.is_cancel_requested:
-            self.executing()
+            self._update_state(_rclpy.GoalEvent.EXECUTE)
         self._action_server.notify_execute(self, execute_callback)
 
     def publish_feedback(self, feedback):
@@ -156,23 +146,14 @@ class ServerGoalHandle:
             # Publish
             self._action_server._handle.publish_feedback(feedback_message)
 
-    def executing(self):
-        self._update_state(_rclpy.GoalEvent.EXECUTE)
-
-    def succeed(self, response=None):
+    def succeed(self):
         self._update_state(_rclpy.GoalEvent.SUCCEED)
-        if response is not None:
-            self._set_result(response)
 
-    def abort(self, response=None):
+    def abort(self):
         self._update_state(_rclpy.GoalEvent.ABORT)
-        if response is not None:
-            self._set_result(response)
 
-    def canceled(self, response=None):
+    def canceled(self):
         self._update_state(_rclpy.GoalEvent.CANCELED)
-        if response is not None:
-            self._set_result(response)
 
     def destroy(self):
         with self._lock:
@@ -205,7 +186,7 @@ class ActionServer(Waitable):
         node,
         action_type,
         action_name,
-        execute_callback=None,
+        execute_callback,
         *,
         callback_group=None,
         goal_callback=default_goal_callback,
@@ -252,11 +233,7 @@ class ActionServer(Waitable):
         self.register_handle_accepted_callback(handle_accepted_callback)
         self.register_goal_callback(goal_callback)
         self.register_cancel_callback(cancel_callback)
-        if execute_callback:
-            self.register_execute_callback(execute_callback)
-        elif handle_accepted_callback is default_handle_accepted_callback:
-            self._logger.warning(
-                'Not handling nor executing the goal, this server will do nothing')
+        self.register_execute_callback(execute_callback)
 
         # Import the typesupport for the action module if not already done
         check_for_type_support(action_type)
@@ -284,7 +261,6 @@ class ActionServer(Waitable):
 
         callback_group.add_entity(self)
         self._node.add_waitable(self)
-        self._logger = self._node.get_logger().get_child('action_server')
 
     async def _execute_goal_request(self, request_header_and_message):
         request_header, goal_request = request_header_and_message
@@ -292,7 +268,7 @@ class ActionServer(Waitable):
         goal_info = GoalInfo()
         goal_info.goal_id = goal_uuid
 
-        self._logger.debug('New goal request with ID: {0}'.format(goal_uuid.uuid))
+        self._node.get_logger().debug('New goal request with ID: {0}'.format(goal_uuid.uuid))
 
         # Check if goal ID is already being tracked by this action server
         with self._lock:
@@ -303,7 +279,7 @@ class ActionServer(Waitable):
             # Call user goal callback
             response = await await_or_execute(self._goal_callback, goal_request.goal)
             if not isinstance(response, GoalResponse):
-                self._logger.warning(
+                self._node.get_logger().warning(
                     'Goal request callback did not return a GoalResponse type. Rejecting goal.')
             else:
                 accepted = GoalResponse.ACCEPT == response
@@ -317,7 +293,7 @@ class ActionServer(Waitable):
                 with self._lock:
                     goal_handle = ServerGoalHandle(self, goal_info, goal_request.goal)
             except RuntimeError as e:
-                self._logger.error(
+                self._node.get_logger().error(
                     'Failed to accept new goal with ID {0}: {1}'.format(goal_uuid.uuid, e))
                 accepted = False
             else:
@@ -336,14 +312,15 @@ class ActionServer(Waitable):
             with self._lock:
                 self._handle.send_goal_response(request_header, response_msg)
         except RCLError:
-            self._logger.warn('Failed to send goal response (the client may have gone away)')
+            self._node.get_logger().warn(
+                'Failed to send goal response (the client may have gone away)')
             return
 
         if not accepted:
-            self._logger.debug('New goal rejected: {0}'.format(goal_uuid.uuid))
+            self._node.get_logger().debug('New goal rejected: {0}'.format(goal_uuid.uuid))
             return
 
-        self._logger.debug('New goal accepted: {0}'.format(goal_uuid.uuid))
+        self._node.get_logger().debug('New goal accepted: {0}'.format(goal_uuid.uuid))
 
         # Publish accepted status before execution
         self._handle.publish_status()
@@ -353,7 +330,7 @@ class ActionServer(Waitable):
 
     async def _execute_goal(self, execute_callback, goal_handle):
         goal_uuid = goal_handle.goal_id.uuid
-        self._logger.debug('Executing goal with ID {0}'.format(goal_uuid))
+        self._node.get_logger().debug('Executing goal with ID {0}'.format(goal_uuid))
 
         try:
             # Execute user callback
@@ -361,16 +338,16 @@ class ActionServer(Waitable):
         except Exception as ex:
             # Create an empty result so that we can still send a response to the client
             execute_result = self._action_type.Result()
-            self._logger.error('Error raised in execute callback: {0}'.format(ex))
+            self._node.get_logger().error('Error raised in execute callback: {0}'.format(ex))
             traceback.print_exc()
 
         # If user did not trigger a terminal state, assume aborted
         if goal_handle.is_active:
-            self._logger.warning(
+            self._node.get_logger().warning(
                 'Goal state not set, assuming aborted. Goal ID: {0}'.format(goal_uuid))
             goal_handle.abort()
 
-        self._logger.debug(
+        self._node.get_logger().debug(
             'Goal with ID {0} finished with state {1}'.format(goal_uuid, goal_handle.status))
 
         # Set result
@@ -382,7 +359,7 @@ class ActionServer(Waitable):
     async def _execute_cancel_request(self, request_header_and_message):
         request_header, cancel_request = request_header_and_message
 
-        self._logger.debug('Cancel request received: {0}'.format(cancel_request))
+        self._node.get_logger().debug('Cancel request received: {0}'.format(cancel_request))
 
         with self._lock:
             # Get list of goals that are requested to be canceled
@@ -406,7 +383,7 @@ class ActionServer(Waitable):
                     # that will generate an exception from invalid transition.
                     goal_handle._update_state(GoalEvent.CANCEL_GOAL)
                 except RCLError as ex:
-                    self._logger.debug(
+                    self._node.get_logger().debug(
                         'Failed to cancel goal in cancel callback: {0}'.format(ex))
                     # Remove from response since goal has been succeeded
                     cancel_response.goals_canceling.remove(goal_info)
@@ -420,18 +397,19 @@ class ActionServer(Waitable):
             with self._lock:
                 self._handle.send_cancel_response(request_header, cancel_response)
         except RCLError:
-            self._logger.warn('Failed to send cancel response (the client may have gone away)')
+            self._node.get_logger().warn(
+                'Failed to send cancel response (the client may have gone away)')
 
     async def _execute_get_result_request(self, request_header_and_message):
         request_header, result_request = request_header_and_message
         goal_uuid = result_request.goal_id.uuid
 
-        self._logger.debug(
+        self._node.get_logger().debug(
             'Result request received for goal with ID: {0}'.format(goal_uuid))
 
         # If no goal with the requested ID exists, then return UNKNOWN status
         if bytes(goal_uuid) not in self._goal_handles:
-            self._logger.debug(
+            self._node.get_logger().debug(
                 'Sending result response for unknown goal ID: {0}'.format(goal_uuid))
             result_response = self._action_type.Impl.GetResultService.Response()
             result_response.status = GoalStatus.STATUS_UNKNOWN
@@ -461,7 +439,8 @@ class ActionServer(Waitable):
                 with self._lock:
                     self._handle.send_result_response(request_header, result)
         except RCLError:
-            self._logger.warn('Failed to send result response (the client may have gone away)')
+            self._node.get_logger().warn(
+                'Failed to send result response (the client may have gone away)')
 
     @property
     def action_type(self):
