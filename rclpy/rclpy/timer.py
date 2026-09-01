@@ -15,12 +15,14 @@
 import threading
 
 from types import TracebackType
+from typing import Awaitable
 from typing import Callable
 from typing import Optional
 from typing import Type
 from typing import Union
 
 from rclpy.callback_groups import CallbackGroup
+from rclpy.clock import BaseClock
 from rclpy.clock import Clock
 from rclpy.clock_type import ClockType
 from rclpy.context import Context
@@ -28,6 +30,8 @@ from rclpy.exceptions import InvalidHandle, ROSInterruptException
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.time import Time
 from rclpy.utilities import get_default_context
+from typing_extensions import Self
+from typing_extensions import TypeAlias
 
 
 class TimerInfo:
@@ -63,37 +67,32 @@ class TimerInfo:
         return self._actual_call_time
 
 
-class Timer:
+TimerCallbackType: TypeAlias = Union[Callable[[], None],
+                                     Callable[[TimerInfo], None]]
+AsyncTimerCallbackType: TypeAlias = Union[Callable[[], Awaitable[None]],
+                                          Callable[[TimerInfo], Awaitable[None]]]
+TimerCallbackUnion: TypeAlias = Union[TimerCallbackType, AsyncTimerCallbackType]
+EmptyCallback: TypeAlias = Callable[[], None] | Callable[[], Awaitable[None]]
+TimerInfoCallback: TypeAlias = Callable[[TimerInfo], None] | Callable[[TimerInfo], Awaitable[None]]
+
+
+class BaseTimer:
 
     def __init__(
         self,
-        callback: Union[Callable[[], None], Callable[[TimerInfo], None], None],
-        callback_group: Optional[CallbackGroup],
+        callback: TimerCallbackUnion | None,
         timer_period_ns: int,
-        clock: Clock,
+        clock: BaseClock,
         *,
+        on_destroy: Optional[Callable[[Self], None]] = None,
         context: Optional[Context] = None,
         autostart: bool = True
     ) -> None:
         """
-        Create a Timer.
-
-        If autostart is ``True`` (the default), the timer will be started and every
-        ``timer_period_sec`` number of seconds the provided callback function will be called.
-        If autostart is ``False``, the timer will be created but not started; it can then be
-        started by calling ``reset()`` on the timer object.
+        Create a timer.
 
         .. warning:: Users should not create a timer with this constructor, instead they
-           should call :meth:`.Node.create_timer`.
-
-        :param callback: A user-defined callback function that is called when the timer expires.
-        :param callback_group: The callback group for the timer. If ``None``, then the
-            default callback group for the node is used.
-        :param timer_period_ns: The period (in nanoseconds) of the timer.
-        :param clock: The clock which the timer gets time from.
-        :param context: The context to be associated with.
-        :param autostart: Whether to automatically start the timer after creation; defaults to
-            ``True``.
+           should call :meth:`.Node.create_timer` or :meth:`.AsyncNode.create_timer`.
         """
         self._context = get_default_context() if context is None else context
         self._clock = clock
@@ -102,34 +101,35 @@ class Timer:
         with self._clock.handle, self._context.handle:
             self.__timer = _rclpy.Timer(
                 self._clock.handle, self._context.handle, timer_period_ns, autostart)
-        self.timer_period_ns = timer_period_ns
         self.callback = callback
-        self.callback_group = callback_group
-        # True when the callback is ready to fire but has not been "taken" by an executor
-        self._executor_event = False
+        self._on_destroy = on_destroy
+        self._destroyed = False
 
     @property
     def handle(self) -> _rclpy.Timer:
         return self.__timer
 
-    def destroy(self) -> None:
-        """
-        Destroy a container for a ROS timer.
+    def destroy(self: Self) -> None:
+        """Destroy the timer, notifying the owning node and releasing the handle."""
+        if self._destroyed:
+            return
+        self._destroyed = True
+        if self._on_destroy is not None:
+            self._on_destroy(self)
+            self._on_destroy = None
+        self._destroy()
 
-        .. warning:: Users should not destroy a timer with this method, instead they should
-           call :meth:`.Node.destroy_timer`.
-        """
+    def _destroy(self) -> None:
         self.__timer.destroy_when_not_in_use()
 
     @property
-    def clock(self) -> Clock:
+    def clock(self) -> BaseClock:
         return self._clock
 
     @property
     def timer_period_ns(self) -> int:
         with self.__timer:
             val = self.__timer.get_timer_period()
-        self.__timer_period_ns = val
         return val
 
     @timer_period_ns.setter
@@ -137,7 +137,6 @@ class Timer:
         val = int(value)
         with self.__timer:
             self.__timer.change_timer_period(val)
-        self.__timer_period_ns = val
 
     def is_ready(self) -> bool:
         with self.__timer:
@@ -163,7 +162,7 @@ class Timer:
         with self.__timer:
             return self.__timer.time_until_next_call()
 
-    def __enter__(self) -> 'Timer':
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(
@@ -173,6 +172,52 @@ class Timer:
         exc_tb: Optional[TracebackType],
     ) -> None:
         self.destroy()
+
+
+class Timer(BaseTimer):
+
+    def __init__(
+        self,
+        callback: TimerCallbackUnion | None,
+        timer_period_ns: int,
+        clock: Clock,
+        *,
+        on_destroy: Optional[Callable[['Timer'], None]] = None,
+        context: Optional[Context] = None,
+        autostart: bool = True,
+        callback_group: Optional[CallbackGroup] = None
+    ) -> None:
+        """
+        Create a Timer.
+
+        If autostart is ``True`` (the default), the timer will be started and every
+        ``timer_period_sec`` number of seconds the provided callback function will be called.
+        If autostart is ``False``, the timer will be created but not started; it can then be
+        started by calling ``reset()`` on the timer object.
+
+        .. warning:: Users should not create a timer with this constructor, instead they
+           should call :meth:`.Node.create_timer`.
+
+        :param callback: A user-defined callback function that is called when the timer expires.
+        :param callback_group: The callback group for the timer. If ``None``, then the
+            default callback group for the node is used.
+        :param timer_period_ns: The period (in nanoseconds) of the timer.
+        :param clock: The clock which the timer gets time from.
+        :param context: The context to be associated with.
+        :param autostart: Whether to automatically start the timer after creation; defaults to
+            ``True``.
+        """
+        super().__init__(
+            callback=callback,
+            timer_period_ns=timer_period_ns,
+            clock=clock,
+            context=context,
+            autostart=autostart,
+            on_destroy=on_destroy
+        )
+        self.callback_group = callback_group
+        # True when the callback is ready to fire but has not been "taken" by an executor
+        self._executor_event = False
 
 
 class Rate:

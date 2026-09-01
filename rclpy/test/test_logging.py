@@ -19,7 +19,8 @@ import time
 import unittest
 
 import rclpy
-from rclpy.clock import Clock, ROSClock
+from rclpy.clock import Clock
+from rclpy.clock_type import ClockType
 from rclpy.logging import LoggingSeverity
 from rclpy.time import Time
 from rclpy.time_source import TimeSource
@@ -125,7 +126,7 @@ class TestLogging(unittest.TestCase):
 
     def test_log_throttle_ros_clock(self) -> None:
         message_was_logged = []
-        ros_clock = ROSClock()
+        ros_clock = Clock(clock_type=ClockType.ROS_TIME)
         time_source = TimeSource()
         time_source.attach_clock(ros_clock)
         time_source.ros_time_is_active = True
@@ -233,7 +234,7 @@ class TestLogging(unittest.TestCase):
 
         # Check unused kwarg is not allowed
         with self.assertRaisesRegex(TypeError, 'parameter .* is not one of the recognized'):
-            rclpy.logging._root_logger.log(
+            rclpy.logging._root_logger.log(  # type: ignore[call-arg]
                 'message',
                 LoggingSeverity.INFO,
                 name='my_name',
@@ -283,7 +284,7 @@ class TestLogging(unittest.TestCase):
 
         # Check that specifying a different severity isn't allowed
         with self.assertRaisesRegex(TypeError, "got multiple values for argument 'severity'"):
-            my_logger.fatal(
+            my_logger.fatal(  # type: ignore[call-arg]
                 'message_fatal',
                 severity=LoggingSeverity.DEBUG)
 
@@ -316,7 +317,7 @@ class TestLogging(unittest.TestCase):
             my_logger_child = my_logger.get_child('')
 
         with self.assertRaisesRegex(ValueError, 'Child logger name must not be empty'):
-            my_logger_child = my_logger.get_child(None)
+            my_logger_child = my_logger.get_child(None)  # type: ignore[arg-type]
 
         my_logger_child = my_logger.get_child('child')
         self.assertEqual(my_logger.name + '.child', my_logger_child.name)

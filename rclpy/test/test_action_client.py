@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import time
+from typing import List
 from typing import TYPE_CHECKING
 import unittest
 import uuid
@@ -22,6 +23,7 @@ import uuid
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
+import rclpy.context
 from rclpy.executors import MultiThreadedExecutor, SingleThreadedExecutor
 from rclpy.qos import qos_profile_action_status_default, qos_profile_system_default
 from rclpy.service_introspection import ServiceIntrospectionState
@@ -29,6 +31,7 @@ from rclpy.service_introspection import ServiceIntrospectionState
 from service_msgs.msg import ServiceEventInfo
 
 from test_msgs.action import Fibonacci
+from test_msgs.msg import Empty
 
 from unique_identifier_msgs.msg import UUID
 
@@ -41,7 +44,7 @@ TIME_FUDGE = 0.3
 
 class MockActionServer:
 
-    def __init__(self, node):
+    def __init__(self, node: rclpy.node.Node):
         self.goal_srv = node.create_service(
             Fibonacci.Impl.SendGoalService, '/fibonacci/_action/send_goal',
             self.goal_callback)
@@ -58,18 +61,24 @@ class MockActionServer:
             '/fibonacci/_action/status',
             qos_profile_action_status_default)
 
-    def goal_callback(self, request, response):
+    def goal_callback(self, request: Fibonacci.Impl.SendGoalService.Request,
+                      response: Fibonacci.Impl.SendGoalService.Response
+                      ) -> Fibonacci.Impl.SendGoalService.Response:
         response.accepted = True
         return response
 
-    def cancel_callback(self, request, response):
+    def cancel_callback(self, request: Fibonacci.Impl.CancelGoalService.Request,
+                        response: Fibonacci.Impl.CancelGoalService.Response
+                        ) -> Fibonacci.Impl.CancelGoalService.Response:
         response.goals_canceling.append(request.goal_info)
         return response
 
-    def result_callback(self, request, response):
+    def result_callback(self, request: Fibonacci.Impl.GetResultService.Request,
+                        response: Fibonacci.Impl.GetResultService.Response
+                        ) -> Fibonacci.Impl.GetResultService.Response:
         return response
 
-    def publish_feedback(self, goal_id):
+    def publish_feedback(self, goal_id: UUID) -> None:
         feedback_message = Fibonacci.Impl.FeedbackMessage()
         feedback_message.goal_id = goal_id
         self.feedback_pub.publish(feedback_message)
@@ -83,17 +92,23 @@ class TestActionClient(unittest.TestCase):
         node: rclpy.node.Node
         mock_action_server: MockActionServer
         feedback: FeedbackMessage[Fibonacci.Feedback] | None
+        subscription_content_filter_supported: bool
 
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls.context = rclpy.context.Context()
         rclpy.init(context=cls.context)
         cls.executor = SingleThreadedExecutor(context=cls.context)
         cls.node = rclpy.create_node('TestActionClient', context=cls.context)
         cls.mock_action_server = MockActionServer(cls.node)
 
+        test_subscription = cls.node.create_subscription(
+            Empty, 'test_topic', lambda msg: None, 10)
+        cls.subscription_content_filter_supported = test_subscription.is_cft_supported
+        cls.node.destroy_subscription(test_subscription)
+
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         cls.node.destroy_node()
         rclpy.shutdown(context=cls.context)
 
@@ -103,7 +118,7 @@ class TestActionClient(unittest.TestCase):
     def feedback_callback(self, feedback: FeedbackMessage[Fibonacci.Feedback]) -> None:
         self.feedback = feedback
 
-    def timed_spin(self, duration):
+    def timed_spin(self, duration: float) -> None:
         start_time = time.time()
         while (time.time() - start_time) < duration:
             rclpy.spin_once(self.node, executor=self.executor, timeout_sec=0.1)
@@ -177,6 +192,7 @@ class TestActionClient(unittest.TestCase):
             rclpy.spin_until_future_complete(self.node, future, self.executor)
             self.assertTrue(future.done())
             goal_handle = future.result()
+            assert goal_handle
             self.assertTrue(goal_handle.accepted)
         finally:
             ac.destroy()
@@ -239,6 +255,7 @@ class TestActionClient(unittest.TestCase):
             self.assertTrue(goal_future.done())
             # Then request result
             goal_handle = goal_future.result()
+            assert goal_handle
             result_future = goal_handle.get_result_async()
             rclpy.spin_until_future_complete(self.node, result_future, self.executor)
             self.assertTrue(result_future.done())
@@ -319,9 +336,15 @@ class TestActionClient(unittest.TestCase):
             self.assertTrue(future_0.done())
             self.assertTrue(future_1.done())
             self.assertTrue(future_2.done())
-            self.assertTrue(future_0.result().accepted)
-            self.assertTrue(future_1.result().accepted)
-            self.assertTrue(future_2.result().accepted)
+            future_0_result = future_0.result()
+            future_1_result = future_1.result()
+            future_2_result = future_2.result()
+            assert future_0_result
+            assert future_1_result
+            assert future_2_result
+            self.assertTrue(future_0_result.accepted)
+            self.assertTrue(future_1_result.accepted)
+            self.assertTrue(future_2_result.accepted)
         finally:
             ac.destroy()
 
@@ -346,11 +369,14 @@ class TestActionClient(unittest.TestCase):
             goal_handle = goal_future.result()
 
             # Cancel the goal
+            assert goal_handle
             cancel_future = goal_handle.cancel_goal_async()
             rclpy.spin_until_future_complete(self.node, cancel_future, self.executor)
             self.assertTrue(cancel_future.done())
+            cancel_result = cancel_future.result()
+            assert cancel_result
             self.assertEqual(
-                cancel_future.result().goals_canceling[0].goal_id,
+                cancel_result.goals_canceling[0].goal_id,
                 goal_handle.goal_id)
         finally:
             ac.destroy()
@@ -367,6 +393,7 @@ class TestActionClient(unittest.TestCase):
             goal_handle = goal_future.result()
 
             # Get the goal result
+            assert goal_handle
             result_future = goal_handle.get_result_async()
             rclpy.spin_until_future_complete(self.node, result_future, self.executor)
             self.assertTrue(result_future.done())
@@ -384,11 +411,11 @@ class TestActionClient(unittest.TestCase):
             ac.destroy()
 
     def test_action_introspection_default_status(self) -> None:
-        ac: ActionClient = ActionClient(self.node, Fibonacci, 'fibonacci')
+        ac = ActionClient(self.node, Fibonacci, 'fibonacci')
 
-        self.event_messages = []
+        self.event_messages: List[Fibonacci.Impl.SendGoalService.Event] = []
 
-        def sub_callback(msg):
+        def sub_callback(msg: Fibonacci.Impl.SendGoalService.Event) -> None:
             self.event_messages.append(msg)
 
         # There is no need to check if introspection is enabled for all internal services,
@@ -423,11 +450,11 @@ class TestActionClient(unittest.TestCase):
             ac.destroy()
 
     def test_configure_introspection_content(self) -> None:
-        ac: ActionClient = ActionClient(self.node, Fibonacci, 'fibonacci')
+        ac = ActionClient(self.node, Fibonacci, 'fibonacci')
 
         self.event_messages = []
 
-        def sub_callback(msg):
+        def sub_callback(msg: Fibonacci.Impl.SendGoalService.Event) -> None:
             self.event_messages.append(msg)
 
         # There is no need to check if introspection is enabled for all internal services,
@@ -467,6 +494,159 @@ class TestActionClient(unittest.TestCase):
             self.assertEqual(len(self.event_messages[0].response), 0)
         finally:
             self.node.destroy_subscription(send_goal_service_event_sub)
+            ac.destroy()
+
+    def test_enable_feedback_msg_optimization_does_not_affect_normal_feedback_reception(  # noqa: E501
+            self) -> None:
+        ac = ActionClient(
+            self.node, Fibonacci, 'fibonacci', enable_feedback_msg_optimization=True)
+        try:
+            self.assertTrue(ac.wait_for_server(timeout_sec=2.0))
+
+            # Send a goal and then publish feedback
+            goal_uuid = UUID(uuid=list(uuid.uuid4().bytes))
+            future = ac.send_goal_async(
+                Fibonacci.Goal(),
+                feedback_callback=self.feedback_callback,
+                goal_uuid=goal_uuid)
+            rclpy.spin_until_future_complete(self.node, future, self.executor)
+
+            # Publish feedback after goal has been accepted
+            self.mock_action_server.publish_feedback(goal_uuid)
+            self.timed_spin(1.0)
+            self.assertNotEqual(self.feedback, None)
+        finally:
+            ac.destroy()
+
+    def test_enable_feedback_msg_optimization_handles_multiple_goals(self) -> None:
+        if not self.subscription_content_filter_supported:
+            self.skipTest('Content filter is not supported by the RMW implementation')
+
+        # Skip the test if the RMW implementation is ConnextDDS.
+        # ConnextDDS has restrictions on the length of content filter expressions. Please refer to
+        # the definition of RMW_CONNEXT_CONTENTFILTER_PROPERTY_MAX_LENGTH. The current default
+        # value is 1024, which cannot support setting 2 goal IDs. So the test will be skipped for
+        # ConnextDDS to avoid failure. If the default value is increased in the future, this test
+        # can be enabled for ConnextDDS as well.
+        if rclpy.get_rmw_implementation_identifier() == 'rmw_connext_cpp':
+            self.skipTest('This test does not support rmw_connext_cpp.')
+
+        ac = ActionClient(
+            self.node, Fibonacci, 'fibonacci', enable_feedback_msg_optimization=True)
+        try:
+            self.assertTrue(ac.wait_for_server(timeout_sec=2.0))
+
+            # Send a goal and then publish feedback
+            first_goal_uuid = UUID(uuid=list(uuid.uuid4().bytes))
+            future = ac.send_goal_async(
+                Fibonacci.Goal(),
+                feedback_callback=self.feedback_callback,
+                goal_uuid=first_goal_uuid)
+            rclpy.spin_until_future_complete(self.node, future, self.executor)
+
+            # Send another goal, but without a feedback callback
+            second_goal_uuid = UUID(uuid=list(uuid.uuid4().bytes))
+            future = ac.send_goal_async(
+                Fibonacci.Goal(),
+                goal_uuid=second_goal_uuid)
+            rclpy.spin_until_future_complete(self.node, future, self.executor)
+
+            # Publish feedback for the second goal
+            self.mock_action_server.publish_feedback(second_goal_uuid)
+            self.timed_spin(1.0)
+            self.assertEqual(self.feedback, None)
+
+            self.feedback = None
+            # Publish feedback for the first goal (with callback)
+            self.mock_action_server.publish_feedback(first_goal_uuid)
+            self.timed_spin(1.0)
+            self.assertNotEqual(self.feedback, None)
+        finally:
+            ac.destroy()
+
+    def test_enable_feedback_msg_optimization_cancel_and_handle_new_goal(self) -> None:
+        if not self.subscription_content_filter_supported:
+            self.skipTest('Content filter is not supported by the RMW implementation')
+
+        ac = ActionClient(
+            self.node, Fibonacci, 'fibonacci', enable_feedback_msg_optimization=True)
+        try:
+            self.assertTrue(ac.wait_for_server(timeout_sec=2.0))
+
+            # Send a goal and then publish feedback
+            first_goal_uuid = UUID(uuid=list(uuid.uuid4().bytes))
+            future = ac.send_goal_async(
+                Fibonacci.Goal(),
+                feedback_callback=self.feedback_callback,
+                goal_uuid=first_goal_uuid)
+            rclpy.spin_until_future_complete(self.node, future, self.executor)
+
+            # Cancel the goal
+            self.assertTrue(future.done())
+            goal_handle = future.result()
+            assert goal_handle
+            cancel_future = goal_handle.cancel_goal_async()
+            rclpy.spin_until_future_complete(self.node, cancel_future, self.executor)
+            self.assertTrue(cancel_future.done())
+
+            # Send another goal, but without a feedback callback
+            second_goal_uuid = UUID(uuid=list(uuid.uuid4().bytes))
+            future = ac.send_goal_async(
+                Fibonacci.Goal(),
+                goal_uuid=second_goal_uuid)
+            rclpy.spin_until_future_complete(self.node, future, self.executor)
+
+            # Publish feedback for the second goal
+            self.mock_action_server.publish_feedback(second_goal_uuid)
+            self.timed_spin(1.0)
+            self.assertEqual(self.feedback, None)
+        finally:
+            ac.destroy()
+
+    def test_enable_feedback_msg_optimization_handle_more_than_6_goals(self) -> None:
+        if not self.subscription_content_filter_supported:
+            self.skipTest('Content filter is not supported by the RMW implementation')
+
+        # Skip the test if the RMW implementation is ConnextDDS.
+        # ConnextDDS has restrictions on the length of content filter expressions. Please refer to
+        # the definition of RMW_CONNEXT_CONTENTFILTER_PROPERTY_MAX_LENGTH. The current default
+        # value is 1024, which cannot support setting 7 goal IDs. So the test will be skipped for
+        # ConnextDDS to avoid failure. If the default value is increased in the future, this test
+        # can be enabled for ConnextDDS as well.
+        if rclpy.get_rmw_implementation_identifier() == 'rmw_connext_cpp':
+            self.skipTest('This test does not support rmw_connext_cpp.')
+
+        # Even if the action client is handling more than 6 goals at the same time, feedback
+        # messages can still be received.
+
+        ac = ActionClient(
+            self.node, Fibonacci, 'fibonacci', enable_feedback_msg_optimization=True)
+        try:
+            self.assertTrue(ac.wait_for_server(timeout_sec=2.0))
+
+            # Send 7 goals and then publish feedback for the first one
+            goal_uuids = []
+            for _ in range(7):
+                goal_uuid = UUID(uuid=list(uuid.uuid4().bytes))
+                goal_uuids.append(goal_uuid)
+                future = ac.send_goal_async(
+                    Fibonacci.Goal(),
+                    feedback_callback=self.feedback_callback,
+                    goal_uuid=goal_uuid)
+                rclpy.spin_until_future_complete(self.node, future, self.executor)
+
+            # Publish feedback for the first goal
+            self.mock_action_server.publish_feedback(goal_uuids[0])
+            self.timed_spin(1.0)
+            self.assertNotEqual(self.feedback, None)
+
+            self.feedback = None
+
+            # Publish feedback for the seventh goal
+            self.mock_action_server.publish_feedback(goal_uuids[6])
+            self.timed_spin(1.0)
+            self.assertNotEqual(self.feedback, None)
+        finally:
             ac.destroy()
 
 

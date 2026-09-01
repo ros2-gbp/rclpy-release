@@ -13,9 +13,10 @@
 # limitations under the License.
 
 from collections import defaultdict
+from collections.abc import Iterator
 from itertools import chain
 from multiprocessing import Lock
-from typing import Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Callable, cast, Dict, List, Optional, Tuple
 
 
 from rcl_interfaces.msg import Parameter as ParameterMsg
@@ -270,20 +271,22 @@ class ParameterEventHandler:
                                      Otherwise, returns None
         """
         if event.node == node_name:
-            for parameter in chain(event.new_parameters, event.changed_parameters):
+            for parameter in chain(cast(list[ParameterMsg], event.new_parameters),
+                                   cast(list[ParameterMsg], event.changed_parameters)):
                 if parameter.name == parameter_name:
                     return parameter
 
         return None
 
     @staticmethod
-    def get_parameters_from_event(event: ParameterEvent) -> Iterable[ParameterMsg]:
+    def get_parameters_from_event(event: ParameterEvent) -> Iterator[ParameterMsg]:
         """
         Get all parameters from a ParameterEvent message.
 
         :param event: ParameterEvent message to read
         """
-        for parameter in chain(event.new_parameters, event.changed_parameters):
+        for parameter in chain(cast(list[ParameterMsg], event.new_parameters),
+                               cast(list[ParameterMsg], event.changed_parameters)):
             yield parameter
 
     def add_parameter_callback(
@@ -296,6 +299,10 @@ class ParameterEventHandler:
         Add new parameter callback.
 
         Callbacks are called in FILO manner.
+
+        The configure_nodes_filter() function will affect the behavior of this function.
+        If the node specified in this function isn't included in the nodes specified in
+        configure_nodes_filter(), the callback will never be called.
 
         :param parameter_name: Name of a parameter to tie callback to
         :param node_name: Name of a node, that the parameter should be related to
@@ -351,6 +358,54 @@ class ParameterEventHandler:
         :param handle: ParameterEventCallbackHandle of a callback to be removed
         """
         self._callbacks.remove_parameter_event_callback(handle)
+
+    def configure_nodes_filter(
+        self,
+        node_names: Optional[List[str]] = None,
+    ) -> bool:
+        """
+        Configure which node parameter events will be received.
+
+        This function depends on rmw implementation support for content filtering.
+        If middleware doesn't support contentfilter, return false.
+
+        If node_names is empty, the configured node filter will be cleared.
+
+        If this function return true, only parameter events from the specified node will be
+        received.
+        It affects the behavior of the following two functions.
+        - add_parameter_event_callback()
+          The callback will only be called for parameter events from the specified nodes which are
+          configured in this function.
+        - add_parameter_callback()
+          The callback will only be called for parameter events from the specified nodes which are
+          configured in this function and add_parameter_callback().
+          If the nodes specified in this function is different from the nodes specified in
+          add_parameter_callback(), the callback will never be called.
+
+        :param node_names: Node names to filter parameter events from
+
+        :return: True if the filter was successfully applied, False otherwise.
+        :raises: RCLError if internal error occurred when calling the rcl function.
+        """
+        if not self.parameter_event_subscription.is_cft_supported:
+            return False
+
+        if node_names is None or len(node_names) == 0:
+            # Clear content filter
+            self.parameter_event_subscription.set_content_filter('', [])
+            if (self.parameter_event_subscription.is_cft_enabled is True):
+                return False
+            return True
+
+        filter_expression = ' OR '.join([f'node = %{i}' for i in range(len(node_names))])
+
+        # Enclose each node name in "'"
+        quoted_node_names = [f"'{node_name}'" for node_name in node_names]
+
+        self.parameter_event_subscription.set_content_filter(filter_expression, quoted_node_names)
+
+        return self.parameter_event_subscription.is_cft_enabled
 
     def _resolve_path(
         self,

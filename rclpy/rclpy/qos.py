@@ -12,9 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 from enum import Enum, IntEnum
-from typing import (Any, Callable, Iterable, List, Optional, Tuple, Type,
-                    TypeVar, Union)
+from typing import Annotated
+from typing import Any
+from typing import Optional
+from typing import Tuple
+from typing import TypeVar
+from typing import Union
 import warnings
 
 from rclpy.duration import Duration
@@ -51,7 +57,7 @@ class InvalidQoSProfileException(Exception):
     """Raised when constructing a QoSProfile with invalid arguments."""
 
     def __init__(self, message: str) -> None:
-        Exception(self, f'Invalid QoSProfile: {message}')
+        super().__init__(f'Invalid QoSProfile: {message}')
 
 
 class QoSProfile:
@@ -123,7 +129,7 @@ class QoSProfile:
 
     # Has to be marked Any due to mypy#3004. Return type is actually QoSHistoryPolicy
     @property
-    def history(self) -> Any:
+    def history(self) -> Annotated[Any, QoSHistoryPolicy]:
         """
         Get field 'history'.
 
@@ -138,7 +144,7 @@ class QoSProfile:
 
     # Has to be marked Any due to mypy#3004. Return type is actually QoSReliabilityPolicy
     @property
-    def reliability(self) -> Any:
+    def reliability(self) -> Annotated[Any, QoSReliabilityPolicy]:
         """
         Get field 'reliability'.
 
@@ -153,7 +159,7 @@ class QoSProfile:
 
     # Has to be marked Any due to mypy#3004. Return type is actually QoSDurabilityPolicy
     @property
-    def durability(self) -> Any:
+    def durability(self) -> Annotated[Any, QoSDurabilityPolicy]:
         """
         Get field 'durability'.
 
@@ -216,7 +222,7 @@ class QoSProfile:
 
     # Has to be marked Any due to mypy#3004. Return type is actually QoSLivelinessPolicy
     @property
-    def liveliness(self) -> Any:
+    def liveliness(self) -> Annotated[Any, QoSLivelinessPolicy]:
         """
         Get field 'liveliness'.
 
@@ -291,7 +297,7 @@ class QoSPolicyEnum(IntEnum):
     """
 
     @classmethod
-    def short_keys(cls) -> List[str]:
+    def short_keys(cls) -> list[str]:
         """Return a list of shortened typing-friendly enum values."""
         return [k.lower() for k in cls.__members__.keys() if not k.startswith('RMW')]
 
@@ -315,41 +321,6 @@ class QoSPolicyEnum(IntEnum):
 _T = TypeVar('_T', bound=QoSPolicyEnum)
 
 
-class _DeprecatedPolicyValueAlias:
-    """Helper to deprecate a policy value."""
-
-    def __init__(self, replacement_name: str, deprecated_name: str) -> None:
-        self.replacement_name = replacement_name
-        self.deprecated_name = deprecated_name
-
-    def __get__(self, obj: object,
-                policy_cls: Type[_T]) -> _T:
-        warnings.warn(
-            f'{policy_cls.__name__}.{self.deprecated_name} is deprecated. '
-            f'Use {policy_cls.__name__}.{self.replacement_name} instead.'
-        )
-        return policy_cls[self.replacement_name]
-
-
-def _deprecated_policy_value_aliases(pairs: Iterable[Tuple[str, str]]) \
-                                     -> Callable[[Type[_T]], Type[_T]]:
-    def decorator(policy_cls: Type[_T]) -> Type[_T]:
-        for deprecated_name, replacement_name in pairs:
-            setattr(
-                policy_cls,
-                deprecated_name,
-                _DeprecatedPolicyValueAlias(replacement_name, deprecated_name)
-            )
-        return policy_cls
-    return decorator
-
-
-@_deprecated_policy_value_aliases((
-    ('RMW_QOS_POLICY_HISTORY_SYSTEM_DEFAULT', 'SYSTEM_DEFAULT'),
-    ('RMW_QOS_POLICY_HISTORY_KEEP_LAST', 'KEEP_LAST'),
-    ('RMW_QOS_POLICY_HISTORY_KEEP_ALL', 'KEEP_ALL'),
-    ('RMW_QOS_POLICY_HISTORY_UNKNOWN', 'UNKNOWN'),
-))
 class HistoryPolicy(QoSPolicyEnum):
     """
     Enum for QoS History settings.
@@ -367,12 +338,6 @@ class HistoryPolicy(QoSPolicyEnum):
 QoSHistoryPolicy: TypeAlias = HistoryPolicy
 
 
-@_deprecated_policy_value_aliases((
-    ('RMW_QOS_POLICY_RELIABILITY_SYSTEM_DEFAULT', 'SYSTEM_DEFAULT'),
-    ('RMW_QOS_POLICY_RELIABILITY_RELIABLE', 'RELIABLE'),
-    ('RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT', 'BEST_EFFORT'),
-    ('RMW_QOS_POLICY_RELIABILITY_UNKNOWN', 'UNKNOWN'),
-))
 class ReliabilityPolicy(QoSPolicyEnum):
     """
     Enum for QoS Reliability settings.
@@ -391,12 +356,6 @@ class ReliabilityPolicy(QoSPolicyEnum):
 QoSReliabilityPolicy: TypeAlias = ReliabilityPolicy
 
 
-@_deprecated_policy_value_aliases((
-    ('RMW_QOS_POLICY_DURABILITY_SYSTEM_DEFAULT', 'SYSTEM_DEFAULT'),
-    ('RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL', 'TRANSIENT_LOCAL'),
-    ('RMW_QOS_POLICY_DURABILITY_VOLATILE', 'VOLATILE'),
-    ('RMW_QOS_POLICY_DURABILITY_UNKNOWN', 'UNKNOWN'),
-))
 class DurabilityPolicy(QoSPolicyEnum):
     """
     Enum for QoS Durability settings.
@@ -415,12 +374,6 @@ class DurabilityPolicy(QoSPolicyEnum):
 QoSDurabilityPolicy: TypeAlias = DurabilityPolicy
 
 
-@_deprecated_policy_value_aliases((
-    ('RMW_QOS_POLICY_LIVELINESS_SYSTEM_DEFAULT', 'SYSTEM_DEFAULT'),
-    ('RMW_QOS_POLICY_LIVELINESS_AUTOMATIC', 'AUTOMATIC'),
-    ('RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC', 'MANUAL_BY_TOPIC'),
-    ('RMW_QOS_POLICY_DURABILITY_UNKNOWN', 'UNKNOWN'),
-))
 class LivelinessPolicy(QoSPolicyEnum):
     """
     Enum for QoS Liveliness settings.
@@ -514,7 +467,7 @@ class QoSPresetProfiles(Enum):
     Our supported version of Python3 (3.5) doesn't have a fix that allows mixins on Enum.
     """
     @classmethod
-    def short_keys(cls) -> List[str]:
+    def short_keys(cls) -> list[str]:
         """Return a list of shortened typing-friendly enum values."""
         return [k.lower() for k in cls.__members__.keys() if not k.startswith('RMW')]
 

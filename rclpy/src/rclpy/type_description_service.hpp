@@ -17,8 +17,6 @@
 
 #include <pybind11/pybind11.h>
 
-#include <rmw/types.h>
-
 #include <memory>
 
 #include "destroyable.hpp"
@@ -45,7 +43,7 @@ public:
   /**
    * \return The capsule containing the Service
    */
-  Service
+  std::shared_ptr<Service>
   get_impl();
 
   /// Handle an incoming request to the service

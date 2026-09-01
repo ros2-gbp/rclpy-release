@@ -20,6 +20,7 @@
 #include <rcl/subscription.h>
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -52,7 +53,8 @@ public:
    */
   Subscription(
     Node & node, py::object pymsg_type, std::string topic,
-    py::object pyqos_profile, py::object content_filter_options = py::none());
+    py::object pyqos_profile, py::object content_filter_options = py::none(),
+    py::object acceptable_buffer_backends = py::none());
 
   /// Take a message and its metadata from a subscription
   /**
@@ -114,6 +116,9 @@ public:
   void
   clear_on_new_message_callback();
 
+  /// Check if subscription instance supports content filter.
+  bool is_cft_supported() const;
+
   /// Check if the content filtered topic of this subscription is enabled
   bool is_cft_enabled() const;
 
@@ -139,7 +144,11 @@ public:
 
 private:
   Node node_;
+  std::function<void(size_t)> on_new_message_callback_{nullptr};
   std::shared_ptr<rcl_subscription_t> rcl_subscription_;
+
+  void
+  set_callback(rcl_event_callback_t callback, const void * user_data);
 };
 /// Define a pybind11 wrapper for an rclpy::Subscription
 void define_subscription(py::object module);

@@ -12,21 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import TYPE_CHECKING
 import unittest
 
 import rclpy
 
+import rclpy.context
 from rclpy.serialization import serialize_message
 from test_msgs.msg import BasicTypes, Strings
 
 
 class TestMessages(unittest.TestCase):
 
+    if TYPE_CHECKING:
+        context: rclpy.context.Context
+        node: rclpy.node.Node
+
     NODE_NAME = 'messages_tester'
     NAMESPACE = 'messages_test'
 
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls.context = rclpy.context.Context()
         rclpy.init(context=cls.context)
         cls.node = rclpy.create_node(
@@ -36,7 +42,7 @@ class TestMessages(unittest.TestCase):
         )
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         cls.node.destroy_node()
         rclpy.shutdown(context=cls.context)
 
@@ -51,7 +57,7 @@ class TestMessages(unittest.TestCase):
         pub = self.node.create_publisher(
             BasicTypes, 'chatter_different_message_type', 1)
         with self.assertRaises(TypeError):
-            pub.publish('different message type')
+            pub.publish('different message type')  # type: ignore[arg-type]
         self.node.destroy_publisher(pub)
 
     def test_serialized_publish(self) -> None:

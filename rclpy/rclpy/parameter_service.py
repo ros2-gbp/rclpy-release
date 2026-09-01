@@ -26,12 +26,12 @@ from rclpy.qos import qos_profile_parameters
 from rclpy.validate_topic_name import TOPIC_SEPARATOR_STRING
 
 if TYPE_CHECKING:
-    from rclpy.node import Node
+    from rclpy.node import BaseNode
 
 
 class ParameterService:
 
-    def __init__(self, node: 'Node'):
+    def __init__(self, node: 'BaseNode'):
         self._node_weak_ref = weakref.ref(node)
         nodename = node.get_name()
 
@@ -97,7 +97,7 @@ class ParameterService:
                 param = node.get_parameter(name)
             except (ParameterNotDeclaredException, ParameterUninitializedException) as ex:
                 node.get_logger().warning(f'Failed to get parameters: {ex}')
-                response.values = node.get_parameters([])
+                response.values = []
                 return response
             response.values.append(param.get_parameter_value())
         return response
@@ -166,7 +166,7 @@ class ParameterService:
                 )
         return response
 
-    def _get_node(self) -> 'Node':
+    def _get_node(self) -> 'BaseNode':
         node = self._node_weak_ref()
         if node is None:
             raise ReferenceError('Expected valid node weak reference')

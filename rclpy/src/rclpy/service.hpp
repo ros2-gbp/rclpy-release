@@ -21,6 +21,7 @@
 #include <rcl/service_introspection.h>
 #include <rmw/types.h>
 
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -125,10 +126,20 @@ public:
   void
   destroy() override;
 
+  void
+  set_on_new_request_callback(std::function<void(size_t)> callback);
+
+  void
+  clear_on_new_request_callback();
+
 private:
   Node node_;
+  std::function<void(size_t)> on_new_request_callback_{nullptr};
   std::shared_ptr<rcl_service_t> rcl_service_;
   rosidl_service_type_support_t * srv_type_;
+
+  void
+  set_callback(rcl_event_callback_t callback, const void * user_data);
 };
 
 /// Define a pybind11 wrapper for an rclpy::Service

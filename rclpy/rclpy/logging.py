@@ -12,12 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# flake8: noqa: A005
+
 
 from pathlib import Path
 from typing import Union
 
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
-from rclpy.impl.logging_severity import LoggingSeverity
+from rclpy.impl.logging_severity import LoggingSeverity as LoggingSeverity
 from rclpy.impl.rcutils_logger import RcutilsLogger
 
 

@@ -24,6 +24,7 @@
 
 #include "event_handle.hpp"
 #include "exceptions.hpp"
+#include "utils.hpp"
 
 namespace rclpy
 {
@@ -37,12 +38,7 @@ create_zero_initialized_event()
     {
       rcl_ret_t ret = rcl_event_fini(event);
       if (RCL_RET_OK != ret) {
-        int stack_level = 1;
-        PyErr_WarnFormat(
-          PyExc_RuntimeWarning, stack_level,
-          "failed to fini event: %s",
-          rcl_get_error_string().str);
-        rcl_reset_error();
+        warn_fini_failure("event");
       }
       delete event;
     });
@@ -148,9 +144,6 @@ EventHandle::take_event()
         return py::cast(data.incompatible_type);
       case RCL_SUBSCRIPTION_MATCHED:
         return py::cast(data.subscription_matched);
-      default:
-        // suggests a misalignment between C and Python interfaces
-        throw py::value_error("event type for subscriptions not understood");
     }
   } else if (auto pub_type = std::get_if<rcl_publisher_event_type_t>(&event_type_)) {
     switch (*pub_type) {
@@ -164,12 +157,21 @@ EventHandle::take_event()
         return py::cast(data.incompatible_type);
       case RCL_PUBLISHER_MATCHED:
         return py::cast(data.publisher_matched);
-      default:
-        // suggests a misalignment between C and Python interfaces
-        throw py::value_error("event type for publishers not understood");
     }
   }
   throw std::runtime_error("cannot take event that is neither a publisher or a subscription event");
+}
+
+bool
+publisher_event_type_is_supported(rcl_publisher_event_type_t event_type)
+{
+  return rcl_publisher_event_type_is_supported(event_type);
+}
+
+bool
+subscription_event_type_is_supported(rcl_subscription_event_type_t event_type)
+{
+  return rcl_subscription_event_type_is_supported(event_type);
 }
 
 void
@@ -263,5 +265,14 @@ define_event_handle(py::module module)
   py::class_<rmw_incompatible_type_status_t>(module, "rmw_incompatible_type_status_t")
   .def(py::init<>())
   .def_readonly("total_count_change", &rmw_incompatible_type_status_t::total_count_change);
+
+  module.def(
+    "publisher_event_type_is_supported",
+    &rclpy::publisher_event_type_is_supported,
+    "Check if a publisher event type is supported by the active RMW implementation.");
+  module.def(
+    "subscription_event_type_is_supported",
+    &rclpy::subscription_event_type_is_supported,
+    "Check if a subscription event type is supported by the active RMW implementation.");
 }
 }  // namespace rclpy
