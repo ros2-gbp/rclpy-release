@@ -1,3 +1,26 @@
+## rclpy (kilted) - 9.1.7-1
+
+The packages in the `rclpy` repository were released into the `kilted` distro by running `/usr/bin/bloom-release --rosdistro kilted --track kilted rclpy` on `Tue, 01 Sep 2026 12:33:00 -0000`
+
+The `rclpy` package was released.
+
+Version of package(s) in repository `rclpy`:
+
+- upstream repository: https://github.com/ros2/rclpy.git
+- release repository: https://github.com/ros2-gbp/rclpy-release.git
+- rosdistro version: `9.1.6-1`
+- old version: `9.1.6-1`
+- new version: `9.1.7-1`
+
+Versions of tools used:
+
+- bloom version: `0.14.3`
+- catkin_pkg version: `1.1.0`
+- rosdep version: `0.26.0`
+- rosdistro version: `1.0.1`
+- vcstools version: `0.1.42`
+
+
 ## rclpy (lyrical) - 10.0.11-1
 
 The packages in the `rclpy` repository were released into the `lyrical` distro by running `/usr/bin/bloom-release --rosdistro lyrical --track lyrical rclpy` on `Tue, 01 Sep 2026 12:30:36 -0000`
