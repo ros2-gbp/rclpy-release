@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include <pybind11/pybind11.h>
-#include <pybind11/functional.h>
 
 #include <rcl/client.h>
 #include <rcl/error_handling.h>
@@ -72,7 +71,12 @@ Client::Client(
       // Intentionally capture node by value so shared_ptr can be transferred to copies
       rcl_ret_t ret = rcl_client_fini(client, node.rcl_ptr());
       if (RCL_RET_OK != ret) {
-        warn_fini_failure("client");
+        // Warning should use line number of the current stack frame
+        int stack_level = 1;
+        PyErr_WarnFormat(
+          PyExc_RuntimeWarning, stack_level, "Failed to fini client: %s",
+          rcl_get_error_string().str);
+        rcl_reset_error();
       }
       PythonAllocator<rcl_client_t>().deallocate(client, 1);
     });

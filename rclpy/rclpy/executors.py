@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from collections import deque
-from collections.abc import Awaitable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from dataclasses import dataclass
@@ -27,7 +26,6 @@ import time
 from types import TracebackType
 from typing import Any
 from typing import Callable
-from typing import cast
 from typing import ContextManager
 from typing import Coroutine
 from typing import Deque
@@ -41,7 +39,6 @@ from typing import Tuple
 from typing import Type
 from typing import TYPE_CHECKING
 from typing import TypeVar
-from typing import TypeVarTuple
 from typing import Union
 
 import warnings
@@ -59,7 +56,6 @@ from rclpy.subscription import MessageInfo
 from rclpy.subscription import Subscription
 from rclpy.task import Future
 from rclpy.task import Task
-from rclpy.timer import EmptyCallback
 from rclpy.timer import Timer
 from rclpy.timer import TimerCallbackUnion
 from rclpy.timer import TimerInfo
@@ -81,7 +77,6 @@ if TYPE_CHECKING:  # Avoid import cycle
 # TODO(jacobperron): Make all entities implement the 'Waitable' interface for better type checking
 
 T = TypeVar('T')
-Ts = TypeVarTuple('Ts')
 
 YieldedCallback: 'TypeAlias' = Generator[Tuple[Task[None],
                                                'Optional[Entity]',
@@ -126,16 +121,21 @@ class _WorkTracker:
         return True
 
 
-async def await_or_execute(callback: Callable[[*Ts], Awaitable[T] | T], *args: *Ts) -> T:
+@overload
+async def await_or_execute(callback: Callable[..., Coroutine[Any, Any, T]], *args: Any) -> T: ...
+
+
+@overload
+async def await_or_execute(callback: Callable[..., T], *args: Any) -> T: ...
+
+
+async def await_or_execute(callback: Callable[..., Any], *args: Any) -> Any:
     """Await a callback if it is a coroutine, else execute it."""
     if inspect.iscoroutinefunction(callback):
         # Await a coroutine
-        # See https://github.com/python/typeshed/issues/15529
-        callback = cast(Callable[[*Ts], Awaitable[T]], callback)
         return await callback(*args)
     else:
         # Call a normal function
-        callback = cast(Callable[[*Ts], T], callback)
         return callback(*args)
 
 
@@ -448,23 +448,12 @@ class Executor(ContextManager['Executor']):
                     now = time.perf_counter()
 
                     if now >= end:
-                        break
+                        self._exit_spin()
+                        return
 
                     timeout_left.timeout = end - now
         finally:
             self._exit_spin()
-
-        # If the future completed with an exception, re-raise it. The
-        # SingleThreadedExecutor re-raises synchronously inside _spin_once_impl
-        # so we never reach this code in that case. The MultiThreadedExecutor
-        # runs handlers on worker threads; the outer loop above can observe
-        # future.done() == True and exit before the next _spin_once_impl
-        # iteration would have called future.result(). Surfacing the
-        # exception here keeps the contract uniform across executor types.
-        if future.done():
-            exc = future.exception()
-            if exc is not None:
-                raise exc
 
     def spin_once(self, timeout_sec: Optional[float] = None) -> None:
         """
@@ -543,7 +532,7 @@ class Executor(ContextManager['Executor']):
                 else:
                     async def _execute() -> None:
                         if tmr.callback:
-                            await await_or_execute(cast(EmptyCallback, tmr.callback))
+                            await await_or_execute(tmr.callback)
                     return _execute
         except InvalidHandle:
             # Timer is a Destroyable, which means that on __enter__ it can throw an
@@ -572,7 +561,7 @@ class Executor(ContextManager['Executor']):
                     msg_tuple = msg_info
 
                 async def _execute() -> None:
-                    await await_or_execute(sub.callback, *msg_tuple)  # type: ignore [arg-type]
+                    await await_or_execute(sub.callback, *msg_tuple)
 
                 return _execute
         except InvalidHandle:
@@ -1121,10 +1110,10 @@ class MultiThreadedExecutor(Executor):
             self._executor.submit(handler)
             self._futures.append(handler)
             with self._futures_lock:
-                done_futures = [f for f in self._futures if f.done() or f.cancelled()]
-                for future in done_futures:
-                    self._futures.remove(future)
-                    future.result()  # raise any exceptions
+                for future in self._futures:
+                    if future.done():
+                        self._futures.remove(future)
+                        future.result()  # raise any exceptions
 
             # Yield GIL so executor threads have a chance to run.
             os.sched_yield() if hasattr(os, 'sched_yield') else time.sleep(0)

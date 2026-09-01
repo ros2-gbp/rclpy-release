@@ -51,12 +51,12 @@ from rcl_interfaces.srv import ListParameters
 from rclpy.callback_groups import CallbackGroup
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.callback_groups import ReentrantCallbackGroup
-from rclpy.client import Client
+from rclpy.client import BaseClient, Client
 from rclpy.clock import BaseClock, Clock
 from rclpy.clock_type import ClockType
 from rclpy.constants import S_TO_NS
 from rclpy.context import Context
-from rclpy.endpoint_info import ActionEndpointInfo, ServiceEndpointInfo, TopicEndpointInfo
+from rclpy.endpoint_info import ServiceEndpointInfo, TopicEndpointInfo
 from rclpy.event_handler import PublisherEventCallbacks
 from rclpy.event_handler import SubscriptionEventCallbacks
 from rclpy.exceptions import InvalidHandle
@@ -94,7 +94,7 @@ from rclpy.subscription import Subscription
 from rclpy.subscription import SubscriptionCallbackUnion
 from rclpy.subscription_content_filter_options import ContentFilterOptions
 from rclpy.time_source import TimeSource
-from rclpy.timer import Rate
+from rclpy.timer import BaseTimer, Rate
 from rclpy.timer import Timer
 from rclpy.timer import TimerCallbackUnion
 from rclpy.type_description_service import TypeDescriptionService
@@ -494,6 +494,8 @@ class BaseNode(ABC):
                                  'being included in self._parameter_overrides, and ',
                                  'ignore_override=False')
 
+            from typing import cast
+            value = cast(AllowableParameterValue, value)
             parameter_list.append(Parameter(name, value=value))
             descriptors.update({name: descriptor})
 
@@ -1752,46 +1754,6 @@ class BaseNode(ABC):
             return self._count_clients_or_servers(
                 service_name, self.handle.get_count_services)
 
-    def _count_action_clients_or_servers(
-        self,
-        action_name: str,
-        func: Callable[[str], int]
-    ) -> int:
-        fq_action_name = expand_topic_name(action_name, self.get_name(), self.get_namespace())
-        validate_full_topic_name(fq_action_name)
-        with self.handle:
-            return func(fq_action_name)
-
-    def count_action_clients(self, action_name: str) -> int:
-        """
-        Return the number of action clients on a given action.
-
-        `action_name` may be a relative, private, or fully qualified action name.
-        A relative or private action is expanded using this node's namespace and name.
-        The queried action name is not remapped.
-
-        :param action_name: the action_name on which to count the number of action clients.
-        :return: the number of action clients on the action.
-        """
-        with self.handle:
-            return self._count_action_clients_or_servers(
-                action_name, self.handle.get_count_action_clients)
-
-    def count_action_servers(self, action_name: str) -> int:
-        """
-        Return the number of action servers on a given action.
-
-        `action_name` may be a relative, private, or fully qualified action name.
-        A relative or private action is expanded using this node's namespace and name.
-        The queried action name is not remapped.
-
-        :param action_name: the action_name on which to count the number of action servers.
-        :return: the number of action servers on the action.
-        """
-        with self.handle:
-            return self._count_action_clients_or_servers(
-                action_name, self.handle.get_count_action_servers)
-
     def _get_info_by_topic(
         self,
         topic_name: str,
@@ -1961,70 +1923,11 @@ class BaseNode(ABC):
             no_mangle,
             _rclpy.rclpy_get_servers_info_by_service)
 
-    def _get_info_by_action(
-        self,
-        action_name: str,
-        func: Callable[['_rclpy.Node', str], list['_rclpy._ActionEndpointInfoDict']]
-    ) -> List[ActionEndpointInfo]:
-        with self.handle:
-            fq_action_name = expand_topic_name(
-                action_name, self.get_name(), self.get_namespace())
-            validate_full_topic_name(fq_action_name)
-            info_dicts = func(self.handle, fq_action_name)
-            infos = [ActionEndpointInfo(**x) for x in info_dicts]
-            return infos
-
-    def get_action_clients_info_by_action(
-        self,
-        action_name: str
-    ) -> List[ActionEndpointInfo]:
-        """
-        Return a list of action clients on a given action.
-
-        The returned parameter is a list of ActionEndpointInfo objects, where each aggregates
-        the endpoint information of all the underlying entities of one action client, i.e. the
-        clients of the goal, cancel, and result services and the subscriptions on the feedback
-        and status topics.
-
-        ``action_name`` may be a relative, private, or fully qualified action name.
-        A relative or private action will be expanded using this node's namespace and name.
-        The queried ``action_name`` is not remapped.
-
-        :param action_name: The action_name on which to find the action clients.
-        :return: A list of ActionEndpointInfo for all the action clients on this action.
-        """
-        return self._get_info_by_action(
-            action_name,
-            _rclpy.rclpy_get_action_clients_info_by_action)
-
-    def get_action_servers_info_by_action(
-        self,
-        action_name: str
-    ) -> List[ActionEndpointInfo]:
-        """
-        Return a list of action servers on a given action.
-
-        The returned parameter is a list of ActionEndpointInfo objects, where each aggregates
-        the endpoint information of all the underlying entities of one action server, i.e. the
-        servers of the goal, cancel, and result services and the publishers on the feedback
-        and status topics.
-
-        ``action_name`` may be a relative, private, or fully qualified action name.
-        A relative or private action will be expanded using this node's namespace and name.
-        The queried ``action_name`` is not remapped.
-
-        :param action_name: The action_name on which to find the action servers.
-        :return: A list of ActionEndpointInfo for all the action servers on this action.
-        """
-        return self._get_info_by_action(
-            action_name,
-            _rclpy.rclpy_get_action_servers_info_by_action)
-
     def _create_publisher_handle(
         self,
         msg_type: Type[MsgT],
         topic: str,
-        qos_profile: QoSProfile,
+        qos_profile: Union[QoSProfile, int],
         *,
         qos_overriding_options: Optional[QoSOverridingOptions] = None,
     ) -> '_rclpy.Publisher[MsgT]':
@@ -2351,20 +2254,20 @@ class Node(BaseNode):
         :param event_callbacks: User-defined callbacks for middleware events.
         :return: The new publisher.
         """
-        qos_profile_validated = self._validate_qos_or_depth_parameter(qos_profile)
+        qos_profile = self._validate_qos_or_depth_parameter(qos_profile)
 
         callback_group = callback_group or self.default_callback_group
 
         publisher_object = self._create_publisher_handle(
             msg_type,
             topic,
-            qos_profile_validated,
+            qos_profile,
             qos_overriding_options=qos_overriding_options
         )
 
         try:
             publisher = publisher_class(
-                publisher_object, msg_type, topic, qos_profile_validated,
+                publisher_object, msg_type, topic, qos_profile,
                 on_destroy=self._on_destroy_publisher,
                 event_callbacks=event_callbacks or PublisherEventCallbacks(),
                 callback_group=callback_group)
@@ -2589,7 +2492,7 @@ class Node(BaseNode):
     def create_timer(
         self,
         timer_period_sec: float,
-        callback: TimerCallbackUnion | None,
+        callback: Optional[TimerCallbackUnion],
         callback_group: Optional[CallbackGroup] = None,
         clock: Optional[Clock] = None,
         autostart: bool = True,
@@ -2672,7 +2575,7 @@ class Node(BaseNode):
         timer = self.create_timer(period, callback, group, clock)
         return Rate(timer, context=self.context)
 
-    def _on_destroy_publisher(self, publisher: Publisher[Any]) -> None:
+    def _on_destroy_publisher(self, publisher: Publisher) -> None:
         self._publishers.remove(publisher)
         for event_handler in publisher.event_handlers:
             self.__waitables.remove(event_handler)
@@ -2684,15 +2587,15 @@ class Node(BaseNode):
             self.__waitables.remove(event_handler)
         self._wake_executor()
 
-    def _on_destroy_client(self, client: Client[Any, Any]) -> None:
+    def _on_destroy_client(self, client: BaseClient[Any, Any]) -> None:
         self._clients.remove(client)
         self._wake_executor()
 
-    def _on_destroy_service(self, service: Service[Any, Any]) -> None:
+    def _on_destroy_service(self, service: BaseService[Any, Any]) -> None:
         self._services.remove(service)
         self._wake_executor()
 
-    def _on_destroy_timer(self, timer: Timer) -> None:
+    def _on_destroy_timer(self, timer: BaseTimer) -> None:
         self._timers.remove(timer)
         self._wake_executor()
 

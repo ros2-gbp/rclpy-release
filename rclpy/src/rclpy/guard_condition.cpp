@@ -35,7 +35,12 @@ GuardCondition::GuardCondition(Context & context)
     {
       rcl_ret_t ret = rcl_guard_condition_fini(guard_condition);
       if (RCL_RET_OK != ret) {
-        warn_fini_failure("guard condition");
+        // Warning should use line number of the current stack frame
+        int stack_level = 1;
+        PyErr_WarnFormat(
+          PyExc_RuntimeWarning, stack_level, "Failed to fini guard condition: %s",
+          rcl_get_error_string().str);
+        rcl_reset_error();
       }
       delete guard_condition;
     });

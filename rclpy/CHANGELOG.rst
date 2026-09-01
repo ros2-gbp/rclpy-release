@@ -2,45 +2,25 @@
 Changelog for package rclpy
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-11.0.3 (2026-09-01)
--------------------
-* Add ament_mypy (`#1680 <https://github.com/ros2/rclpy/issues/1680>`_)
-* Fix future-wait callback accumulation on every spin path (`#1702 <https://github.com/ros2/rclpy/issues/1702>`_)
-* Use perf_counter() rather than monotonic() for consistency. (`#1712 <https://github.com/ros2/rclpy/issues/1712>`_)
-* fix: node lingering after destroy (`#1711 <https://github.com/ros2/rclpy/issues/1711>`_)
-* address unsafe list mutation during iteration and bypasses exception … (`#1669 <https://github.com/ros2/rclpy/issues/1669>`_)
-* introduce ActionEndpointInfo to support "ros2 action info (-v)". (`#1697 <https://github.com/ros2/rclpy/issues/1697>`_)
-* Include what you use (`#1706 <https://github.com/ros2/rclpy/issues/1706>`_)
-* Handle exceptions in lifecycle transition callbacks (`#1696 <https://github.com/ros2/rclpy/issues/1696>`_)
-* Fix incorrect parameter names in docstrings (`#1685 <https://github.com/ros2/rclpy/issues/1685>`_)
-* use C++ 20 in default. (`#1690 <https://github.com/ros2/rclpy/issues/1690>`_)
-* Fix Exception subclass initialization in InvalidQoSProfileException (`#1684 <https://github.com/ros2/rclpy/issues/1684>`_)
-* Fix incorrect parameter names in docstrings (`#1683 <https://github.com/ros2/rclpy/issues/1683>`_)
-* Contributors: Alejandro Hernández Cordero, Emerson Knapp, Michael Carlstrom, Sai Kishor Kothakota, Tomoya Fujita, eeshsaxena, hugogo1998, longway
+10.0.11 (2026-09-01)
+--------------------
+* Fix future-wait callback accumulation on every spin path (`#1702 <https://github.com/ros2/rclpy/issues/1702>`_) (`#1716 <https://github.com/ros2/rclpy/issues/1716>`_)
+* fix: node lingering after destroy (backport lyrical `#1711 <https://github.com/ros2/rclpy/issues/1711>`_) (`#1714 <https://github.com/ros2/rclpy/issues/1714>`_)
+* Use perf_counter() rather than monotonic() for consistency. (`#1712 <https://github.com/ros2/rclpy/issues/1712>`_) (`#1715 <https://github.com/ros2/rclpy/issues/1715>`_)
+* Fix rclpy async executor sleep. (`#1661 <https://github.com/ros2/rclpy/issues/1661>`_) (`#1676 <https://github.com/ros2/rclpy/issues/1676>`_)
+* Handle exceptions in lifecycle transition callbacks (`#1696 <https://github.com/ros2/rclpy/issues/1696>`_) (`#1698 <https://github.com/ros2/rclpy/issues/1698>`_)
+* Fix incorrect parameter names in docstrings (`#1685 <https://github.com/ros2/rclpy/issues/1685>`_) (`#1691 <https://github.com/ros2/rclpy/issues/1691>`_)
+* Fix incorrect parameter names in docstrings (`#1683 <https://github.com/ros2/rclpy/issues/1683>`_) (`#1686 <https://github.com/ros2/rclpy/issues/1686>`_)
+* Contributors: mergify[bot]
 
-11.0.2 (2026-07-02)
--------------------
-* Fix async type bugs (`#1679 <https://github.com/ros2/rclpy/issues/1679>`_)
-* Added tolerance based on clock resolution to prevent test failure on windows (`#1660 <https://github.com/ros2/rclpy/issues/1660>`_)
-* Contributors: Michael Carlstrom, Nadav Elkabets
-
-11.0.1 (2026-05-22)
--------------------
-* add publisher/subscription_event_type_is_supported(). (`#1647 <https://github.com/ros2/rclpy/issues/1647>`_)
-* Fix a race in the executors. (`#1662 <https://github.com/ros2/rclpy/issues/1662>`_)
-* Fix rclpy async executor sleep. (`#1661 <https://github.com/ros2/rclpy/issues/1661>`_)
-* Contributors: Chris Lalancette, Tomoya Fujita
-
-11.0.0 (2026-05-07)
--------------------
-* Removed dead code (`#1657 <https://github.com/ros2/rclpy/issues/1657>`_)
-* Refactor warn_fini_failure (`#1658 <https://github.com/ros2/rclpy/issues/1658>`_)
+10.0.10 (2026-04-30)
+--------------------
 * Feature: async node (`#1620 <https://github.com/ros2/rclpy/issues/1620>`_)
 * Refactor: moved TypeDescriptionService, LoggingService, ParameterService to BaseNode (`#1645 <https://github.com/ros2/rclpy/issues/1645>`_)
 * Refactor: base node (`#1637 <https://github.com/ros2/rclpy/issues/1637>`_)
 * Bugfix: executor doesn't propagate exception from task that awaited a future (`#1643 <https://github.com/ros2/rclpy/issues/1643>`_)
 * Fix: disable flaky executor test (`#1648 <https://github.com/ros2/rclpy/issues/1648>`_) (`#1649 <https://github.com/ros2/rclpy/issues/1649>`_)
-* Contributors: Alejandro Hernández Cordero, Nadav Elkabets
+* Contributors: Nadav Elkabets
 
 10.0.9 (2026-04-14)
 -------------------

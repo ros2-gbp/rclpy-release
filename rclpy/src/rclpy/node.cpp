@@ -134,30 +134,6 @@ Node::get_count_services(const char * service_name)
   return count;
 }
 
-size_t
-Node::get_count_action_clients(const char * action_name)
-{
-  size_t count = 0;
-  rcl_ret_t ret = rcl_action_count_clients(rcl_node_.get(), action_name, &count);
-  if (RCL_RET_OK != ret) {
-    throw RCLError("Error in rcl_action_count_clients");
-  }
-
-  return count;
-}
-
-size_t
-Node::get_count_action_servers(const char * action_name)
-{
-  size_t count = 0;
-  rcl_ret_t ret = rcl_action_count_servers(rcl_node_.get(), action_name, &count);
-  if (RCL_RET_OK != ret) {
-    throw RCLError("Error in rcl_action_count_servers");
-  }
-
-  return count;
-}
-
 py::list
 Node::get_names_impl(bool get_enclaves)
 {
@@ -478,7 +454,11 @@ Node::Node(
   RCPPUTILS_SCOPE_EXIT(
     {
       if (RCL_RET_OK != rcl_arguments_fini(&arguments)) {
-        warn_fini_failure("arguments");
+        int stack_level = 1;
+        PyErr_WarnFormat(
+          PyExc_RuntimeWarning, stack_level, "Failed to fini arguments: %s",
+          rcl_get_error_string().str);
+        rcl_reset_error();
       }
     });
 
@@ -494,13 +474,23 @@ Node::Node(
         if (rcl_logging_rosout_enabled() && enable_rosout) {
           ret = rcl_logging_rosout_fini_publisher_for_node(node);
           if (ret != RCL_RET_OK) {
-            warn_fini_failure("rosout publisher");
+            // Warning should use line number of the current stack frame
+            int stack_level = 1;
+            PyErr_WarnFormat(
+              PyExc_RuntimeWarning, stack_level, "Failed to fini rosout publisher: %s",
+              rcl_get_error_string().str);
+            rcl_reset_error();
           }
         }
       }
       ret = rcl_node_fini(node);
       if (RCL_RET_OK != ret) {
-        warn_fini_failure("node");
+        // Warning should use line number of the current stack frame
+        int stack_level = 1;
+        PyErr_WarnFormat(
+          PyExc_RuntimeWarning, stack_level, "Failed to fini node: %s",
+          rcl_get_error_string().str);
+        rcl_reset_error();
       }
       delete node;
     });
@@ -629,12 +619,6 @@ define_node(py::object module)
   .def(
     "get_count_services", &Node::get_count_services,
     "Returns the count of all the servers known for that service in the entire ROS graph.")
-  .def(
-    "get_count_action_clients", &Node::get_count_action_clients,
-    "Returns the count of all the action clients known for that action in the entire ROS graph.")
-  .def(
-    "get_count_action_servers", &Node::get_count_action_servers,
-    "Returns the count of all the action servers known for that action in the entire ROS graph.")
   .def(
     "get_node_names_and_namespaces", &Node::get_node_names_and_namespaces,
     "Get the list of nodes discovered by the provided node")

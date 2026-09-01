@@ -45,9 +45,6 @@ ServiceCallbackUnion: TypeAlias = Union[
 ]
 
 
-ServiceHeader: TypeAlias = _rclpy.rmw_service_info_t | _rclpy.rmw_request_id_t
-
-
 class BaseService(Generic[SrvRequestT, SrvResponseT]):
 
     def __init__(
@@ -58,7 +55,7 @@ class BaseService(Generic[SrvRequestT, SrvResponseT]):
         callback: ServiceCallbackUnion[SrvRequestT, SrvResponseT],
         qos_profile: QoSProfile,
         *,
-        on_destroy: Optional[Callable[[Self], None]] = None,
+        on_destroy: Optional[Callable[['BaseService[SrvRequestT, SrvResponseT]'], None]] = None,
     ) -> None:
         """
         Create a container for a ROS service server.
@@ -121,7 +118,7 @@ class BaseService(Generic[SrvRequestT, SrvResponseT]):
         with self.handle:
             return self.__service.get_logger_name()
 
-    def destroy(self: Self) -> None:
+    def destroy(self) -> None:
         """Destroy the service, notifying the owning node and releasing the handle."""
         if self._destroyed:
             return
@@ -188,7 +185,7 @@ class Service(BaseService[SrvRequestT, SrvResponseT], Generic[SrvRequestT, SrvRe
     def send_response(
         self,
         response: SrvResponseT,
-        header: ServiceHeader
+        header: Union[_rclpy.rmw_service_info_t, _rclpy.rmw_request_id_t]
     ) -> None:
         """
         Send a service response.

@@ -19,7 +19,6 @@
 
 #include <rcl/arguments.h>
 #include <rcl/graph.h>  // rcl_names_and_types_t
-#include <rcl_action/graph.h>  // rcl_action_endpoint_info_array_t
 #include <rmw/topic_endpoint_info.h>
 #include <rmw/types.h>
 
@@ -153,22 +152,6 @@ convert_to_py_topic_endpoint_info_list(const rmw_topic_endpoint_info_array_t * i
 py::list
 convert_to_py_service_endpoint_info_list(const rmw_service_endpoint_info_array_t * info_array);
 
-/// Convert a C rcl_action_endpoint_info_array_t into a Python list.
-/**
- * Raises RuntimeError if the info_array is null.
- *
- * Each entry of the returned list is a dictionary aggregating the endpoint
- * information of all the underlying entities of one action client or one
- * action server (goal, cancel, and result services and feedback and status
- * topics).
- * Sub-entities that have not been discovered are represented as None.
- *
- * \param[in] info_array a pointer to a rcl_action_endpoint_info_array_t
- * \return Python list
- */
-py::list
-convert_to_py_action_endpoint_info_list(const rcl_action_endpoint_info_array_t * info_array);
-
 /// Convert a C rmw_qos_profile_t into a Python dictionary with qos profile args.
 /**
  * \param[in] qos_profile Pointer to a rmw_qos_profile_t to convert
@@ -184,16 +167,6 @@ convert_to_qos_dict(const rmw_qos_profile_t * qos_profile);
  */
 py::dict
 convert_to_type_hash_dict(const rosidl_type_hash_t * type_hash);
-
-/// Issue a Python RuntimeWarning for an rcl fini failure and reset the rcl error.
-/**
- * Intended for use inside shared_ptr deleters where throwing is not safe.
- * Emits a warning of the form "Failed to fini <entity_name>: <rcl error string>".
- *
- * \param[in] entity_name Name of the entity whose finalization failed.
- */
-void
-warn_fini_failure(const char * entity_name);
 }  // namespace rclpy
 
 #endif  // RCLPY__UTILS_HPP_

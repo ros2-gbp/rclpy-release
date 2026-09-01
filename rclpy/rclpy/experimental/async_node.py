@@ -18,7 +18,6 @@ from typing import Any, Literal, Optional, overload, Type, Union
 
 from rclpy.clock_type import ClockType
 from rclpy.context import Context
-from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.node import BaseNode
 from rclpy.parameter import Parameter
 from rclpy.qos import qos_profile_rosout_default
@@ -38,8 +37,7 @@ from .async_subscription import AsyncSubscription
 from .async_timer import AsyncTimer
 
 AsyncEntity = Union[
-    AsyncPublisher[Any], AsyncSubscription[Any],
-    AsyncService[Any, Any], AsyncClient[Any, Any], AsyncTimer]
+    AsyncPublisher, AsyncSubscription, AsyncService, AsyncClient, AsyncTimer]
 
 
 class AsyncNode(BaseNode):
@@ -140,7 +138,7 @@ class AsyncNode(BaseNode):
         self._tg = await tg.__aenter__()
         for entity in self._entities:
             if hasattr(entity, '_run'):
-                entity._task = self._tg.create_task(entity._run())  # type: ignore[union-attr]
+                entity._task = self._tg.create_task(entity._run())
         return self
 
     async def __aexit__(
@@ -151,8 +149,7 @@ class AsyncNode(BaseNode):
     ) -> None:
         try:
             self.destroy_node()
-            if self._tg:
-                await self._tg.__aexit__(exc_type, exc_val, exc_tb)
+            await self._tg.__aexit__(exc_type, exc_val, exc_tb)
         finally:
             self._tg = None
 
@@ -221,16 +218,16 @@ class AsyncNode(BaseNode):
         """
         if self._destroyed.is_set():
             raise RuntimeError('Cannot create publisher on a destroyed node')
-        qos_profile_validated = self._validate_qos_or_depth_parameter(qos_profile)
+        qos_profile = self._validate_qos_or_depth_parameter(qos_profile)
 
         publisher_handle = self._create_publisher_handle(
-            msg_type, topic, qos_profile_validated)
+            msg_type, topic, qos_profile)
 
         pub = AsyncPublisher(
             publisher_handle,
             msg_type,
             topic,
-            qos_profile_validated,
+            qos_profile,
             on_destroy=self._entities.discard,
         )
         self._entities.add(pub)
@@ -331,7 +328,7 @@ class AsyncNode(BaseNode):
 
     def _create_service(
         self,
-        service_impl: '_rclpy.Service[SrvRequestT, SrvResponseT]',
+        service_impl: object,
         srv_type: Type[Srv[SrvRequestT, SrvResponseT]],
         srv_name: str,
         callback: ServiceCallbackUnion[SrvRequestT, SrvResponseT],

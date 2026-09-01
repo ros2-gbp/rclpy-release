@@ -12,11 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import annotations
-
 from typing import Callable, Type
 
-from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.publisher import BasePublisher
 from rclpy.qos import QoSProfile
 from rclpy.type_support import MsgT
@@ -33,11 +30,11 @@ class AsyncPublisher(BasePublisher[MsgT]):
 
     def __init__(
         self,
-        publisher_impl: _rclpy.Publisher[MsgT],
+        publisher_impl: object,
         msg_type: Type[MsgT],
         topic: str,
         qos_profile: QoSProfile,
-        on_destroy: Callable[['AsyncPublisher[MsgT]'], None],
+        on_destroy: Callable[['AsyncPublisher'], None],
     ) -> None:
         super().__init__(publisher_impl, msg_type, topic, qos_profile,
                          on_destroy=on_destroy)
