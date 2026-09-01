@@ -13,6 +13,5 @@
 # limitations under the License.
 
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
-from typing_extensions import TypeAlias
 
-ServiceIntrospectionState: TypeAlias = _rclpy.service_introspection.ServiceIntrospectionState
+ServiceIntrospectionState = _rclpy.service_introspection.ServiceIntrospectionState

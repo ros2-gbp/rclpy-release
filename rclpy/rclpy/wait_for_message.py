@@ -12,24 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Literal, Tuple, Type, Union
+from typing import Union
 
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile
 from rclpy.signals import SignalHandlerGuardCondition
-from rclpy.type_support import MsgT
 from rclpy.utilities import timeout_sec_to_nsec
 
 
 def wait_for_message(
-    msg_type: Type[MsgT],
+    msg_type,
     node: 'Node',
     topic: str,
     *,
     qos_profile: Union[QoSProfile, int] = 1,
-    time_to_wait: Union[int, float] = -1
-) -> Union[Tuple[Literal[True], MsgT], Tuple[Literal[False], None]]:
+    time_to_wait=-1
+):
     """
     Wait for the next incoming message.
 
@@ -42,10 +41,6 @@ def wait_for_message(
         could not be obtained or shutdown was triggered asynchronously on the context.
     """
     context = node.context
-
-    if context.handle is None:
-        raise RuntimeError('Cannot create Waitset without a context.handle')
-
     wait_set = _rclpy.WaitSet(1, 1, 0, 0, 0, 0, context.handle)
     wait_set.clear_entities()
 

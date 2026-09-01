@@ -56,7 +56,7 @@ def test_serialize_deserialize(msgs, msg_type):
         assert msg == msg_deserialized
 
 
-def test_set_float32() -> None:
+def test_set_float32():
     """Test message serialization/deserialization of float32 type."""
     # During (de)serialization we convert to a C float before converting to a PyObject.
     # This can result in a loss of precision

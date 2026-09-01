@@ -39,7 +39,7 @@ def init_shutdown():
     rclpy.shutdown()
 
 
-def test_get_qos_policy_parameter() -> None:
+def test_get_qos_policy_parameter():
     qos = QoSProfile(
         history=QoSHistoryPolicy.KEEP_LAST,
         depth=10,
@@ -68,7 +68,7 @@ def test_get_qos_policy_parameter() -> None:
     assert value == qos.liveliness_lease_duration.nanoseconds
 
 
-def test_declare_qos_parameters() -> None:
+def test_declare_qos_parameters():
     node = Node('my_node')
     _declare_qos_parameters(
         Publisher, node, '/my_topic', QoSProfile(depth=10),
@@ -88,7 +88,7 @@ def test_declare_qos_parameters() -> None:
         assert actual[1].value == expected[1]  # same param value
 
 
-def test_declare_qos_parameters_with_overrides() -> None:
+def test_declare_qos_parameters_with_overrides():
     node = Node('my_node', parameter_overrides=[
         Parameter('qos_overrides./my_topic.publisher.depth', value=100),
         Parameter('qos_overrides./my_topic.publisher.reliability', value='best_effort'),
@@ -112,7 +112,7 @@ def test_declare_qos_parameters_with_overrides() -> None:
             assert actual[1].value == expected[1]  # same param value
 
 
-def test_declare_qos_parameters_with_happy_callback() -> None:
+def test_declare_qos_parameters_with_happy_callback():
     def qos_validation_callback(qos):
         result = QosCallbackResult()
         result.successful = True
@@ -137,7 +137,7 @@ def test_declare_qos_parameters_with_happy_callback() -> None:
         assert actual[1].value == expected[1]  # same param value
 
 
-def test_declare_qos_parameters_with_unhappy_callback() -> None:
+def test_declare_qos_parameters_with_unhappy_callback():
     def qos_validation_callback(qos):
         result = QosCallbackResult()
         result.successful = False
@@ -154,7 +154,7 @@ def test_declare_qos_parameters_with_unhappy_callback() -> None:
     assert 'my_custom_error_message' in str(err.value)
 
 
-def test_declare_qos_parameters_with_id() -> None:
+def test_declare_qos_parameters_with_id():
     node = Node('my_node')
     _declare_qos_parameters(
         Publisher, node, '/my_topic', QoSProfile(depth=10),

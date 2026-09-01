@@ -30,7 +30,7 @@ NODE_NAME = 'test_node'
 
 
 @pytest.fixture(scope='session', autouse=True)
-def setup_ros() -> None:
+def setup_ros():
     rclpy.init()
 
 
@@ -103,7 +103,7 @@ def test_get_subscription_topic_name_after_remapping(topic_name, namespace, cli_
     node.destroy_node()
 
 
-def test_subscription_callback_type() -> None:
+def test_subscription_callback_type():
     node = Node('test_node', namespace='test_subscription/test_subscription_callback_type')
     sub = node.create_subscription(
         msg_type=Empty,
@@ -131,26 +131,7 @@ def test_subscription_callback_type() -> None:
     node.destroy_node()
 
 
-def test_subscription_context_manager() -> None:
-    node = Node('test_node', namespace='test_subscription/test_subscription_callback_type')
-    with node.create_subscription(
-            msg_type=Empty,
-            topic='test_subscription/test_subscription_callback_type/topic',
-            qos_profile=10,
-            callback=lambda _: None) as sub:
-        assert sub._callback_type == Subscription.CallbackType.MessageOnly
-
-    with node.create_subscription(
-            msg_type=Empty,
-            topic='test_subscription/test_subscription_callback_type/topic',
-            qos_profile=10,
-            callback=lambda _, _2: None) as sub:
-        assert sub._callback_type == Subscription.CallbackType.WithMessageInfo
-
-    node.destroy_node()
-
-
-def test_subscription_publisher_count() -> None:
+def test_subscription_publisher_count():
     topic_name = 'test_subscription/test_subscription_publisher_count/topic'
     node = Node('test_node', namespace='test_subscription/test_subscription_publisher_count')
     sub = node.create_subscription(

@@ -20,7 +20,7 @@ from rclpy.validate_namespace import validate_namespace
 
 class TestValidateNamespace(unittest.TestCase):
 
-    def test_validate_namespace(self) -> None:
+    def test_validate_namespace(self):
         tests = [
             '/my_ns',
             '/',
@@ -29,7 +29,7 @@ class TestValidateNamespace(unittest.TestCase):
             # Will raise if invalid
             validate_namespace(topic)
 
-    def test_validate_namespace_failures(self) -> None:
+    def test_validate_namespace_failures(self):
         # namespace must not be empty
         with self.assertRaisesRegex(InvalidNamespaceException, 'empty'):
             validate_namespace('')

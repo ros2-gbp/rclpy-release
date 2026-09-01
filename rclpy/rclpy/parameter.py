@@ -11,22 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import annotations
 
 import array
-from enum import IntEnum
-import sys
-from typing import Any
+from enum import Enum
 from typing import Dict
-from typing import Final
-from typing import Generic
 from typing import List
-from typing import Literal
 from typing import Optional
-from typing import overload
 from typing import Tuple
 from typing import TYPE_CHECKING
-from typing import TypeVar
 from typing import Union
 
 from rcl_interfaces.msg import Parameter as ParameterMsg
@@ -34,38 +26,20 @@ from rcl_interfaces.msg import ParameterType
 from rcl_interfaces.msg import ParameterValue
 import yaml
 
-PARAMETER_SEPARATOR_STRING: Final = '.'
+PARAMETER_SEPARATOR_STRING = '.'
 
 if TYPE_CHECKING:
-    # Mypy does not handle string literals of array.array[int/str/float] very well
-    # So if user has newer version of python can use proper array types.
-    if sys.version_info > (3, 9):
-        AllowableParameterValue = Union[None, bool, int, float, str,
-                                        list[bytes], Tuple[bytes, ...],
-                                        list[bool], Tuple[bool, ...],
-                                        list[int], Tuple[int, ...], array.array[int],
-                                        list[float], Tuple[float, ...], array.array[float],
-                                        list[str], Tuple[str, ...], array.array[str]]
-    else:
-        AllowableParameterValue = Union[None, bool, int, float, str,
-                                        List[bytes], Tuple[bytes, ...],
-                                        List[bool], Tuple[bool, ...],
-                                        List[int], Tuple[int, ...], 'array.array[int]',
-                                        List[float], Tuple[float, ...], 'array.array[float]',
-                                        List[str], Tuple[str, ...], 'array.array[str]']
-
-else:
-    # Done to prevent runtime errors of undefined values.
-    # after python3.13 is minimum support this could be removed.
-    AllowableParameterValue = Any
-
-AllowableParameterValueT = TypeVar('AllowableParameterValueT',
-                                   bound=AllowableParameterValue)
+    AllowableParameterValue = Union[None, bool, int, float, str,
+                                    List[bytes], Tuple[bytes, ...],
+                                    List[bool], Tuple[bool, ...],
+                                    List[int], Tuple[int, ...], array.array[int],
+                                    List[float], Tuple[float, ...], array.array[float],
+                                    List[str], Tuple[str, ...], array.array[str]]
 
 
-class Parameter(Generic[AllowableParameterValueT]):
+class Parameter:
 
-    class Type(IntEnum):
+    class Type(Enum):
         NOT_SET = ParameterType.PARAMETER_NOT_SET
         BOOL = ParameterType.PARAMETER_BOOL
         INTEGER = ParameterType.PARAMETER_INTEGER
@@ -78,9 +52,7 @@ class Parameter(Generic[AllowableParameterValueT]):
         STRING_ARRAY = ParameterType.PARAMETER_STRING_ARRAY
 
         @classmethod
-        def from_parameter_value(cls,
-                                 parameter_value: AllowableParameterValue
-                                 ) -> Parameter.Type:
+        def from_parameter_value(cls, parameter_value):
             """
             Get a Parameter.Type from a given variable.
 
@@ -116,7 +88,7 @@ class Parameter(Generic[AllowableParameterValueT]):
                 raise TypeError(
                     f"The given value is not one of the allowed types '{parameter_value}'.")
 
-        def check(self, parameter_value: AllowableParameterValue) -> bool:
+        def check(self, parameter_value):
             if Parameter.Type.NOT_SET == self:
                 return parameter_value is None
             if Parameter.Type.BOOL == self:
@@ -145,7 +117,7 @@ class Parameter(Generic[AllowableParameterValueT]):
             return False
 
     @classmethod
-    def from_parameter_msg(cls, param_msg: ParameterMsg) -> Parameter[Any]:
+    def from_parameter_msg(cls, param_msg):
         value = None
         type_ = Parameter.Type(value=param_msg.value.type)
         if Parameter.Type.BOOL == type_:
@@ -168,66 +140,7 @@ class Parameter(Generic[AllowableParameterValueT]):
             value = param_msg.value.string_array_value
         return cls(param_msg.name, type_, value)
 
-    @overload
-    def __init__(self: Parameter[None], name: str) -> None: ...
-
-    @overload
-    def __init__(self: Parameter[None], name: str, type_: Literal[Parameter.Type.NOT_SET]
-                 ) -> None: ...
-
-    @overload
-    def __init__(self: Parameter[bool], name: str, type_: Literal[Parameter.Type.BOOL]
-                 ) -> None: ...
-
-    @overload
-    def __init__(self: Parameter[int], name: str, type_: Literal[Parameter.Type.INTEGER]
-                 ) -> None: ...
-
-    @overload
-    def __init__(self: Parameter[float], name: str, type_: Literal[Parameter.Type.DOUBLE]
-                 ) -> None: ...
-
-    @overload
-    def __init__(self: Parameter[str], name: str, type_: Literal[Parameter.Type.STRING]
-                 ) -> None: ...
-
-    @overload
-    def __init__(self: Parameter[Union[list[bytes], Tuple[bytes, ...]]],
-                 name: str,
-                 type_: Literal[Parameter.Type.BYTE_ARRAY]) -> None: ...
-
-    @overload
-    def __init__(self: Parameter[Union[list[bool], Tuple[bool, ...]]],
-                 name: str,
-                 type_: Literal[Parameter.Type.BOOL_ARRAY]) -> None: ...
-
-    @overload
-    def __init__(self: Parameter[Union[list[int], Tuple[int, ...], array.array[int]]],
-                 name: str,
-                 type_: Literal[Parameter.Type.INTEGER_ARRAY]) -> None: ...
-
-    @overload
-    def __init__(self: Parameter[Union[list[float], Tuple[float, ...], array.array[float]]],
-                 name: str,
-                 type_: Literal[Parameter.Type.DOUBLE_ARRAY]) -> None: ...
-
-    @overload
-    def __init__(self: Parameter[Union[list[str], Tuple[str, ...], array.array[str]]],
-                 name: str,
-                 type_: Literal[Parameter.Type.STRING_ARRAY]) -> None: ...
-
-    @overload
-    def __init__(self, name: str, *, value: AllowableParameterValueT) -> None: ...
-
-    @overload
-    def __init__(self, name: str, type_: Optional[Parameter.Type] = None,
-                 value: None = None) -> None: ...
-
-    @overload
-    def __init__(self, name: str, type_: Parameter.Type,
-                 value: AllowableParameterValueT) -> None: ...
-
-    def __init__(self, name: str, type_: Optional[Parameter.Type] = None, value=None) -> None:
+    def __init__(self, name, type_=None, value=None):
         if type_ is None:
             # This will raise a TypeError if it is not possible to get a type from the value.
             type_ = Parameter.Type.from_parameter_value(value)
@@ -243,18 +156,18 @@ class Parameter(Generic[AllowableParameterValueT]):
         self._value = value
 
     @property
-    def name(self) -> str:
+    def name(self):
         return self._name
 
     @property
-    def type_(self) -> 'Parameter.Type':
+    def type_(self):
         return self._type_
 
     @property
-    def value(self) -> AllowableParameterValueT:
+    def value(self):
         return self._value
 
-    def get_parameter_value(self) -> ParameterValue:
+    def get_parameter_value(self):
         parameter_value = ParameterValue(type=self.type_.value)
         if Parameter.Type.BOOL == self.type_:
             parameter_value.bool_value = self.value
@@ -276,7 +189,7 @@ class Parameter(Generic[AllowableParameterValueT]):
             parameter_value.string_array_value = self.value
         return parameter_value
 
-    def to_parameter_msg(self) -> ParameterMsg:
+    def to_parameter_msg(self):
         return ParameterMsg(name=self.name, value=self.get_parameter_value())
 
 
@@ -324,7 +237,7 @@ def get_parameter_value(string_value: str) -> ParameterValue:
     return value
 
 
-def parameter_value_to_python(parameter_value: ParameterValue) -> AllowableParameterValue:
+def parameter_value_to_python(parameter_value: ParameterValue):
     """
     Get the value for the Python builtin type from a rcl_interfaces/msg/ParameterValue object.
 
@@ -382,79 +295,67 @@ def parameter_dict_from_yaml_file(
     """
     with open(parameter_file, 'r') as f:
         param_file = yaml.safe_load(f)
+        param_keys = []
         param_dict = {}
 
-        # check and add if wildcard is available in 1st keys
-        # wildcard key must go to the front of param_keys so that
-        # node-namespaced parameters will override the wildcard parameters
         if use_wildcard:
             if '/**' in param_file:
-                value = param_file['/**']
-                if not isinstance(value, dict) or 'ros__parameters' not in value:
-                    raise RuntimeError(
-                        'YAML file is not a valid ROS parameter file for wildcard(/**)')
-                param_dict.update(value['ros__parameters'])
+                param_keys.append('/**')
 
-            # If target_nodes is None or empty, parse '/*' and '/**/node_name' wildcards
             if not target_nodes:
                 # /*
                 #   node_name:
                 #     ros__parameters:
                 #       ...
                 if '/*' in param_file:
-                    value = param_file['/*']
-                    if not isinstance(value, dict):
-                        raise RuntimeError(
-                            'YAML file is not a valid ROS parameter file for wildcard(/*)')
-                    # add all node_name under wildcard /*
-                    for node_name, node_value in value.items():
-                        if not isinstance(node_value, dict) or 'ros__parameters' not in node_value:
-                            raise RuntimeError(
-                                f'YAML file is not a valid ROS parameter file for wildcard(/*) '
-                                f'node {node_name}')
-                        param_dict.update(node_value['ros__parameters'])
+                    param_keys.append('/*')
 
                 # /**/node_name
                 #   ros__parameters:
                 #     ...
                 for k, v in param_file.items():
                     if k.startswith('/**/'):
-                        value = v
-                        if not isinstance(value, dict) or 'ros__parameters' not in value:
-                            raise RuntimeError(
-                                f'YAML file is not a valid ROS parameter file for wildcard {k}')
-                        param_dict.update(value['ros__parameters'])
+                        param_keys.append(k)
 
-        # parse parameter yaml file based on target node namespace and name
         if target_nodes:
             for n in target_nodes:
-                abs_name = _get_absolute_node_name(n)
-                if abs_name is None:
+                if n is None or n == '':
                     continue
 
-                # target node is '/node_name' without namespace
-                if '/' not in abs_name[1:]:
-                    # Match definition in param file
+                # Get absolute node name
+                if n[0] != '/':
+                    n = '/' + n
+
+                # target node doesn't include namespace
+                # Match definition in param file
+                # /node_name:
+                #   ros__parameters:
+                #     ...
+                # or
+                # node_name:
+                #   ros__parameters:
+                #     ...
+                if '/' not in n[1:]:
+                    is_found = False
+                    # In the param file, there may be two ways to write a node_name.
+                    # So need to handle all of them.
                     # /node_name:
                     #   ros__parameters:
                     #     ...
-                    if abs_name in param_file:
-                        value = param_file[abs_name]
-                        if (not isinstance(value, dict) or 'ros__parameters' not in value):
-                            raise RuntimeError(
-                                f'YAML file is not a valid ROS parameter file for node {n}')
-                        param_dict.update(value['ros__parameters'])
-                    # Match definition in param file
+                    # or
                     # node_name:
                     #   ros__parameters:
-                    #     ...
-                    if abs_name[1:] in param_file:
-                        value = param_file[abs_name[1:]]
-                        if (not isinstance(value, dict) or 'ros__parameters' not in value):
-                            raise RuntimeError(
-                                f'YAML file is not a valid ROS parameter file for node {n}')
-                        param_dict.update(value['ros__parameters'])
-                    continue
+                    #
+                    if n in param_file:
+                        param_keys.append(n)
+                        is_found = True
+                    if n[1:] in param_file:
+                        param_keys.append(n[1:])
+                        is_found = True
+                    if is_found:
+                        continue
+                    raise RuntimeError(f'Param file does not contain parameters for {n},'
+                                       f'only for nodes: {list(param_file.keys())} ')
 
                 # target node include namespaces, e.g. /namespace/node_name
                 # Matched definition in param file
@@ -466,7 +367,7 @@ def parameter_dict_from_yaml_file(
                 # /namespace/node_name:
                 #   ros__parameters:
                 #     ...
-                ns, node_basename = abs_name.rsplit('/', 1)
+                ns, node_name = n.rsplit('/', 1)
 
                 # If ns is single level namespace and wildcard is true
                 # Match definition in param file
@@ -478,13 +379,8 @@ def parameter_dict_from_yaml_file(
                     if not isinstance(param_file['/*'], dict):
                         raise RuntimeError(
                             'YAML file is not a valid ROS parameter file for namespace "/*"')
-
-                    if node_basename in param_file['/*']:
-                        value = param_file['/*'][node_basename]
-                        if not isinstance(value, dict) or 'ros__parameters' not in value:
-                            raise RuntimeError(
-                                f'YAML file is not a valid ROS parameter file for node {n}')
-                        param_dict.update(value['ros__parameters'])
+                    if node_name in param_file['/*']:
+                        param_keys.append('/*#' + node_name)
 
                 # If 'ns' in target node is single level or multi level namespace and
                 # wildcard is true,
@@ -492,12 +388,8 @@ def parameter_dict_from_yaml_file(
                 # /**/node_name:
                 #   ros__parameters:
                 #     ...
-                if use_wildcard and '/**/' + node_basename in param_file:
-                    value = param_file['/**/' + node_basename]
-                    if not isinstance(value, dict) or 'ros__parameters' not in value:
-                        raise RuntimeError(
-                            f'YAML file is not a valid ROS parameter file for node {n}')
-                    param_dict.update(value['ros__parameters'])
+                if use_wildcard and '/**/' + node_name in param_file:
+                    param_keys.append('/**/' + node_name)
 
                 # If 'ns' in target node is single level or multi level namespace,
                 # Match definition in param file.
@@ -506,62 +398,69 @@ def parameter_dict_from_yaml_file(
                 #     ros__parameters:
                 #       ...
                 if ns in param_file and isinstance(param_file[ns], dict):
-                    if node_basename in param_file[ns]:
-                        value = param_file[ns][node_basename]
-                        if not isinstance(value, dict) or 'ros__parameters' not in value:
-                            raise RuntimeError(
-                                f'YAML file is not a valid ROS parameter file for node {n}')
-                        param_dict.update(value['ros__parameters'])
+                    if node_name in param_file[ns]:
+                        param_keys.append(ns + '#' + node_name)
 
-                # If 'ns' in target node is single level or multi level namespace,
+                # if 'ns' in target node is single level or multi level namespace,
                 # Match definition in param file.
                 # /namespace/node_name:
                 #   ros__parameters:
                 #     ...
-                if abs_name in param_file:
-                    value = param_file[abs_name]
-                    if not isinstance(value, dict) or 'ros__parameters' not in value:
-                        raise RuntimeError(
-                            f'YAML file is not a valid ROS parameter file for node {n}')
-                    param_dict.update(value['ros__parameters'])
+                if n in param_file:
+                    param_keys.append(n)
         else:
-            # Except the wildcard key, add all other keys
-            for k, v in param_file.items():
-                if k == '/**' or k == '/*' or k.startswith('/**/'):
-                    continue
-                if isinstance(v, dict):
-                    # k is node_name or /node_name or /namespace/node_name
-                    if 'ros__parameters' in v:
-                        param_dict.update(v['ros__parameters'])
-                        continue
-                    # k is namespace
-                    for node_name, node_value in v.items():
-                        if isinstance(node_value, dict) and 'ros__parameters' in node_value:
-                            param_dict.update(node_value['ros__parameters'])
-                        else:
-                            raise RuntimeError(
-                                f'YAML file is not a valid ROS parameter file for node'
-                                f'{k}/{node_name}')
-                else:
-                    raise RuntimeError(
-                        f'YAML file is not a valid ROS parameter file for node {k}')
+            # wildcard key must go to the front of param_keys so that
+            # node-namespaced parameters will override the wildcard parameters
+            keys = set(param_file.keys())
+            keys.discard('/**')
+            keys.discard('/*')
+            keys_to_remove = [item for item in keys if item.startswith('/**/')]
+            for key in keys_to_remove:
+                keys.discard(key)
+            param_keys.extend(keys)
 
-        if not param_dict:
-            raise RuntimeError('Param file does not contain any valid parameters')
+        if len(param_keys) == 0:
+            raise RuntimeError('Param file does not contain selected parameters')
+
+        for n in param_keys:
+            # "namespace#node_name" means the following parameters need to be collected in
+            # the param file.
+            # namespace
+            #   node_name:
+            #     ros__parameters:
+            #       ...
+            if '#' in n:
+                ns, node_name = n.split('#', 1)
+                if (isinstance(param_file[ns][node_name], dict) and
+                        'ros__parameters' in param_file[ns][node_name]):
+                    param_dict.update(param_file[ns][node_name]['ros__parameters'])
+                    continue
+            else:
+                value = param_file[n]
+                if isinstance(value, dict):
+                    if 'ros__parameters' in value:
+                        param_dict.update(value['ros__parameters'])
+                        continue
+                    else:
+                        if n in param_file:
+                            # n is namespace (e.g. '/*'). Add all node parameters under
+                            # this namespace
+                            if isinstance(param_file[n], dict):
+                                for node_name, param_value in param_file[n].items():
+                                    if (isinstance(param_value, dict) and
+                                            'ros__parameters' in param_value):
+                                        param_dict.update(param_value['ros__parameters'])
+                                    else:
+                                        raise RuntimeError(
+                                            f'YAML file is not a valid ROS parameter file for node'
+                                            f' {n}/{node_name}')
+                                continue
+            raise RuntimeError(f'YAML file is not a valid ROS parameter file for node {n}')
 
         return _unpack_parameter_dict(namespace, param_dict)
 
 
-def _get_absolute_node_name(node_name: str) -> Optional[str]:
-    if not node_name:
-        return None
-    if node_name[0] != '/':
-        node_name = '/' + node_name
-    return node_name
-
-
-def _unpack_parameter_dict(namespace: str,
-                           parameter_dict: Dict[str, ParameterMsg]) -> Dict[str, ParameterMsg]:
+def _unpack_parameter_dict(namespace, parameter_dict):
     """
     Flatten a parameter dictionary recursively.
 

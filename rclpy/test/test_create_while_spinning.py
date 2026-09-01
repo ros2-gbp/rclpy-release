@@ -36,7 +36,7 @@ class TestCreateWhileSpinning(unittest.TestCase):
     This is a regression test for ros2/rclpy#188.
     """
 
-    def setUp(self) -> None:
+    def setUp(self):
         rclpy.init()
         self.node = rclpy.create_node('TestCreateWhileSpinning', namespace='/rclpy')
         self.executor = SingleThreadedExecutor()
@@ -46,20 +46,20 @@ class TestCreateWhileSpinning(unittest.TestCase):
         # Make sure executor is blocked by rcl_wait
         time.sleep(TIMEOUT)
 
-    def tearDown(self) -> None:
+    def tearDown(self):
         self.executor.shutdown()
         rclpy.shutdown()
         self.exec_thread.join()
         self.node.destroy_node()
 
-    def test_publish_subscribe(self) -> None:
+    def test_publish_subscribe(self):
         evt = threading.Event()
         self.node.create_subscription(BasicTypes, 'foo', lambda msg: evt.set(), 1)
         pub = self.node.create_publisher(BasicTypes, 'foo', 1)
         pub.publish(BasicTypes())
         assert evt.wait(TIMEOUT)
 
-    def test_client_server(self) -> None:
+    def test_client_server(self):
         evt = threading.Event()
 
         def trigger_event(req, resp):
@@ -73,37 +73,31 @@ class TestCreateWhileSpinning(unittest.TestCase):
         cli.call_async(BasicTypesSrv.Request())
         assert evt.wait(TIMEOUT)
 
-    def test_guard_condition(self) -> None:
+    def test_guard_condition(self):
         evt = threading.Event()
 
         guard = self.node.create_guard_condition(lambda: evt.set())
         guard.trigger()
         assert evt.wait(TIMEOUT)
 
-    def test_timer(self) -> None:
+    def test_timer(self):
         evt = threading.Event()
 
         self.node.create_timer(TIMEOUT / 10, lambda: evt.set())
         assert evt.wait(TIMEOUT)
 
-    def test_waitable(self) -> None:
+    def test_waitable(self):
         evt = threading.Event()
 
         class DummyWaitable(Waitable):
 
-            def __init__(self) -> None:
+            def __init__(self):
                 super().__init__(ReentrantCallbackGroup())
-
-            def __enter__(self) -> None:
-                pass
-
-            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-                pass
 
             def is_ready(self, wait_set):
                 return False
 
-            def take_data(self) -> None:
+            def take_data(self):
                 return None
 
             async def execute(self, taken_data):

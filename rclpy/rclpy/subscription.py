@@ -12,36 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 from enum import Enum
 import inspect
-from types import TracebackType
-from typing import Callable, Generic, Optional, Type, TypedDict, TypeVar, Union
+from typing import Callable
+from typing import TypeVar
 
 from rclpy.callback_groups import CallbackGroup
+from rclpy.event_handler import EventHandler
 from rclpy.event_handler import SubscriptionEventCallbacks
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.qos import QoSProfile
 from rclpy.subscription_content_filter_options import ContentFilterOptions
-from rclpy.type_support import MsgT
-
-
-class MessageInfo(TypedDict):
-    source_timestamp: int
-    received_timestamp: int
-    publication_sequence_number: Optional[int]
-    reception_sequence_number: Optional[int]
-    publisher_gid: Optional[dict]
 
 
 # Re-export exception defined in _rclpy C extension.
 RCLError = _rclpy.RCLError
 
-# Left to support Legacy TypeVars.
+# For documentation only
 MsgType = TypeVar('MsgType')
 
 
-class Subscription(Generic[MsgT]):
+class Subscription:
 
     class CallbackType(Enum):
         MessageOnly = 0
@@ -49,10 +40,10 @@ class Subscription(Generic[MsgT]):
 
     def __init__(
          self,
-         subscription_impl: '_rclpy.Subscription[MsgT]',
-         msg_type: Type[MsgT],
+         subscription_impl: _rclpy.Subscription,
+         msg_type: MsgType,
          topic: str,
-         callback: Union[Callable[[MsgT], None], Callable[[MsgT, MessageInfo], None]],
+         callback: Callable,
          callback_group: CallbackGroup,
          qos_profile: QoSProfile,
          raw: bool,
@@ -86,7 +77,7 @@ class Subscription(Generic[MsgT]):
         self.qos_profile = qos_profile
         self.raw = raw
 
-        self.event_handlers = event_callbacks.create_event_handlers(
+        self.event_handlers: EventHandler = event_callbacks.create_event_handlers(
             callback_group, subscription_impl, topic)
 
     def get_publisher_count(self) -> int:
@@ -95,10 +86,10 @@ class Subscription(Generic[MsgT]):
             return self.__subscription.get_publisher_count()
 
     @property
-    def handle(self) -> '_rclpy.Subscription[MsgT]':
+    def handle(self):
         return self.__subscription
 
-    def destroy(self) -> None:
+    def destroy(self):
         """
         Destroy a container for a ROS subscription.
 
@@ -110,17 +101,16 @@ class Subscription(Generic[MsgT]):
         self.handle.destroy_when_not_in_use()
 
     @property
-    def topic_name(self) -> str:
+    def topic_name(self):
         with self.handle:
             return self.__subscription.get_topic_name()
 
     @property
-    def callback(self) -> Union[Callable[[MsgT], None], Callable[[MsgT, MessageInfo], None]]:
+    def callback(self):
         return self._callback
 
     @callback.setter
-    def callback(self, value: Union[Callable[[MsgT], None],
-                                    Callable[[MsgT, MessageInfo], None]]) -> None:
+    def callback(self, value):
         self._callback = value
         self._callback_type = Subscription.CallbackType.MessageOnly
         try:
@@ -171,14 +161,3 @@ class Subscription(Generic[MsgT]):
         """
         with self.handle:
             return self.__subscription.get_content_filter()
-
-    def __enter__(self) -> 'Subscription[MsgT]':
-        return self
-
-    def __exit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
-    ) -> None:
-        self.destroy()
